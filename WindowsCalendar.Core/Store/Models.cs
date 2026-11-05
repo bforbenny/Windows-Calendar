@@ -8,8 +8,17 @@ public enum ItemKind { Event, Task }
 
 public enum OutboxOperation { Create, Update, Delete }
 
-/// <summary>An account (account-management R1). Credentials are never stored here.</summary>
-public sealed record Account(string Id, AccountType Type, string DisplayName);
+/// <summary>
+/// An account (account-management R1). Credentials are never stored here (R6). ServerUrl, Username and Email
+/// are set for CalDAV accounts (R4, R4a).
+/// </summary>
+public sealed record Account(
+    string Id,
+    AccountType Type,
+    string DisplayName,
+    string? ServerUrl = null,
+    string? Username = null,
+    string? Email = null);
 
 /// <summary>A calendar or task list (account-management R1). RemoteRef is the CalDAV URL or Graph id.</summary>
 public sealed record Collection(
@@ -60,6 +69,12 @@ public sealed record OutboxEntry(
     bool InFlight,
     DateTimeOffset NextAttemptAt,
     bool Permanent);
+
+/// <summary>
+/// A calendar or task list found on the server, before it gets a local id, colour and shape (account-management R4, R9).
+/// IsDefault marks the server's main calendar (Graph isDefaultCalendar); CalDAV has none.
+/// </summary>
+public sealed record DiscoveredCollection(string RemoteRef, string Name, CollectionKind Kind, bool ReadOnly, bool IsDefault = false);
 
 /// <summary>One expanded instance of an item in the occurrence index (local-store-offline R3).</summary>
 public sealed record ItemOccurrence(string ItemId, DateTimeOffset StartUtc, DateTimeOffset EndUtc);

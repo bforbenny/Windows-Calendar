@@ -2,7 +2,7 @@
 description: Adding, editing and removing multiple MS365 and Radicale accounts, and how their credentials are stored
 when-to-use: Before working on sign-in, account settings, credential storage, or calendar/task-list selection
 tags: [accounts, auth, credentials, security, msal, radicale]
-status: pending
+status: in-progress
 ---
 
 # Account management
@@ -17,18 +17,30 @@ The user can connect any number of Microsoft 365 work accounts and any number of
 - R2. MS365 sign-in via MSAL.NET public client using the Windows broker (WAM), delegated permissions only: `Calendars.ReadWrite`, `Tasks.ReadWrite`, `User.Read`, `offline_access`.
 - R3. MS365 app registration is single-tenant, in the user's own Entra ID tenant (user is tenant admin and grants consent). The client ID and tenant ID are build-time constants in the app's configuration, not secrets and not entered by the user; no client secret is used. Every MS365 account must belong to this tenant.
 - R4. Radicale account: server URL (HTTPS required), username, password. Calendars and task lists discovered via CalDAV (current-user-principal → calendar-home-set → PROPFIND collections, reading `supported-calendar-component-set`).
+  - Accounts store `server_url`, `username` and `email` (schema v3); none are secrets.
 - R4a. Adding a Radicale account tests the connection before saving. Accepted URL forms: the server root (tries `/.well-known/caldav`, then `/`) or a principal URL. Each failure has its own message: not HTTPS; server unreachable; TLS certificate not trusted ("Install the server's certificate in Windows, then retry"); wrong username or password (401); no calendars found. The Radicale account also has an optional "Email address", used to tell meetings you organise from ones you attend ([attendees-invitations](attendees-invitations.md) R2).
+  - `CalDavDiscovery` in `WindowsCalendar.Core`. A server root tries `/.well-known/caldav`, then `/`. Only PROPFIND is sent, so discovery never changes the server. Each failure maps to a fixed message; only status codes are logged.
 - R5. Reject non-HTTPS Radicale URLs. Certificate validation stays on (no "ignore TLS errors" option in v1).
 - R6. **Credential storage (approved exception to the CLAUDE.md "never stored" rule):** secrets are persisted only in OS-protected storage tied to the Windows login:
   - Radicale password → Windows Credential Manager (PasswordVault).
   - MSAL token cache → MSAL's DPAPI-protected cache / WAM broker.
   - Never in SQLite, config files, logs, or source.
+  - PasswordVault entry: resource `WindowsCalendar/<accountId>`, user name = the server username.
 - R7. Password entry uses a masked field. The in-memory plaintext copy is cleared after it is stored or used.
+  - WinUI `PasswordBox` only exposes a plain string, so SecureString is not used (approved deviation from CLAUDE.md rule 4). The value is read once, the box is cleared at once, and the copy is used for the connection test and the vault save, then dropped. It never appears in logs or exception messages.
 - R8. Removing an account deletes its credentials and all its cached data, after explicit confirmation (destructive action).
+  - Remove is on the account's sidebar menu, behind a confirmation dialog. It deletes the vault entry, the account and its cached data, including its outbox entries.
 - R9. Per-collection settings: colour, shape, reminders on ([reminders-notifications](reminders-notifications.md) R5), default calendar for new events, default task list for new tasks. When the first account is added, its main calendar (Graph `isDefaultCalendar`; CalDAV the first writable VEVENT collection) and first task list become the defaults. Read-only collections cannot be defaults. If a default is removed, the next writable collection in sidebar order takes over.
+  - Defaults are kept in the store's `meta` table. New collections get colour and shape per [ui-colour-theme](ui-colour-theme.md) R8; snapping server colours (R9 there) comes later.
 - R10. Account status indicator: OK / offline / auth required / error. Re-auth flow when tokens expire or the password changes. Each account shows its last successful sync time.
 - R11. Re-discovery: the collection list is re-read on every sync (Graph `/me/calendars` and `/me/todo/lists`; CalDAV `PROPFIND Depth:1`). New collections get an automatic colour and shape and join only the "All" set. Renames update the name. A collection deleted on the server is removed locally; its pending outbox entries are moved to Conflicts first, so nothing is lost ([conflict-resolution](conflict-resolution.md) R9).
 - R12. Editing an account: display name, the Radicale email address (R4a), and the password (through sign in again). Changing a Radicale URL or username means removing and re-adding the account.
+
+## Interim (first slice: Radicale)
+
+- The first-launch panel ([ui-states](ui-states.md) R5) offers Radicale; the Microsoft 365 button is disabled until the MS365 slice.
+- The sidebar lists accounts and their collections.
+- Account status (R10), re-discovery on each sync (R11) and account editing (R12) come with [sync-radicale](sync-radicale.md) and [settings-page](settings-page.md).
 
 ## Out of scope
 
@@ -44,7 +56,7 @@ The user can connect any number of Microsoft 365 work accounts and any number of
 - [ ] Adding a Radicale account with a wrong password or an untrusted certificate shows the specific message.
 - [ ] After a reboot, sync resumes without prompting (credentials taken from OS storage).
 - [ ] No password or token appears in the SQLite file, settings file, or logs.
-- [ ] Removing an account asks for confirmation and removes its vault entries and cached items.
+- [x] Removing an account asks for confirmation and removes its vault entries and cached items.
 
 ## Dependencies
 

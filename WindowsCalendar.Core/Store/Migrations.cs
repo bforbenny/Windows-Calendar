@@ -101,6 +101,13 @@ internal static class Migrations
             value TEXT NOT NULL
         );
         """,
+
+        // v3: CalDAV account details (account-management R4, R4a). Not secrets.
+        """
+        ALTER TABLE accounts ADD COLUMN server_url TEXT;
+        ALTER TABLE accounts ADD COLUMN username TEXT;
+        ALTER TABLE accounts ADD COLUMN email TEXT;
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

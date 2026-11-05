@@ -68,9 +68,7 @@ public sealed class LocalStore : IDisposable
     {
         lock (_gate)
         {
-            Execute(_connection, null,
-                "INSERT INTO accounts (id, type, display_name) VALUES ($id, $type, $name);",
-                ("$id", account.Id), ("$type", account.Type.ToString()), ("$name", account.DisplayName));
+            InsertAccount(null, account);
         }
     }
 
@@ -78,14 +76,155 @@ public sealed class LocalStore : IDisposable
     {
         lock (_gate)
         {
-            Execute(_connection, null,
+            InsertCollection(null, c);
+        }
+    }
+
+    /// <summary>
+    /// Saves a new account and the collections found on its server in one transaction. Each collection gets a
+    /// local id, the next automatic colour and shape (ui-colour-theme R8) and reminders on. If no default calendar
+    /// or task list is set yet, the server's main one (or else the first writable one) becomes the default
+    /// (account-management R9).
+    /// </summary>
+    public IReadOnlyList<Collection> AddDiscoveredAccount(Account account, IReadOnlyList<DiscoveredCollection> found)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            InsertAccount(tx, account);
+
+            var inUse = new HashSet<(string, string)>();
+            using (var cmd = Command(_connection, tx, "SELECT colour, shape FROM collections;"))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    inUse.Add((r.GetString(0), r.GetString(1)));
+                }
+            }
+
+            var added = new List<Collection>();
+            foreach (var f in found)
+            {
+                var (colour, shape) = CollectionStyle.Next(inUse.Count, inUse);
+                inUse.Add((colour, shape));
+                var c = new Collection(Guid.NewGuid().ToString("N"), account.Id, f.Kind, f.Name, colour, shape, true, f.ReadOnly, f.RemoteRef);
+                InsertCollection(tx, c);
+                added.Add(c);
+            }
+
+            foreach (var (key, kind) in DefaultKeys)
+            {
+                // Writable collections of this kind, the server's main one first (OrderBy is stable).
+                var pick = Enumerable.Range(0, found.Count)
+                    .Where(i => found[i].Kind == kind && !found[i].ReadOnly)
+                    .OrderByDescending(i => found[i].IsDefault)
+                    .Select(i => added[i])
+                    .FirstOrDefault();
+                if (pick is not null && GetMeta(tx, key) is null)
+                {
+                    SetMeta(tx, key, pick.Id);
+                }
+            }
+            tx.Commit();
+            return added;
+        }
+    }
+
+    public IReadOnlyList<Account> GetAccounts()
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
+                "SELECT id, type, display_name, server_url, username, email FROM accounts ORDER BY rowid;");
+            using var r = cmd.ExecuteReader();
+            var list = new List<Account>();
+            while (r.Read())
+            {
+                list.Add(new Account(r.GetString(0), Enum.Parse<AccountType>(r.GetString(1)), r.GetString(2),
+                    NullableString(r, 3), NullableString(r, 4), NullableString(r, 5)));
+            }
+            return list;
+        }
+    }
+
+    /// <summary>An account's collections in the order they were added (sidebar order).</summary>
+    public IReadOnlyList<Collection> GetCollections(string accountId)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
                 """
-                INSERT INTO collections (id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref)
-                VALUES ($id, $account, $kind, $name, $colour, $shape, $reminders, $readOnly, $remote);
+                SELECT id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref
+                FROM collections WHERE account_id = $a ORDER BY rowid;
                 """,
-                ("$id", c.Id), ("$account", c.AccountId), ("$kind", c.Kind.ToString()), ("$name", c.Name),
-                ("$colour", c.Colour), ("$shape", c.Shape), ("$reminders", c.RemindersOn), ("$readOnly", c.ReadOnly),
-                ("$remote", c.RemoteRef));
+                ("$a", accountId));
+            using var r = cmd.ExecuteReader();
+            var list = new List<Collection>();
+            while (r.Read())
+            {
+                list.Add(new Collection(r.GetString(0), r.GetString(1), Enum.Parse<CollectionKind>(r.GetString(2)), r.GetString(3),
+                    r.GetString(4), r.GetString(5), r.GetBoolean(6), r.GetBoolean(7), r.GetString(8)));
+            }
+            return list;
+        }
+    }
+
+    /// <summary>Default calendar for new events (account-management R9); null when there is none.</summary>
+    public string? DefaultCalendarId
+    {
+        get { lock (_gate) { return GetMeta(null, "default_calendar"); } }
+    }
+
+    /// <summary>Default task list for new tasks (account-management R9); null when there is none.</summary>
+    public string? DefaultTaskListId
+    {
+        get { lock (_gate) { return GetMeta(null, "default_tasklist"); } }
+    }
+
+    /// <summary>
+    /// Deletes an account and everything cached for it, including unsent changes (account-management R8).
+    /// The caller confirms first and removes the account's credentials. A default that pointed into the account
+    /// moves to the next writable collection in sidebar order.
+    /// </summary>
+    public void RemoveAccount(string accountId)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            // The outbox has no foreign key to items, so its entries go first; the rest cascades.
+            Execute(_connection, tx,
+                """
+                DELETE FROM outbox WHERE item_id IN (
+                    SELECT i.id FROM items i JOIN collections c ON c.id = i.collection_id WHERE c.account_id = $a);
+                DELETE FROM accounts WHERE id = $a;
+                """,
+                ("$a", accountId));
+
+            foreach (var (key, kind) in DefaultKeys)
+            {
+                using (var exists = Command(_connection, tx,
+                    "SELECT 1 FROM collections WHERE id = (SELECT value FROM meta WHERE key = $key);", ("$key", key)))
+                {
+                    if (exists.ExecuteScalar() is not null)
+                    {
+                        continue;
+                    }
+                }
+
+                using var first = Command(_connection, tx,
+                    "SELECT id FROM collections WHERE kind = $kind AND read_only = 0 ORDER BY rowid LIMIT 1;",
+                    ("$kind", kind.ToString()));
+                if (first.ExecuteScalar() is string next)
+                {
+                    SetMeta(tx, key, next);
+                }
+                else
+                {
+                    Execute(_connection, tx, "DELETE FROM meta WHERE key = $key;", ("$key", key));
+                }
+            }
+            tx.Commit();
         }
     }
 
@@ -367,6 +506,42 @@ public sealed class LocalStore : IDisposable
     }
 
     // ---- Internals ----
+
+    private static readonly (string Key, CollectionKind Kind)[] DefaultKeys =
+        [("default_calendar", CollectionKind.Calendar), ("default_tasklist", CollectionKind.TaskList)];
+
+    private void InsertAccount(SqliteTransaction? tx, Account a) =>
+        Execute(_connection, tx,
+            """
+            INSERT INTO accounts (id, type, display_name, server_url, username, email)
+            VALUES ($id, $type, $name, $url, $user, $email);
+            """,
+            ("$id", a.Id), ("$type", a.Type.ToString()), ("$name", a.DisplayName), ("$url", a.ServerUrl),
+            ("$user", a.Username), ("$email", a.Email));
+
+    private void InsertCollection(SqliteTransaction? tx, Collection c) =>
+        Execute(_connection, tx,
+            """
+            INSERT INTO collections (id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref)
+            VALUES ($id, $account, $kind, $name, $colour, $shape, $reminders, $readOnly, $remote);
+            """,
+            ("$id", c.Id), ("$account", c.AccountId), ("$kind", c.Kind.ToString()), ("$name", c.Name),
+            ("$colour", c.Colour), ("$shape", c.Shape), ("$reminders", c.RemindersOn), ("$readOnly", c.ReadOnly),
+            ("$remote", c.RemoteRef));
+
+    private string? GetMeta(SqliteTransaction? tx, string key)
+    {
+        using var cmd = Command(_connection, tx, "SELECT value FROM meta WHERE key = $key;", ("$key", key));
+        return cmd.ExecuteScalar() as string;
+    }
+
+    private void SetMeta(SqliteTransaction? tx, string key, string value) =>
+        Execute(_connection, tx,
+            """
+            INSERT INTO meta (key, value) VALUES ($key, $value)
+            ON CONFLICT (key) DO UPDATE SET value = excluded.value;
+            """,
+            ("$key", key), ("$value", value));
 
     /// <summary>
     /// Adds an outbox entry, coalescing with the item's latest entry when that entry is not grouped

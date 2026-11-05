@@ -28,10 +28,33 @@
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- Sidebar placeholder (calendar-views R2). -->
-            <Grid x:Name="Sidebar" Grid.Column="0" />
+            <!-- Sidebar (calendar-views R2). Interim: accounts and their collections (account-management). -->
+            <Grid x:Name="Sidebar" Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <ScrollViewer>
+                    <StackPanel x:Name="AccountList" Padding="12,8" Spacing="2" />
+                </ScrollViewer>
+                <HyperlinkButton x:Name="AddAccountLink" Grid.Row="1" Margin="8" Content="Add Radicale account"
+                                 Visibility="Collapsed" Click="OnAddRadicale" />
+            </Grid>
 
-            <Grid x:Name="ContentArea" Grid.Column="1" Background="{ThemeResource SurfaceBaseBrush}" />
+            <Grid x:Name="ContentArea" Grid.Column="1" Background="{ThemeResource SurfaceBaseBrush}">
+                <!-- First launch, no accounts (ui-states R5). -->
+                <StackPanel x:Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
+                            Visibility="Collapsed">
+                    <TextBlock Text="Add an account to get started" Style="{StaticResource SubtitleTextBlockStyle}"
+                               HorizontalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                        <!-- Interim: MS365 sign-in comes in the next account-management slice. -->
+                        <Button Content="Microsoft 365" IsEnabled="False" />
+                        <Button x:Name="AddRadicaleButton" Content="Radicale" Style="{StaticResource AccentButtonStyle}"
+                                Click="OnAddRadicale" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
         </Grid>
     </Grid>
 </Window>
