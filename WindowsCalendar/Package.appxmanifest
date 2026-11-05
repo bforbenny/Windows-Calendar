@@ -12,7 +12,7 @@
   <Identity
     Name="9f8d7707-4829-4516-a409-911bae828654"
     Publisher="CN=Ben"
-    Version="1.0.0.0" />
+    Version="1.0.1.0" />
 
   <mp:PhoneIdentity PhoneProductId="9f8d7707-4829-4516-a409-911bae828654" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
