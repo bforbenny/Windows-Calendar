@@ -8,7 +8,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 
 | PRD | Description | Status |
 | --- | --- | --- |
-| [app-platform](docs/prd/app-platform.md) | Tech stack, packaging, tray, start with Windows | pending |
+| [app-platform](docs/prd/app-platform.md) | Tech stack, packaging, tray, start with Windows | in-progress |
 | [account-management](docs/prd/account-management.md) | Multiple MS365 and Radicale accounts, credential storage | pending |
 | [local-store-offline](docs/prd/local-store-offline.md) | SQLite cache, outbox, offline read/write | pending |
 | [sync-ms365](docs/prd/sync-ms365.md) | Graph calendar and To Do sync | pending |

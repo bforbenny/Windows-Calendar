@@ -12,6 +12,8 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using Microsoft.UI.Xaml.Shapes;
+using Microsoft.Windows.AppLifecycle;
+using Serilog;
 using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.Foundation;
@@ -37,6 +39,29 @@ public partial class App : Application
     public App()
     {
         InitializeComponent();
+        InitializeLogging();
+    }
+
+    /// <summary>
+    /// Rolling daily log under LocalState\Logs, last 14 files kept (app-platform R8).
+    /// Never log credentials, tokens or Authorization headers.
+    /// </summary>
+    private void InitializeLogging()
+    {
+        var logPath = System.IO.Path.Combine(Windows.Storage.ApplicationData.Current.LocalFolder.Path, "Logs", "app-.log");
+        Log.Logger = new LoggerConfiguration()
+            .WriteTo.File(logPath, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14)
+            .CreateLogger();
+
+        UnhandledException += (_, e) => Log.Fatal(e.Exception, "Unhandled UI exception");
+        AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+        {
+            Log.Fatal(e.ExceptionObject as Exception, "Unhandled exception");
+            Log.CloseAndFlush();
+        };
+
+        var v = Package.Current.Id.Version;
+        Log.Information("App started, version {Version}", $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}");
     }
 
     /// <summary>
@@ -50,6 +75,13 @@ public partial class App : Application
 
         // A second launch is redirected here by Program.Main (app-platform R4).
         AppInstance.GetCurrent().Activated += (_, _) => _window.DispatcherQueue.TryEnqueue(ShowMainWindow);
+
+        // Launched by the Start with Windows task: stay hidden in the tray (app-platform R6).
+        if (AppInstance.GetCurrent().GetActivatedEventArgs().Kind == ExtendedActivationKind.StartupTask)
+        {
+            Log.Information("Started by startup task; staying in tray");
+            return;
+        }
 
         _window.Activate();
     }
@@ -88,6 +120,8 @@ public partial class App : Application
 
     private void Quit()
     {
+        Log.Information("App quit");
+        Log.CloseAndFlush();
         _trayIcon?.Dispose();
         _window?.CloseForQuit();
         Exit();

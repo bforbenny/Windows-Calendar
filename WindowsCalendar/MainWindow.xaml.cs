@@ -29,6 +29,9 @@ public sealed partial class MainWindow : Window
     {
         InitializeComponent();
 
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
+
         // Closing hides to the tray; only Quit really closes (app-platform R5).
         AppWindow.Closing += (sender, args) =>
         {
