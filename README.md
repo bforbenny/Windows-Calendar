@@ -10,7 +10,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | --- | --- | --- |
 | [app-platform](docs/prd/app-platform.md) | Tech stack, packaging, tray, start with Windows | in-progress |
 | [account-management](docs/prd/account-management.md) | Multiple MS365 and Radicale accounts, credential storage | pending |
-| [local-store-offline](docs/prd/local-store-offline.md) | SQLite cache, outbox, offline read/write | in-progress |
+| [local-store-offline](docs/prd/local-store-offline.md) | SQLite cache, outbox, offline read/write | closed |
 | [sync-ms365](docs/prd/sync-ms365.md) | Graph calendar and To Do sync | pending |
 | [sync-radicale](docs/prd/sync-radicale.md) | CalDAV sync for events and tasks | pending |
 | [conflict-resolution](docs/prd/conflict-resolution.md) | Server wins, local copy preserved | pending |

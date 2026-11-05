@@ -19,7 +19,7 @@ A native Windows 11 desktop app built with C# / .NET 10 and WinUI 3 (Windows App
 - R3. Packaging: MSIX, sideloaded with a self-signed certificate. Package identity is used for toasts and startup task. Updates and install steps follow [app-updates](app-updates.md).
 - R4. Single-instance app. Launching again activates the existing instance.
 - R5. Closing the main window hides it to the system tray; the process keeps running background sync and reminders. Tray right-click menu: Open, Sync now, Quit. Quit warns and asks first when unsynced changes or open conflicts exist ("3 changes have not synced. They sync next time the app runs, but are lost if the app is uninstalled."). Tray left-click opens the [tray-flyout](tray-flyout.md).
-  - Interim (until [tray-flyout](tray-flyout.md), sync and [local-store-offline](local-store-offline.md) exist): left-click opens the main window, "Sync now" is shown disabled, and Quit exits without a warning.
+  - Interim (until [tray-flyout](tray-flyout.md), sync and [local-store-offline](local-store-offline.md) exist): left-click opens the main window, "Sync now" requests a sync (logged only until the sync engines exist), and Quit exits without a warning.
 - R6. Optional "Start with Windows" (MSIX StartupTask), user-toggleable in settings, starts minimised to tray.
   - Interim (until [settings-page](settings-page.md) exists): the startup task is declared disabled by default and is turned on in Windows Settings > Apps > Startup.
 - R7. Key libraries: MSAL.NET (Microsoft sign-in with WAM broker), Microsoft Graph SDK or raw HTTP, Ical.Net 5.x (iCalendar parse/serialise, recurrence expansion), Microsoft.Data.Sqlite (local store).

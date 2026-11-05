@@ -2,7 +2,7 @@
 description: Local SQLite store, offline read/write and the outbox that pushes local changes when online
 when-to-use: Before working on the data model, persistence, offline behaviour, or the change queue
 tags: [storage, sqlite, offline, outbox, data-model]
-status: in-progress
+status: closed
 ---
 
 # Local store and offline
@@ -21,17 +21,25 @@ All synced data is held in a local SQLite database, so the app is fully usable o
   - **normalised columns** for querying (collection, UID / Graph id, summary, start/end UTC, all-day, tz, location, status, due, completed, recurrence flags, etag / changeKey, lastModified).
   - A local delete keeps the row as a hidden tombstone until the server delete succeeds (the delete needs the remote id and etag). An item created and deleted before it ever synced is removed outright.
 - R3. An occurrence index (expanded instances inside the sync window) for fast view rendering. It is regenerated when a recurring item changes, and when the Windows timezone changes (floating-time and all-day items depend on it, [timezone-handling](timezone-handling.md) R6).
+  - Table `occurrences` (item, start, end) covering -3 / +12 months from today. CalDAV recurring items are expanded with Ical.Net 5 (overrides and cancelled occurrences applied); MS365 occurrences and non-recurring items get one row from their own start/end. Floating and all-day times use the Windows timezone.
+  - An item's rows are rebuilt on every write. The whole index is rebuilt daily (rolling window) and when the Windows timezone changes (checked on window focus and every scheduled sync tick).
 - R4. Outbox table: `{ id, itemRef, operation: create|update|delete, payload, baseEtag, createdAt, attempts, lastError }`. Operations on the same item are coalesced (e.g. create+update → create; create+delete → drop). Entries replay in FIFO order across items; linked groups replay in their own order.
   - Coalescing applies only to the item's latest entry, and only when it is not in a linked group and not in flight. Rules: create+update → create (new payload); create+delete → no entry, item removed; update+update → update (first base etag kept); update+delete → delete.
   - The sync engine marks an entry in flight before sending it; a later local change then gets its own entry. In-flight marks are cleared when the store opens (crash recovery).
   - A coalesced entry keeps its original queue position.
 - R5. Every UI write goes to the local store + outbox in one transaction. The UI never waits for the network.
 - R6. Connectivity detection (NetworkInformation) triggers an outbox flush when the network returns. An account counts as online only once its server answers, so a captive portal shows as Offline ([ui-states](ui-states.md) R2).
+  - Interim (until the sync engines exist): Windows reporting the network back requests a sync; "online once the server answers" comes with [sync-ms365](sync-ms365.md) and [sync-radicale](sync-radicale.md).
 - R7. Failed outbox entries back off exponentially, capped at 15 minutes; Sync now resets the backoff. Permanent failures (4xx other than 401/412 and the consent-revoked 403 of [sync-ms365](sync-ms365.md) R11; 409 counts as permanent) are shown to the user with options to retry or discard; a discarded entry is moved to Conflicts ([conflict-resolution](conflict-resolution.md) R9). Entries for an account in "auth required" are held until sign-in succeeds.
+  - First retry after 30 s, doubling each time, capped at 15 minutes. A permanent failure is not retried until the user retries it.
+  - Interim: Discard (move to Conflicts) and the auth-required hold come with [conflict-resolution](conflict-resolution.md) and [account-management](account-management.md).
 - R8. Sync state per collection: Graph deltaLink(s) per window chunk; CalDAV sync-token and CTag.
 - R9. Items pending upload are visibly marked (e.g. a small sync glyph).
 - R9a. Pending changes list: clicking the "n changes waiting" status ([ui-states](ui-states.md) R3) opens a list of outbox entries showing the item, the operation, and its state (waiting, or failed with the reason), with Retry and Discard on failed entries.
+  - R9 and R9a are built with [calendar-views](calendar-views.md) and [ui-states](ui-states.md); the store side (GetOutbox, RetryOutboxEntry) is in place.
 - R10. Sync scheduling: every 5 minutes; immediately after a local change; on app focus; on network reconnect; plus a manual "Sync now" button (UI toolbar and tray).
+  - One sync runs at a time; a request during a run causes exactly one more run afterwards.
+  - Interim (until the sync engines exist): a sync only writes to the log.
 
 ## Out of scope
 

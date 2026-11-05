@@ -82,6 +82,25 @@ internal static class Migrations
             PRIMARY KEY (collection_id, key)
         );
         """,
+
+        // v2: occurrence index (R3), outbox backoff (R7), store-wide values.
+        """
+        CREATE TABLE occurrences (
+            item_id   TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+            start_utc INTEGER NOT NULL,
+            end_utc   INTEGER NOT NULL
+        );
+        CREATE INDEX ix_occurrences_start ON occurrences(start_utc);
+        CREATE INDEX ix_occurrences_item ON occurrences(item_id);
+
+        ALTER TABLE outbox ADD COLUMN next_attempt_at INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE outbox ADD COLUMN permanent INTEGER NOT NULL DEFAULT 0;
+
+        CREATE TABLE meta (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

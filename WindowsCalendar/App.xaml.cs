@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading;
+using System.Threading.Tasks;
 using H.NotifyIcon;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -18,7 +20,9 @@ using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
+using Windows.Networking.Connectivity;
 using WindowsCalendar.Core.Store;
+using WindowsCalendar.Core.Sync;
 using AppInstance = Microsoft.Windows.AppLifecycle.AppInstance;
 
 // To learn more about WinUI, the WinUI project structure,
@@ -32,6 +36,8 @@ public partial class App : Application
 {
     private MainWindow? _window;
     private TaskbarIcon? _trayIcon;
+    private SyncScheduler? _scheduler;
+    private bool _online;
 
     /// <summary>Kept alive for ColorValuesChanged (tray icon theme swap).</summary>
     private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
@@ -102,6 +108,7 @@ public partial class App : Application
     {
         _window = new MainWindow();
         _trayIcon = CreateTrayIcon();
+        StartSyncScheduling();
 
         // A second launch is redirected here by Program.Main (app-platform R4).
         AppInstance.GetCurrent().Activated += (_, _) => _window.DispatcherQueue.TryEnqueue(ShowMainWindow);
@@ -117,18 +124,77 @@ public partial class App : Application
     }
 
     /// <summary>
+    /// Sync triggers (local-store-offline R6, R10): every 5 minutes, local changes, window focus, network back
+    /// and Sync now. Interim: a run only refreshes the occurrence index and logs, until the sync engines exist.
+    /// </summary>
+    private void StartSyncScheduling()
+    {
+        _scheduler = new SyncScheduler(RunSync, ex => Log.Error(ex, "Sync run failed"));
+
+        if (Store is not null)
+        {
+            Store.LocalChanged += () => _scheduler.Request("local change");
+        }
+
+        _window!.Activated += (_, e) =>
+        {
+            if (e.WindowActivationState != WindowActivationState.Deactivated)
+            {
+                _scheduler.Request("focus");
+            }
+        };
+
+        _online = IsOnline();
+        NetworkInformation.NetworkStatusChanged += _ =>
+        {
+            var online = IsOnline();
+            if (online && !_online)
+            {
+                _scheduler.Request("network back");
+            }
+            _online = online;
+        };
+    }
+
+    private static bool IsOnline() =>
+        NetworkInformation.GetInternetConnectionProfile()?.GetNetworkConnectivityLevel() == NetworkConnectivityLevel.InternetAccess;
+
+    private Task RunSync(string reason, CancellationToken cancellationToken)
+    {
+        Log.Information("Sync requested ({Reason})", reason);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Pick up a Windows timezone change, and move the window daily (local-store-offline R3, timezone-handling R6).
+        TimeZoneInfo.ClearCachedData();
+        if (Store?.RefreshOccurrences() == true)
+        {
+            Log.Information("Occurrence index rebuilt for {Zone}", TimeZoneInfo.Local.Id);
+        }
+        return Task.CompletedTask;
+    }
+
+    /// <summary>Tray and toolbar Sync now: retry failed changes immediately (local-store-offline R7, R10).</summary>
+    private void SyncNow()
+    {
+        Store?.ResetBackoff();
+        _scheduler?.Request("sync now");
+    }
+
+    /// <summary>
     /// Tray icon and menu (app-platform R5). Left-click opens the main window until the tray flyout exists.
     /// </summary>
     private TaskbarIcon CreateTrayIcon()
     {
         var open = new XamlUICommand();
         open.ExecuteRequested += (_, _) => ShowMainWindow();
+        var syncNow = new XamlUICommand();
+        syncNow.ExecuteRequested += (_, _) => SyncNow();
         var quit = new XamlUICommand();
         quit.ExecuteRequested += (_, _) => Quit();
 
         var menu = new MenuFlyout();
         menu.Items.Add(new MenuFlyoutItem { Text = "Open", Command = open });
-        menu.Items.Add(new MenuFlyoutItem { Text = "Sync now", IsEnabled = false });
+        menu.Items.Add(new MenuFlyoutItem { Text = "Sync now", Command = syncNow });
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(new MenuFlyoutItem { Text = "Quit", Command = quit });
 
@@ -173,6 +239,7 @@ public partial class App : Application
     private void Quit()
     {
         Log.Information("App quit");
+        _scheduler?.Dispose();
         Store?.Dispose();
         Log.CloseAndFlush();
         _trayIcon?.Dispose();

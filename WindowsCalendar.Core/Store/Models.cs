@@ -57,4 +57,9 @@ public sealed record OutboxEntry(
     int Attempts,
     string? LastError,
     string? GroupId,
-    bool InFlight);
+    bool InFlight,
+    DateTimeOffset NextAttemptAt,
+    bool Permanent);
+
+/// <summary>One expanded instance of an item in the occurrence index (local-store-offline R3).</summary>
+public sealed record ItemOccurrence(string ItemId, DateTimeOffset StartUtc, DateTimeOffset EndUtc);
