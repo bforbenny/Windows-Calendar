@@ -1,0 +1,45 @@
+{
+  "files.encoding": "utf8",
+  "files.eol": "auto",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "files.associations": {
+    "*.xaml": "xml",
+    "*.appxmanifest": "xml",
+    "*.resw": "xml"
+  },
+  "files.exclude": {
+    "**/bin": true,
+    "**/obj": true,
+    "**/.vs": true
+  },
+  "search.exclude": {
+    "**/AppPackages": true,
+    "**/BundleArtifacts": true,
+    "**/TestResults": true
+  },
+
+  "editor.formatOnSave": true,
+  "editor.rulers": [120],
+
+  "[csharp]": {
+    "editor.defaultFormatter": "ms-dotnettools.csharp",
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  },
+  "[xml]": {
+    "editor.defaultFormatter": "redhat.vscode-xml"
+  },
+  "[markdown]": {
+    "files.trimTrailingWhitespace": false,
+    "editor.formatOnSave": false
+  },
+
+  "dotnet.formatting.organizeImportsOnFormat": true,
+
+  "markdownlint.config": {
+    "MD013": false,
+    "MD033": false
+  }
+}

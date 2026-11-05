@@ -1,0 +1,51 @@
+name: Bug report
+description: Something does not work as described in a PRD
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste credentials, tokens, Authorization headers or private calendar data. Redact logs before attaching.
+        For security issues, use private vulnerability reporting instead (see SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: account
+    attributes:
+      label: Account type
+      multiple: true
+      options:
+        - Microsoft 365
+        - Radicale (CalDAV)
+        - Not account-related
+  - type: input
+    id: prd
+    attributes:
+      label: Related PRD
+      placeholder: e.g. docs/prd/recurring-events.md R4
+  - type: input
+    id: version
+    attributes:
+      label: App version and Windows build
+      placeholder: e.g. 0.3.1 on Windows 11 24H2 (26100.1234)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Redacted log excerpt
+      render: text
