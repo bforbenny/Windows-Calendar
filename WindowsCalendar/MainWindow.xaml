@@ -42,8 +42,37 @@
             </Grid>
 
             <Grid x:Name="ContentArea" Grid.Column="1" Background="{ThemeResource SurfaceBaseBrush}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Toolbar (calendar-views R1, R1a: no Previous/Next; views scroll). Interim: no quick add or sync status yet. -->
+                <Grid x:Name="Toolbar" Padding="12,8" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button Content="Today" Click="OnToday" VerticalAlignment="Center" />
+                    <TextBlock x:Name="PeriodTitle" Grid.Column="1" Style="{StaticResource SubtitleTextBlockStyle}"
+                               VerticalAlignment="Center" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" />
+                    <SelectorBar x:Name="ViewSwitcher" Grid.Column="2" SelectionChanged="OnViewChanged">
+                        <SelectorBarItem Text="Week" Tag="Week" IsSelected="True" />
+                        <SelectorBarItem Text="Month" Tag="Month" />
+                        <SelectorBarItem Text="Agenda" Tag="Agenda" />
+                    </SelectorBar>
+                    <Button Grid.Column="3" Click="OnSyncNow" VerticalAlignment="Center"
+                            ToolTipService.ToolTip="Sync now" AutomationProperties.Name="Sync now">
+                        <FontIcon Glyph="&#xE895;" />
+                    </Button>
+                </Grid>
+
+                <Grid x:Name="ViewHost" Grid.Row="1" />
+
                 <!-- First launch, no accounts (ui-states R5). -->
-                <StackPanel x:Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
+                <StackPanel x:Name="EmptyPanel" Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
                             Visibility="Collapsed">
                     <TextBlock Text="Add an account to get started" Style="{StaticResource SubtitleTextBlockStyle}"
                                HorizontalAlignment="Center" />

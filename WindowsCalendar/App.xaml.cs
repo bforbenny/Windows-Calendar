@@ -183,7 +183,8 @@ public partial class App : Application
 
         // Pick up a Windows timezone change, and move the window daily (local-store-offline R3, timezone-handling R6).
         TimeZoneInfo.ClearCachedData();
-        if (store.RefreshOccurrences())
+        var changed = store.RefreshOccurrences();
+        if (changed)
         {
             Log.Information("Occurrence index rebuilt for {Zone}", TimeZoneInfo.Local.Id);
         }
@@ -209,6 +210,7 @@ public partial class App : Application
             {
                 var summary = await radicale.SyncAccountAsync(account, password, cancellationToken);
                 Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
+                changed |= summary.Fetched + summary.Removed > 0;
             }
             catch (CalDavException ex) when (ex.Error == CalDavError.WrongCredentials)
             {
@@ -225,13 +227,18 @@ public partial class App : Application
                 password = null;
             }
         }
+
+        if (changed && _window is { } window)
+        {
+            window.DispatcherQueue.TryEnqueue(window.RefreshView);
+        }
     }
 
     /// <summary>Asks for a sync now, e.g. after an account is added (local-store-offline R10).</summary>
     internal void RequestSync(string reason) => _scheduler?.Request(reason);
 
     /// <summary>Tray and toolbar Sync now: retry failed changes immediately (local-store-offline R7, R10).</summary>
-    private void SyncNow()
+    internal void SyncNow()
     {
         Store?.ResetBackoff();
         _scheduler?.Request("sync now");

@@ -15,8 +15,8 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [sync-radicale](docs/prd/sync-radicale.md) | CalDAV sync for events and tasks | in-progress |
 | [conflict-resolution](docs/prd/conflict-resolution.md) | Server wins, local copy preserved | pending |
 | [recurring-events](docs/prd/recurring-events.md) | Recurrence model and edit scopes incl. "this and following" | pending |
-| [calendar-views](docs/prd/calendar-views.md) | Day/Week/Month views, calendar colours, drag to move/resize | pending |
-| [agenda-view](docs/prd/agenda-view.md) | Agenda/list view grouped by day | pending |
+| [calendar-views](docs/prd/calendar-views.md) | Week/Month views with natural scrolling, calendar colours, drag to move/resize | in-progress |
+| [agenda-view](docs/prd/agenda-view.md) | Agenda: day columns of lists, free scrolling | in-progress |
 | [attendees-invitations](docs/prd/attendees-invitations.md) | Read-only attendees, needs-response marker, Open in Outlook, organiser guards | pending |
 | [event-show-as](docs/prd/event-show-as.md) | Busy / Free / Tentative / Out of office | pending |
 | [online-meeting-join](docs/prd/online-meeting-join.md) | Join button for Teams/Zoom/Meet/Webex links | pending |
@@ -25,7 +25,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [undo](docs/prd/undo.md) | Undo recent changes | pending |
 | [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | pending |
 | [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | pending |
-| [calendar-shading](docs/prd/calendar-shading.md) | Working hours, public holidays, week numbers | pending |
+| [calendar-shading](docs/prd/calendar-shading.md) | Working hours, public holidays, week numbers | in-progress |
 | [app-updates](docs/prd/app-updates.md) | MSIX updates via App Installer, data across versions, new-PC install | pending |
 | [tray-flyout](docs/prd/tray-flyout.md) | Tray pop-up with today's agenda and Join | pending |
 | [ui-colour-theme](docs/prd/ui-colour-theme.md) | Palette, colour roles, calendar colours and shape markers | pending |

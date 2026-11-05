@@ -30,8 +30,8 @@ The app is used on two displays: an external 1920×1080 monitor at 100% scaling 
   - while running, if a display is removed (e.g. undocking), Windows moves the window; if it then extends past the work area, it is resized to fit.
 - R4. Responsive sidebar: at window width ≥ 1200 epx the sidebar is expanded (about 260 epx); below 1200 epx it collapses to an icon rail, and can be opened as an overlay. Crossing 1200 epx with the editor open switches it between push and overlay ([calendar-views](calendar-views.md) R6c) without losing focus or an unsaved field value.
 - R5. Day/Week time grid:
-  - hour height 64 epx (shows about 7–8 hours at 1504×1003 maximised); with the 24 epx text threshold ([calendar-views](calendar-views.md) R4a), events of 22.5 minutes or longer show text and 15-minute events show as a bar only;
-  - on open, the grid scrolls so that the start of working hours ([calendar-shading](calendar-shading.md) R1) is at the top.
+  - hour height 64 epx (shows about 7–8 hours at 1504×1003 maximised); with the text thresholds of [calendar-views](calendar-views.md) R4a, a 15-minute event shows its title and events of 22.5 minutes or longer also show the time;
+  - on open, on switching to Week, and on Today, the grid scrolls to one hour before the current time.
 - R6. Month view: each cell shows as many event chips as fit, then "+n more". At 1504×1003 at least 3 chips per cell are visible.
 - R7. Crisp rendering at 150%: layout rounding stays on (WinUI default), dividers are 1 epx, icons come from the Segoe Fluent Icons font, and shape markers ([ui-colour-theme](ui-colour-theme.md) R7) are vector-drawn. No bitmap icons in the UI.
 - R8. Text uses the Fluent type ramp (Body 14 epx, Caption 12 epx; nothing smaller than 12 epx). Windows "Text size" (Accessibility) is honoured: text grows without clipping; event cards truncate with an ellipsis and show the full title in a tooltip.

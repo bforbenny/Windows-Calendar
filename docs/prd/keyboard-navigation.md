@@ -18,9 +18,9 @@ Every action in the app can be done from the keyboard, including the drag operat
 
   | Key | Action |
   | --- | --- |
-  | D / W / M / A / K | Day / Week / Month / Agenda / Tasks view |
+  | W / M / A / K | Week / Month / Agenda / Tasks view |
   | T | Go to today |
-  | PgUp / PgDn | Previous / next period |
+  | PgUp / PgDn | Scroll back / forward one screen ([calendar-views](calendar-views.md) R1a) |
   | G | Go to date (date picker / typed date) |
   | Arrows | Move selection between events (Up/Down within a day, Left/Right across days) |
   | Enter | Open selected item in the editor panel |
@@ -52,7 +52,7 @@ Every action in the app can be done from the keyboard, including the drag operat
 
 - [ ] Create, open, move, resize, duplicate, delete and undo an event without touching the mouse.
 - [ ] Every shortcut in R2 works and appears in the cheat sheet.
-- [ ] Typing "d" in the title field does not switch to Day view.
+- [ ] Typing "w" in the title field does not switch to Week view.
 
 ## Dependencies
 

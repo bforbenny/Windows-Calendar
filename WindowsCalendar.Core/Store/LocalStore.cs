@@ -197,6 +197,7 @@ public sealed class LocalStore : IDisposable
                 """
                 DELETE FROM outbox WHERE item_id IN (
                     SELECT i.id FROM items i JOIN collections c ON c.id = i.collection_id WHERE c.account_id = $a);
+                DELETE FROM meta WHERE key IN (SELECT 'hidden:' || id FROM collections WHERE account_id = $a);
                 DELETE FROM accounts WHERE id = $a;
                 """,
                 ("$a", accountId));
@@ -308,6 +309,66 @@ public sealed class LocalStore : IDisposable
                 list.Add(new ItemOccurrence(r.GetString(0), Time(r, 1), Time(r, 2)));
             }
             return list;
+        }
+    }
+
+    /// <summary>
+    /// Occurrences overlapping [from, to) in collections that are not hidden, with the fields the views draw,
+    /// ordered by start (calendar-views R12: one query per render).
+    /// </summary>
+    public IReadOnlyList<OccurrenceView> GetOccurrenceViews(DateTimeOffset from, DateTimeOffset to)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
+                """
+                SELECT o.item_id, i.collection_id, i.kind, i.summary, i.location, o.start_utc, o.end_utc, i.all_day
+                FROM occurrences o JOIN items i ON i.id = o.item_id
+                WHERE i.deleted = 0 AND o.start_utc < $to AND o.end_utc >= $from
+                  AND NOT EXISTS (SELECT 1 FROM meta WHERE key = 'hidden:' || i.collection_id)
+                ORDER BY o.start_utc, o.item_id;
+                """,
+                ("$from", from.ToUnixTimeMilliseconds()), ("$to", to.ToUnixTimeMilliseconds()));
+            using var r = cmd.ExecuteReader();
+            var list = new List<OccurrenceView>();
+            while (r.Read())
+            {
+                list.Add(new OccurrenceView(r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)),
+                    NullableString(r, 3), NullableString(r, 4), Time(r, 5), Time(r, 6), r.GetBoolean(7)));
+            }
+            return list;
+        }
+    }
+
+    // ---- Collection visibility (calendar-views R2; interim until calendar-sets) ----
+
+    public IReadOnlySet<string> GetHiddenCollectionIds()
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null, "SELECT substr(key, 8) FROM meta WHERE key LIKE 'hidden:%';");
+            using var r = cmd.ExecuteReader();
+            var ids = new HashSet<string>();
+            while (r.Read())
+            {
+                ids.Add(r.GetString(0));
+            }
+            return ids;
+        }
+    }
+
+    public void SetCollectionHidden(string collectionId, bool hidden)
+    {
+        lock (_gate)
+        {
+            if (hidden)
+            {
+                SetMeta(null, "hidden:" + collectionId, "1");
+            }
+            else
+            {
+                Execute(_connection, null, "DELETE FROM meta WHERE key = $key;", ("$key", "hidden:" + collectionId));
+            }
         }
     }
 

@@ -2,7 +2,7 @@
 description: Working-hours shading, public-holiday shading from designated holiday calendars, and week numbers
 when-to-use: Before working on background shading of time grids/day cells, holiday display, or week numbers
 tags: [ui, views, working-hours, holidays, week-numbers]
-status: pending
+status: in-progress
 ---
 
 # Working hours, public holidays and week numbers
@@ -22,7 +22,11 @@ The views shade non-working hours and public holidays and can show week numbers.
 - R5. Holiday calendars get a "Show as shading only" option (default on): their events are not drawn as event blocks, only as shading and header labels. Turning it off shows them as normal all-day events too.
 - R6. Holiday shading follows the calendar's visibility and the active calendar set.
 - R7. Week numbers: toggle in settings (default off). Shown in the Month view's left column, the Day/Week header ("Wk 45") and the mini month. Numbering follows ISO 8601.
-- R8. Shading colours use the tokens in [ui-colour-theme](ui-colour-theme.md) R3: non-working = Grey 10 (light) / Night 90 (dark); holiday = Amber 10 / Amber 90, so holidays differ from non-working time by hue as well as lightness. Primary and secondary text keep WCAG AA contrast on every shading.
+- R8. Shading colours use the tokens in [ui-colour-theme](ui-colour-theme.md) R3: non-working = a light pink (Pink 5 light / Night 100 tinted with Pink 90 dark); holiday = Amber 10 / Amber 90, so holidays differ from non-working time by hue as well as lightness. Primary and secondary text keep WCAG AA contrast on every shading.
+
+## Interim (current build)
+
+- Working hours are not configurable yet: Saturday and Sunday are the non-working days, shaded with Shade.NonWorking over the whole day in Week, Month and Agenda. Non-working hours on weekdays, holidays (R3-R6) and week numbers (R7) come later.
 
 ## Out of scope
 

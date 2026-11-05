@@ -11,15 +11,39 @@
                 <!-- Other merged dictionaries here -->
             </ResourceDictionary.MergedDictionaries>
             <ResourceDictionary.ThemeDictionaries>
-                <!-- Surface.Base (ui-colour-theme R3). -->
+                <!-- Colour roles (ui-colour-theme R3). -->
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="SurfaceBaseBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="DividerBrush" Color="#D2D4D9" />
+                    <SolidColorBrush x:Key="ShadeTodayBrush" Color="#F4F7FE" />
+                    <SolidColorBrush x:Key="ShadeNonWorkingBrush" Color="#FBF6F8" />
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#16181A" />
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#4E535C" />
+                    <SolidColorBrush x:Key="TodayChipBrush" Color="#155CEE" />
+                    <SolidColorBrush x:Key="TodayChipTextBrush" Color="#FFFFFF" />
+                    <SolidColorBrush x:Key="NowLineBrush" Color="#CD1E1E" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="SurfaceBaseBrush" Color="#121824" />
+                    <SolidColorBrush x:Key="DividerBrush" Color="#2E3F61" />
+                    <SolidColorBrush x:Key="ShadeTodayBrush" Color="#0F1E3C" />
+                    <SolidColorBrush x:Key="ShadeNonWorkingBrush" Color="#201928" />
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#EBEFF5" />
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A8B7D5" />
+                    <SolidColorBrush x:Key="TodayChipBrush" Color="#6E9BF4" />
+                    <SolidColorBrush x:Key="TodayChipTextBrush" Color="#121824" />
+                    <SolidColorBrush x:Key="NowLineBrush" Color="#EC7A7A" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
                     <SolidColorBrush x:Key="SurfaceBaseBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="DividerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="ShadeTodayBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="ShadeNonWorkingBrush" Color="{ThemeResource SystemColorWindowColor}" />
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
+                    <SolidColorBrush x:Key="TodayChipBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+                    <SolidColorBrush x:Key="TodayChipTextBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+                    <SolidColorBrush x:Key="NowLineBrush" Color="{ThemeResource SystemColorHighlightColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
             <!-- Other app resources here -->

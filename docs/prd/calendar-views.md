@@ -1,22 +1,27 @@
 ---
-description: Day, Week, Month (and Agenda) calendar views with navigation, calendar colours, event create/edit, and drag to move/resize
+description: Week, Month (and Agenda) calendar views with navigation, calendar colours, event create/edit, and drag to move/resize
 when-to-use: Before working on calendar UI, view rendering, or the event editor
 tags: [ui, views, events, drag-drop]
-status: pending
+status: in-progress
 ---
 
 # Calendar views
 
 ## Summary
 
-The main UI provides Day, Week and Month views of all visible calendars across accounts. Events are colour-coded by calendar. Events can be created, opened, edited, moved and resized directly in the views.
+The main UI provides Week and Month views (plus Agenda) of all visible calendars across accounts. Events are colour-coded by calendar. Events can be created, opened, edited, moved and resized directly in the views.
 
 ## Requirements
 
-- R1. Views: Day, Week (configurable first day of week, default from Windows locale), Month, Agenda (see [agenda-view](agenda-view.md)) and Tasks (see [tasks](tasks.md)). Toolbar with Today, Previous/Next, view switcher, quick add, Sync now, and sync status.
+- R1. Views: Week (configurable first day of week, default from Windows locale), Month, Agenda (see [agenda-view](agenda-view.md)) and Tasks (see [tasks](tasks.md)). There is no Day view; where other PRDs say "Day/Week", read "Week". Toolbar with Today, view switcher, period title, quick add, Sync now, and sync status.
+- R1a. Natural scrolling, no Previous/Next: views scroll freely across the local store's occurrence window (-3 / +12 months, [local-store-offline](local-store-offline.md) R3).
+  - Week: seven day columns fill the width; scrolls horizontally through days and vertically through hours. Day headers and the all-day lane follow the horizontal scroll; hour labels follow the vertical scroll. Opens on the current week.
+  - Month: about five weeks fill the height; scrolls vertically through weeks. Opens on the current week.
+  - The period title shows the month at the scroll position. Today scrolls back to today. Only the days near the viewport are built.
+  - In Month, "+n more" opens Agenda with that day as the first column.
 - R2. A sidebar contains:
   - the calendar set selector ([calendar-sets](calendar-sets.md));
-  - accounts → calendars and task lists, each with a visibility checkbox and colour swatch; the checkbox is the only per-calendar visibility control and works as an override of the active set ([calendar-sets](calendar-sets.md) R5);
+  - two sections, Calendars and Task lists, each grouped by account; every calendar and task list has a visibility checkbox and colour swatch (its shape marker); the checkbox is the only per-calendar visibility control and works as an override of the active set ([calendar-sets](calendar-sets.md) R5);
   - a mini month navigator.
 - R2a. Calendar colours and shapes, per [ui-colour-theme](ui-colour-theme.md) R6–R9:
   - each calendar or task list has one of 24 colours (8 hues × 3 levels) and a shape marker (up triangle, down triangle, square, circle, pentagon), shown by default;
@@ -26,7 +31,7 @@ The main UI provides Day, Week and Month views of all visible calendars across a
   - event cards use the fill, bar and text steps defined in [ui-colour-theme](ui-colour-theme.md), which meet WCAG AA in both themes.
 - R3. All-day / multi-day events are shown in an all-day lane in Day/Week, and as bars in Month.
 - R4. Overlapping events in Day/Week are laid out side by side.
-- R4a. Short events in Day/Week are drawn at their true height. Below 24 epx tall they show only the coloured bar and fill, with no text; the title and time appear in a tooltip on hover or keyboard focus, and the event's accessible name is always set for screen readers.
+- R4a. Short events in Day/Week are drawn at their true height. Below 24 epx tall they show one line with the title only; below 12 epx (under about 11 minutes) only the coloured bar and fill. From 24 epx the time follows the title on one line; from 44 epx the time and location go on a second line. The full title and time appear in a tooltip on hover or keyboard focus, and the event's accessible name is always set for screen readers.
 - R5. Create: click or drag on an empty slot → quick-create popup with the typed quick-add box ([quick-add](quick-add.md)) and calendar → "More details" opens the full editor. Date and time typed in the box override the clicked or dragged slot.
 - R6. Full event editor fields: title, start/end, all-day, timezone (see [timezone-handling](timezone-handling.md)), location (see [event-location](event-location.md)), description (plain text; read-only when the Graph body is HTML, with the note "Formatted description. Edit in Outlook." and Open in Outlook, so formatting and Teams join blocks are never overwritten), calendar, reminder (one on MS365; one or more on Radicale; "None" allowed), attendees (read-only, [attendees-invitations](attendees-invitations.md) R1), recurrence (see [recurring-events](recurring-events.md)), show-as (see [event-show-as](event-show-as.md)). A Join button is shown when the event has a meeting link ([online-meeting-join](online-meeting-join.md)).
 - R6b. Opening events:
@@ -51,6 +56,14 @@ The main UI provides Day, Week and Month views of all visible calendars across a
 - R10. Delete: single events/occurrences are deleted immediately with an undo banner; whole-series deletes ask for confirmation; recurring deletes ask for the scope (see [undo](undo.md) R7). Meetings with attendees ask first ([attendees-invitations](attendees-invitations.md) R7–R8).
 - R11. Keyboard: full keyboard operation per [keyboard-navigation](keyboard-navigation.md).
 - R12. Performance: switching views or periods renders in < 200 ms from the local store, for up to 2,000 occurrences in the window.
+
+## Interim (first slice: read-only views)
+
+- Week, Month and Agenda with the toolbar (Today, view switcher, period title, Sync now). No editor, create, drag or delete yet.
+- The week starts on the Windows first day of week.
+- Sidebar: checkbox, swatch and shape per calendar and task list. Hidden collections are remembered in the store's `meta` table until [calendar-sets](calendar-sets.md) takes over.
+- Colours: automatic assignment only; server colour snapping, overrides and tasks in the views come later.
+- Layout maths (overlap columns, periods) lives in `WindowsCalendar.Core` with tests; render time is logged for R12.
 
 ## Out of scope
 

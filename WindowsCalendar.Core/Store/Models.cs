@@ -76,5 +76,16 @@ public sealed record OutboxEntry(
 /// </summary>
 public sealed record DiscoveredCollection(string RemoteRef, string Name, CollectionKind Kind, bool ReadOnly, bool IsDefault = false);
 
+/// <summary>An occurrence with what the views need to draw it (calendar-views).</summary>
+public sealed record OccurrenceView(
+    string ItemId,
+    string CollectionId,
+    ItemKind Kind,
+    string? Summary,
+    string? Location,
+    DateTimeOffset StartUtc,
+    DateTimeOffset EndUtc,
+    bool AllDay);
+
 /// <summary>One expanded instance of an item in the occurrence index (local-store-offline R3).</summary>
 public sealed record ItemOccurrence(string ItemId, DateTimeOffset StartUtc, DateTimeOffset EndUtc);

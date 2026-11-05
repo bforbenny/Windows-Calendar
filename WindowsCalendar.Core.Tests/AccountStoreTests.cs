@@ -99,4 +99,23 @@ public sealed class AccountStoreTests : IDisposable
 
         Assert.Equal(a1[0].Id, _store.DefaultCalendarId);
     }
+
+    [Fact]
+    public void HiddenCollection_IsLeftOutOfViewsAndRemembered()
+    {
+        var added = _store.AddDiscoveredAccount(Radicale("a1"), [Cal("personal"), Cal("work")]);
+        var start = DateTimeOffset.UtcNow.Date.AddHours(9);
+        _store.CreateItem(new Item("i1", added[0].Id, ItemKind.Event, null, "x", Summary: "Mine", StartUtc: start, EndUtc: start.AddHours(1)));
+        _store.CreateItem(new Item("i2", added[1].Id, ItemKind.Event, null, "y", Summary: "Work", StartUtc: start, EndUtc: start.AddHours(1)));
+
+        _store.SetCollectionHidden(added[1].Id, true);
+
+        var view = Assert.Single(_store.GetOccurrenceViews(start.AddDays(-1), start.AddDays(1)));
+        Assert.Equal(("i1", added[0].Id, "Mine"), (view.ItemId, view.CollectionId, view.Summary));
+        Assert.Equal([added[1].Id], _store.GetHiddenCollectionIds());
+
+        _store.SetCollectionHidden(added[1].Id, false);
+        Assert.Equal(2, _store.GetOccurrenceViews(start.AddDays(-1), start.AddDays(1)).Count);
+        Assert.Empty(_store.GetHiddenCollectionIds());
+    }
 }
