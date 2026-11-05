@@ -18,6 +18,7 @@ using Windows.ApplicationModel;
 using Windows.ApplicationModel.Activation;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
+using WindowsCalendar.Core.Store;
 using AppInstance = Microsoft.Windows.AppLifecycle.AppInstance;
 
 // To learn more about WinUI, the WinUI project structure,
@@ -35,6 +36,9 @@ public partial class App : Application
     /// <summary>Kept alive for ColorValuesChanged (tray icon theme swap).</summary>
     private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
 
+    /// <summary>The local store; null if it could not be opened (local-store-offline R1).</summary>
+    internal LocalStore? Store { get; private set; }
+
     /// <summary>
     /// Initializes the singleton application object.  This is the first line of authored code
     /// executed, and as such is the logical equivalent of main() or WinMain().
@@ -43,6 +47,29 @@ public partial class App : Application
     {
         InitializeComponent();
         InitializeLogging();
+        OpenStore();
+    }
+
+    /// <summary>
+    /// Opens LocalState\store.db and runs migrations (local-store-offline R1).
+    /// Interim: failures are only logged; the on-screen message comes with ui-states.
+    /// </summary>
+    private void OpenStore()
+    {
+        var path = System.IO.Path.Combine(Windows.Storage.ApplicationData.Current.LocalFolder.Path, "store.db");
+        try
+        {
+            Store = LocalStore.Open(path);
+            Log.Information("Local store opened");
+        }
+        catch (StoreTooNewException ex)
+        {
+            Log.Error("Local store not opened: schema {StoreVersion} is newer than supported {SupportedVersion}", ex.StoreVersion, ex.SupportedVersion);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Local store could not be opened");
+        }
     }
 
     /// <summary>
@@ -146,6 +173,7 @@ public partial class App : Application
     private void Quit()
     {
         Log.Information("App quit");
+        Store?.Dispose();
         Log.CloseAndFlush();
         _trayIcon?.Dispose();
         _window?.CloseForQuit();
