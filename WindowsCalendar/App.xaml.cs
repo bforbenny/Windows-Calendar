@@ -32,6 +32,9 @@ public partial class App : Application
     private MainWindow? _window;
     private TaskbarIcon? _trayIcon;
 
+    /// <summary>Kept alive for ColorValuesChanged (tray icon theme swap).</summary>
+    private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
+
     /// <summary>
     /// Initializes the singleton application object.  This is the first line of authored code
     /// executed, and as such is the logical equivalent of main() or WinMain().
@@ -106,14 +109,36 @@ public partial class App : Application
         {
             ToolTipText = "WindowsCalendar",
             // A .ico via Icon, not IconSource: H.NotifyIcon's BitmapImage conversion crashes on Windows App SDK 2.6.
-            Icon = new System.Drawing.Icon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "TrayIcon.ico")),
+            Icon = LoadTrayIcon(),
             ContextMenuMode = ContextMenuMode.PopupMenu,
             ContextFlyout = menu,
             LeftClickCommand = open,
             NoLeftClickDelay = true,
         };
         icon.ForceCreate(false);
+
+        // Swap the tray icon live when the Windows mode changes (app-platform R10).
+        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
+        _uiSettings.ColorValuesChanged += (_, _) => dispatcher.TryEnqueue(() =>
+        {
+            if (_trayIcon is null) return;
+            var old = _trayIcon.Icon;
+            _trayIcon.Icon = LoadTrayIcon();
+            old?.Dispose();
+        });
         return icon;
+    }
+
+    /// <summary>
+    /// Dark glyph on a light taskbar, white glyph on a dark one (app-platform R10).
+    /// The taskbar follows the Windows mode (SystemUsesLightTheme), not the app mode.
+    /// </summary>
+    private static System.Drawing.Icon LoadTrayIcon()
+    {
+        using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+        var lightTaskbar = key?.GetValue("SystemUsesLightTheme") is int v && v != 0;
+        var file = lightTaskbar ? "TrayIconLight.ico" : "TrayIconDark.ico";
+        return new System.Drawing.Icon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", file));
     }
 
     private void ShowMainWindow() => _window?.ShowAndFocus();

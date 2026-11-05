@@ -32,6 +32,9 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
 
+        // WinUI 3 does not use the package logo for the window; Alt-Tab needs this (app-platform R10).
+        AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
+
         // Closing hides to the tray; only Quit really closes (app-platform R5).
         AppWindow.Closing += (sender, args) =>
         {
