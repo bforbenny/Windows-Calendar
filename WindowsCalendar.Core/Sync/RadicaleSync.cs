@@ -1,15 +1,24 @@
+using System.Net;
 using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar.Core.Sync;
 
 /// <summary>What one account sync did; logged by the app (no URLs, names or credentials).</summary>
-public sealed record SyncSummary(int Collections, int Unchanged, int FullResyncs, int Fetched, int Removed, int KeptLocal, int Unreadable);
+public sealed record SyncSummary(
+    int Collections, int Unchanged, int FullResyncs, int Fetched, int Removed, int KeptLocal, int Unreadable,
+    int Sent = 0, int Conflicts = 0, int Failed = 0, int CalendarListChanges = 0, int FeedItems = 0, int FeedFailures = 0)
+{
+    /// <summary>Whether anything the views show may have changed.</summary>
+    public bool AnyChange => Fetched + Removed + Sent + Conflicts + CalendarListChanges + FeedItems > 0;
+}
 
 /// <summary>
-/// Pull-only Radicale sync (sync-radicale R1-R4, R9; interim: no writes). For each distinct collection URL:
-/// quick-check the sync-token, run sync-collection from the stored token (from scratch if the server rejects it),
-/// fetch changed resources in batches of 100, and apply them to the store.
+/// Two-way Radicale sync (sync-radicale R1-R4, R6-R9). First the account's queued local changes are sent
+/// (PUT / DELETE with etag preconditions); then, for each distinct collection URL, the sync-token is quick-checked,
+/// sync-collection runs from the stored token (from scratch if the server rejects it), changed resources are fetched
+/// in batches of 100 and applied to the store. A 412 or a server change to an item with unsent changes makes the
+/// server version win, with the local version kept in Conflicts (conflict-resolution R1-R4).
 /// </summary>
 /// <param name="http">A client that does not follow redirects itself (see <see cref="DavTransport"/>).</param>
 public sealed class RadicaleSync(LocalStore store, HttpClient http, TimeProvider? time = null)
@@ -20,19 +29,145 @@ public sealed class RadicaleSync(LocalStore store, HttpClient http, TimeProvider
     private readonly TimeProvider _time = time ?? TimeProvider.System;
 
     /// <summary>
-    /// Syncs one account. Throws <see cref="CalDavException"/> on transport errors (e.g. WrongCredentials);
-    /// collections done before the error keep their progress.
+    /// Syncs one account: re-reads its collection list (account-management R11), sends queued changes, pulls each
+    /// CalDAV collection, then refreshes subscribed feeds (hourly, or now when <paramref name="forceFeeds"/>).
+    /// Throws <see cref="CalDavException"/> on Radicale transport errors (e.g. WrongCredentials); work done before
+    /// the error keeps its progress. A failing feed is counted, not thrown.
     /// </summary>
-    public async Task<SyncSummary> SyncAccountAsync(Account account, string password, CancellationToken cancellationToken = default)
+    public async Task<SyncSummary> SyncAccountAsync(Account account, string password, bool forceFeeds = false,
+        CancellationToken cancellationToken = default)
     {
+        var listChanges = 0;
+        if (account.ServerUrl is { } server)
+        {
+            IReadOnlyList<DiscoveredCollection> found;
+            try
+            {
+                found = await new CalDavDiscovery(http).DiscoverAsync(new Uri(server), account.Username ?? "", password, cancellationToken);
+            }
+            catch (CalDavException ex) when (ex.Error == CalDavError.NoCalendars)
+            {
+                found = []; // Removes nothing (R11).
+            }
+            var changes = store.SyncCollections(account.Id, found);
+            listChanges = changes.Added + changes.Updated + changes.Removed;
+        }
+
         var client = new CalDavClient(http, account.Username ?? "", password);
-        var summary = new SyncSummary(0, 0, 0, 0, 0, 0, 0);
-        foreach (var group in store.GetCollections(account.Id).GroupBy(c => c.RemoteRef))
+        var all = store.GetCollections(account.Id);
+        var collections = all.Where(c => c.SourceUrl is null).ToList();
+        var summary = await PushAsync(client, collections, cancellationToken) with { CalendarListChanges = listChanges };
+        foreach (var group in collections.GroupBy(c => c.RemoteRef))
         {
             cancellationToken.ThrowIfCancellationRequested();
             summary = Add(summary, await SyncCollectionAsync(client, new Uri(group.Key), group.ToList(), cancellationToken));
         }
-        return summary;
+
+        // Feeds (sync-radicale R1a): fetched without the Radicale credentials.
+        var feeds = new FeedSync(store, http, _time);
+        int feedItems = 0, feedFailures = 0;
+        foreach (var feed in all.Where(c => c.SourceUrl is not null))
+        {
+            try
+            {
+                feedItems += await feeds.RefreshAsync(feed, forceFeeds, cancellationToken);
+            }
+            catch (CalDavException)
+            {
+                feedFailures++;
+            }
+        }
+        return summary with { FeedItems = feedItems, FeedFailures = feedFailures };
+    }
+
+    /// <summary>
+    /// Sends the due outbox entries of this account's collections, in replay order, until none are due (R6).
+    /// Each completed entry can make the next one for the same item or group due.
+    /// </summary>
+    private async Task<SyncSummary> PushAsync(CalDavClient client, IReadOnlyList<Collection> collections, CancellationToken cancellationToken)
+    {
+        var byId = collections.ToDictionary(c => c.Id);
+        int sent = 0, conflicts = 0, failed = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var next = store.GetDueOutbox()
+                .Select(e => (Entry: e, Item: store.GetItem(e.ItemId, includeDeleted: true)))
+                .FirstOrDefault(x => x.Item is { RemoteId: not null } && byId.ContainsKey(x.Item.CollectionId));
+            if (next.Item is not { RemoteId: { } href } item)
+            {
+                break;
+            }
+            var entry = next.Entry;
+            store.MarkInFlight(entry.Id);
+
+            HttpStatusCode status;
+            string? etag = null;
+            try
+            {
+                if (entry.Operation == OutboxOperation.Delete)
+                {
+                    status = await client.DeleteAsync(new Uri(href), entry.BaseEtag, cancellationToken);
+                }
+                else
+                {
+                    (status, etag) = await client.PutAsync(new Uri(href), entry.Payload!, entry.BaseEtag,
+                        create: entry.Operation == OutboxOperation.Create, cancellationToken);
+                }
+            }
+            catch (CalDavException ex)
+            {
+                // Unreachable, untrusted certificate or 401: try again later; the account stops here.
+                store.RecordOutboxFailure(entry.Id, ex.Error.ToString());
+                throw;
+            }
+
+            if ((int)status is >= 200 and < 300 || entry.Operation == OutboxOperation.Delete && status == HttpStatusCode.NotFound)
+            {
+                if (entry.Operation == OutboxOperation.Delete)
+                {
+                    store.CompleteOutboxEntry(entry.Id);
+                }
+                else
+                {
+                    store.CompleteOutboxWrite(entry.Id, etag);
+                }
+                sent++;
+            }
+            else if (status is HttpStatusCode.PreconditionFailed || status is HttpStatusCode.NotFound)
+            {
+                // The server changed (412) or removed (404) the item since the base version: the server wins,
+                // unless both sides deleted it.
+                var server = await FetchAsync(client, byId[item.CollectionId], href, cancellationToken);
+                if (server is null && entry.Operation == OutboxOperation.Delete)
+                {
+                    store.CompleteOutboxEntry(entry.Id);
+                    sent++;
+                }
+                else
+                {
+                    store.ResolveConflict(entry.Id, server);
+                    conflicts++;
+                }
+            }
+            else
+            {
+                // 5xx, 408 and 429 are retried with backoff; any other 4xx (incl. 409) waits for the user (local-store-offline R7).
+                var transient = (int)status >= 500 || status is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests;
+                store.RecordOutboxFailure(entry.Id, $"HTTP {(int)status}", permanent: !transient);
+                failed++;
+            }
+        }
+        return new SyncSummary(0, 0, 0, 0, 0, 0, 0, sent, conflicts, failed);
+    }
+
+    /// <summary>The server's current version of one resource, or null if it has none.</summary>
+    private async Task<Item?> FetchAsync(CalDavClient client, Collection collection, string href, CancellationToken cancellationToken)
+    {
+        var found = await client.MultigetAsync(new Uri(collection.RemoteRef), [href], cancellationToken);
+        return found.Count == 1 && CalDavItemMapper.Map(found[0].Href, found[0].Etag, found[0].Data, _time.LocalTimeZone) is { } item
+            ? item with { CollectionId = collection.Id }
+            : null;
     }
 
     private async Task<SyncSummary> SyncCollectionAsync(CalDavClient client, Uri url, IReadOnlyList<Collection> group,
@@ -65,7 +200,17 @@ public sealed class RadicaleSync(LocalStore store, HttpClient http, TimeProvider
             .Select(c => c.Href)
             .ToList();
 
-        int fetched = 0, kept = 0, unreadable = 0, removed = 0;
+        int fetched = 0, kept = 0, unreadable = 0, removed = 0, conflicts = 0;
+        void Count(ServerChangeResult result, ref int applied)
+        {
+            switch (result)
+            {
+                case ServerChangeResult.Applied: applied++; break;
+                case ServerChangeResult.Conflict: conflicts++; break;
+                default: kept++; break;
+            }
+        }
+
         var zone = _time.LocalTimeZone;
         foreach (var batch in toFetch.Chunk(BatchSize))
         {
@@ -80,14 +225,7 @@ public sealed class RadicaleSync(LocalStore store, HttpClient http, TimeProvider
                     unreadable++;
                     continue;
                 }
-                if (store.ApplyServerItem(ids, mapped with { Id = Guid.NewGuid().ToString("N"), CollectionId = target.Id }))
-                {
-                    fetched++;
-                }
-                else
-                {
-                    kept++;
-                }
+                Count(store.ApplyServerItem(ids, mapped with { Id = Guid.NewGuid().ToString("N"), CollectionId = target.Id }), ref fetched);
             }
         }
 
@@ -97,24 +235,19 @@ public sealed class RadicaleSync(LocalStore store, HttpClient http, TimeProvider
             : changes.Removed;
         foreach (var href in gone)
         {
-            if (store.RemoveServerItem(ids, href))
-            {
-                removed++;
-            }
-            else
-            {
-                kept++;
-            }
+            Count(store.RemoveServerItem(ids, href), ref removed);
         }
 
         if (changes.NewToken is not null)
         {
             store.SetSyncState(stateId, TokenKey, changes.NewToken);
         }
-        return new SyncSummary(1, 0, full ? 1 : 0, fetched, removed, kept, unreadable);
+        return new SyncSummary(1, 0, full ? 1 : 0, fetched, removed, kept, unreadable, Conflicts: conflicts);
     }
 
     private static SyncSummary Add(SyncSummary a, SyncSummary b) => new(
         a.Collections + b.Collections, a.Unchanged + b.Unchanged, a.FullResyncs + b.FullResyncs, a.Fetched + b.Fetched,
-        a.Removed + b.Removed, a.KeptLocal + b.KeptLocal, a.Unreadable + b.Unreadable);
+        a.Removed + b.Removed, a.KeptLocal + b.KeptLocal, a.Unreadable + b.Unreadable,
+        a.Sent + b.Sent, a.Conflicts + b.Conflicts, a.Failed + b.Failed,
+        a.CalendarListChanges + b.CalendarListChanges, a.FeedItems + b.FeedItems, a.FeedFailures + b.FeedFailures);
 }

@@ -7,9 +7,7 @@ namespace WindowsCalendar.Core.CalDav;
 /// <summary>Result of a sync-collection REPORT: hrefs are absolute URIs.</summary>
 public sealed record SyncChanges(string? NewToken, IReadOnlyList<(string Href, string Etag)> Changed, IReadOnlyList<string> Removed);
 
-/// <summary>
-/// Read-only CalDAV operations used by sync (sync-radicale R2, R3, R4): PROPFIND and REPORT only.
-/// </summary>
+/// <summary>CalDAV operations used by sync (sync-radicale R2, R3, R4, R6).</summary>
 public sealed class CalDavClient
 {
     private readonly DavTransport _dav;
@@ -71,6 +69,18 @@ public sealed class CalDavClient
         }
         return new SyncChanges(doc.Root.Element(Dav + "sync-token")?.Value.Trim(), changed, removed);
     }
+
+    /// <summary>
+    /// Writes a resource (R6): a create sends If-None-Match: *, an update If-Match with the base etag (when known).
+    /// Returns the status and the new etag, if the server sent one.
+    /// </summary>
+    public Task<(HttpStatusCode Status, string? Etag)> PutAsync(Uri resource, string data, string? ifMatch, bool create,
+        CancellationToken cancellationToken = default) =>
+        _dav.WriteAsync(HttpMethod.Put, resource, data, create ? null : ifMatch, create, cancellationToken);
+
+    /// <summary>Deletes a resource, with If-Match when the etag is known (R6).</summary>
+    public async Task<HttpStatusCode> DeleteAsync(Uri resource, string? ifMatch, CancellationToken cancellationToken = default) =>
+        (await _dav.WriteAsync(HttpMethod.Delete, resource, null, ifMatch, false, cancellationToken)).Status;
 
     /// <summary>Fetches the given resources (calendar-multiget). Hrefs are absolute URIs on the collection's server.</summary>
     public async Task<IReadOnlyList<(string Href, string Etag, string Data)>> MultigetAsync(Uri collection, IReadOnlyList<string> hrefs,

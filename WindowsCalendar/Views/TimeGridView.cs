@@ -86,9 +86,24 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
             Realize();
         };
         _bodyScroll.SizeChanged += (_, _) => Relayout();
+
+        // A click on the empty all-day lane creates an all-day event that day (R5 interim).
+        _laneCanvas.Background = ViewParts.Clickable;
+        _laneCanvas.Tapped += (_, e) =>
+        {
+            if (_columnWidth > 0)
+            {
+                var day = _first.AddDays((int)(e.GetPosition(_laneCanvas).X / _columnWidth));
+                CreateRequested?.Invoke(day.ToDateTime(TimeOnly.MinValue), true);
+            }
+        };
     }
 
     public event Action<DateOnly>? VisibleDayChanged;
+
+    public event Action<string>? EventOpened;
+
+    public event Action<DateTime, bool>? CreateRequested;
 
     public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events)
     {
@@ -217,6 +232,7 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
             if (inRange && !_laneCards.ContainsKey(j))
             {
                 var card = EventCard.Create(_laneEvents[j], Theme.Calendar(_laneEvents[j].Collection.Colour), LaneHeight, chip: true);
+                ViewParts.OnOpen(card, _laneEvents[j], () => EventOpened);
                 card.Width = (last - first + 1) * _columnWidth - 2;
                 ViewParts.Place(card, first * _columnWidth, 2 + _laneRows[j] * (LaneHeight + 2));
                 _laneCanvas.Children.Add(card);
@@ -231,7 +247,7 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
                 rows = Math.Max(rows, _laneRows[j] + 1);
             }
         }
-        _laneCanvas.Height = rows == 0 ? 0 : rows * (LaneHeight + 2) + 2;
+        _laneCanvas.Height = rows == 0 ? 12 : rows * (LaneHeight + 2) + 2;
 
         var middle = _first.AddDays((int)((_bodyScroll.HorizontalOffset + _bodyScroll.ViewportWidth / 2) / _columnWidth));
         VisibleDayChanged?.Invoke(middle);
@@ -245,7 +261,13 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
             Height = _bodyCanvas.Height,
             BorderBrush = Theme.Brush("DividerBrush"),
             BorderThickness = new Thickness(1, 0, 0, 0),
-            Background = ViewParts.DayShade(date, isToday),
+            Background = ViewParts.DayShade(date, isToday) ?? ViewParts.Clickable,
+        };
+        // A click on an empty slot creates a 1-hour event at that half hour (R5 interim).
+        column.Tapped += (_, e) =>
+        {
+            var minutes = Math.Floor(e.GetPosition(column).Y / DayColumnPanel.HourHeight * 2) * 30;
+            CreateRequested?.Invoke(date.ToDateTime(TimeOnly.MinValue).AddMinutes(Math.Clamp(minutes, 0, 23.5 * 60)), false);
         };
 
         var panel = new DayColumnPanel();
@@ -263,6 +285,7 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
             var (s, en) = intervals[i];
             var height = DayColumnPanel.PixelsFor(en) - DayColumnPanel.PixelsFor(s) - 1;
             var card = EventCard.Create(events[i], Theme.Calendar(events[i].Collection.Colour), height);
+            ViewParts.OnOpen(card, events[i], () => EventOpened);
             DayColumnPanel.Place(card, s, en, columns[i].Column, columns[i].Columns);
             panel.Children.Add(card);
         }

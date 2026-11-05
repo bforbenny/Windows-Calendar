@@ -23,11 +23,28 @@ internal interface IScrollingView
 
     /// <summary>Raised with the day in the middle of the viewport, for the period title.</summary>
     event Action<DateOnly>? VisibleDayChanged;
+
+    /// <summary>Raised with the item id when an event card is clicked (calendar-views R6b).</summary>
+    event Action<string>? EventOpened;
+
+    /// <summary>Raised when an empty slot is clicked: its start, and whether it is all-day (R5 interim).</summary>
+    event Action<DateTime, bool>? CreateRequested;
 }
 
 /// <summary>Building blocks shared by the views.</summary>
 internal static class ViewParts
 {
+    /// <summary>A background that receives clicks without drawing anything.</summary>
+    public static readonly Brush Clickable = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+
+    /// <summary>A click on the card opens its event, and does not reach the slot behind it.</summary>
+    public static void OnOpen(UIElement card, DisplayEvent e, Func<Action<string>?> handler) =>
+        card.Tapped += (_, args) =>
+        {
+            args.Handled = true;
+            handler()?.Invoke(e.ItemId);
+        };
+
     /// <summary>
     /// A strip that follows another ScrollViewer (day headers, all-day lane, hour labels): no scroll bars, no user
     /// scrolling of its own, moved with ChangeView.

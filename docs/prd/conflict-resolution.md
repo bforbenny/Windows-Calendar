@@ -2,7 +2,7 @@
 description: Policy for items changed both locally and on the server — server wins, local version kept as a recoverable copy
 when-to-use: Before working on sync write paths, 412 handling, or the conflicts UI
 tags: [sync, conflicts, offline]
-status: pending
+status: in-progress
 ---
 
 # Conflict resolution
@@ -23,6 +23,12 @@ When a local pending change and a server change hit the same item, **the server 
 - R8. For recurring series, conflicts are tracked at the granularity the server uses (Graph: per occurrence/series master; CalDAV: per resource, i.e. the whole series).
 - R9. Other sources of copies: a failed outbox entry the user discards ([local-store-offline](local-store-offline.md) R7) and pending changes in a collection deleted on the server ([account-management](account-management.md) R11) are also moved to Conflicts, so they stay recoverable.
 - R10. Edits to a meeting you organise can conflict only because attendee responses changed the etag. This is accepted in v1 and handled like any other conflict.
+
+## Interim (first slice, with sync-radicale push)
+
+- R1–R4, R7 and R8 (CalDAV, per resource) are in place. The `conflicts` table holds `{ id, item_id, collection_id, kind, local_payload, server_payload, detected_at }`; a null local payload means the local change was a delete, a null server payload means the server deleted the item.
+- R5: an "N conflicts" banner in the main window, closable for the session. The toast comes with [reminders-notifications](reminders-notifications.md) toasts.
+- R6 (Conflicts view) and R9 (discarded outbox entries) come later.
 
 ## Out of scope
 

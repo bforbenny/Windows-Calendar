@@ -8,6 +8,19 @@ public enum ItemKind { Event, Task }
 
 public enum OutboxOperation { Create, Update, Delete }
 
+/// <summary>What happened to a server change (conflict-resolution R1-R4).</summary>
+public enum ServerChangeResult
+{
+    /// <summary>The server version was applied (or its delete agreed with a local delete).</summary>
+    Applied,
+
+    /// <summary>The server version won; the local version is kept in Conflicts.</summary>
+    Conflict,
+
+    /// <summary>Not applied yet: the item is being sent, or was never sent.</summary>
+    KeptLocal,
+}
+
 /// <summary>
 /// An account (account-management R1). Credentials are never stored here (R6). ServerUrl, Username and Email
 /// are set for CalDAV accounts (R4, R4a).
@@ -20,7 +33,10 @@ public sealed record Account(
     string? Username = null,
     string? Email = null);
 
-/// <summary>A calendar or task list (account-management R1). RemoteRef is the CalDAV URL or Graph id.</summary>
+/// <summary>
+/// A calendar or task list (account-management R1). RemoteRef is the CalDAV URL or Graph id. SourceUrl is set for a
+/// subscribed calendar: the feed the app downloads (sync-radicale R1a).
+/// </summary>
 public sealed record Collection(
     string Id,
     string AccountId,
@@ -30,7 +46,8 @@ public sealed record Collection(
     string Shape,
     bool RemindersOn,
     bool ReadOnly,
-    string RemoteRef);
+    string RemoteRef,
+    string? SourceUrl = null);
 
 /// <summary>
 /// A cached event or task (local-store-offline R2): the raw server payload plus normalised columns.
@@ -74,7 +91,14 @@ public sealed record OutboxEntry(
 /// A calendar or task list found on the server, before it gets a local id, colour and shape (account-management R4, R9).
 /// IsDefault marks the server's main calendar (Graph isDefaultCalendar); CalDAV has none.
 /// </summary>
-public sealed record DiscoveredCollection(string RemoteRef, string Name, CollectionKind Kind, bool ReadOnly, bool IsDefault = false);
+public sealed record DiscoveredCollection(string RemoteRef, string Name, CollectionKind Kind, bool ReadOnly, bool IsDefault = false,
+    string? SourceUrl = null);
+
+/// <summary>What a re-discovery changed (account-management R11).</summary>
+public sealed record CollectionChanges(int Added, int Updated, int Removed)
+{
+    public bool Any => Added + Updated + Removed > 0;
+}
 
 /// <summary>An occurrence with what the views need to draw it (calendar-views).</summary>
 public sealed record OccurrenceView(

@@ -40,7 +40,8 @@ The user can connect any number of Microsoft 365 work accounts and any number of
 
 - The first-launch panel ([ui-states](ui-states.md) R5) offers Radicale; the Microsoft 365 button is disabled until the MS365 slice.
 - The sidebar lists accounts and their collections.
-- Account status (R10), re-discovery on each sync (R11) and account editing (R12) come with [sync-radicale](sync-radicale.md) and [settings-page](settings-page.md).
+- Account status (R10) and account editing (R12) come with [sync-radicale](sync-radicale.md) and [settings-page](settings-page.md).
+- R11 is in place for Radicale: the collection list is re-read at the start of every sync (Sync now included), matched by URL and kind. A listing with no collections at all removes nothing, so a server hiccup cannot wipe the account.
 
 ## Out of scope
 

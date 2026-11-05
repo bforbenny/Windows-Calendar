@@ -5,7 +5,7 @@ using static WindowsCalendar.Core.CalDav.DavTransport;
 namespace WindowsCalendar.Core.CalDav;
 
 /// <summary>
-/// Finds the calendars and task lists of a CalDAV account (account-management R4, sync-radicale R1):
+/// Finds the calendars, task lists and subscriptions of a CalDAV account (account-management R4, sync-radicale R1, R1a):
 /// current-user-principal, then calendar-home-set, then PROPFIND Depth 1 on the home.
 /// Sends PROPFIND only, so it never changes the server.
 /// </summary>
@@ -67,21 +67,34 @@ public sealed class CalDavDiscovery(HttpClient http)
                 new XElement(Dav + "resourcetype"),
                 new XElement(Dav + "displayname"),
                 new XElement(Dav + "current-user-privilege-set"),
-                new XElement(CalDavNs + "supported-calendar-component-set"))),
+                new XElement(CalDavNs + "supported-calendar-component-set"),
+                new XElement(CalendarServer + "source"))),
             cancellationToken);
 
         var result = new List<DiscoveredCollection>();
         foreach (var response in homeDoc.Root!.Elements(Dav + "response"))
         {
             var props = OkProps(response).ToList();
-            if (!props.Any(p => p.Element(Dav + "resourcetype")?.Element(CalDavNs + "calendar") is not null))
-            {
-                continue;
-            }
-
+            var type = props.Select(p => p.Element(Dav + "resourcetype")).FirstOrDefault(e => e is not null);
             var href = new Uri(homeAt, response.Element(Dav + "href")!.Value.Trim());
             var name = props.Select(p => p.Element(Dav + "displayname")?.Value.Trim()).FirstOrDefault(n => !string.IsNullOrEmpty(n))
                 ?? Uri.UnescapeDataString(href.AbsolutePath.TrimEnd('/').Split('/')[^1]);
+
+            // A subscription holds only its feed URL (sync-radicale R1a): a read-only calendar the app fetches itself.
+            if (type?.Element(CalendarServer + "subscribed") is not null)
+            {
+                var sourceElement = props.Select(p => p.Element(CalendarServer + "source")).FirstOrDefault(e => e is not null);
+                var source = (sourceElement?.Element(Dav + "href")?.Value ?? sourceElement?.Value)?.Trim();
+                if (!string.IsNullOrEmpty(source))
+                {
+                    result.Add(new DiscoveredCollection(href.AbsoluteUri, name, CollectionKind.Calendar, true, SourceUrl: source));
+                }
+                continue;
+            }
+            if (type?.Element(CalDavNs + "calendar") is null)
+            {
+                continue;
+            }
 
             // No privilege set reported: assume writable. Reported without write: read-only.
             var privileges = props.Select(p => p.Element(Dav + "current-user-privilege-set")).FirstOrDefault(e => e is not null);

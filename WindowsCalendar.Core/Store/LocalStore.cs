@@ -108,7 +108,7 @@ public sealed class LocalStore : IDisposable
             {
                 var (colour, shape) = CollectionStyle.Next(inUse.Count, inUse);
                 inUse.Add((colour, shape));
-                var c = new Collection(Guid.NewGuid().ToString("N"), account.Id, f.Kind, f.Name, colour, shape, true, f.ReadOnly, f.RemoteRef);
+                var c = new Collection(Guid.NewGuid().ToString("N"), account.Id, f.Kind, f.Name, colour, shape, true, f.ReadOnly, f.RemoteRef, f.SourceUrl);
                 InsertCollection(tx, c);
                 added.Add(c);
             }
@@ -155,7 +155,7 @@ public sealed class LocalStore : IDisposable
         {
             using var cmd = Command(_connection, null,
                 """
-                SELECT id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref
+                SELECT id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref, source_url
                 FROM collections WHERE account_id = $a ORDER BY rowid;
                 """,
                 ("$a", accountId));
@@ -164,7 +164,7 @@ public sealed class LocalStore : IDisposable
             while (r.Read())
             {
                 list.Add(new Collection(r.GetString(0), r.GetString(1), Enum.Parse<CollectionKind>(r.GetString(2)), r.GetString(3),
-                    r.GetString(4), r.GetString(5), r.GetBoolean(6), r.GetBoolean(7), r.GetString(8)));
+                    r.GetString(4), r.GetString(5), r.GetBoolean(6), r.GetBoolean(7), r.GetString(8), NullableString(r, 9)));
             }
             return list;
         }
@@ -201,31 +201,102 @@ public sealed class LocalStore : IDisposable
                 DELETE FROM accounts WHERE id = $a;
                 """,
                 ("$a", accountId));
+            ReassignDefaults(tx);
+            tx.Commit();
+        }
+    }
 
-            foreach (var (key, kind) in DefaultKeys)
+    /// <summary>
+    /// Merges a fresh collection listing into an account (account-management R11), matching by URL and kind. New
+    /// collections get the next automatic colour and shape; names, read-only flags and feed URLs follow the server.
+    /// A collection no longer listed is removed with its items; its unsent changes are kept in Conflicts first
+    /// (conflict-resolution R9). An empty listing removes nothing.
+    /// </summary>
+    public CollectionChanges SyncCollections(string accountId, IReadOnlyList<DiscoveredCollection> found)
+    {
+        var existing = GetCollections(accountId);
+        int added = 0, updated = 0, removed = 0;
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            var inUse = new HashSet<(string, string)>();
+            using (var cmd = Command(_connection, tx, "SELECT colour, shape FROM collections;"))
+            using (var r = cmd.ExecuteReader())
             {
-                using (var exists = Command(_connection, tx,
-                    "SELECT 1 FROM collections WHERE id = (SELECT value FROM meta WHERE key = $key);", ("$key", key)))
+                while (r.Read())
                 {
-                    if (exists.ExecuteScalar() is not null)
-                    {
-                        continue;
-                    }
-                }
-
-                using var first = Command(_connection, tx,
-                    "SELECT id FROM collections WHERE kind = $kind AND read_only = 0 ORDER BY rowid LIMIT 1;",
-                    ("$kind", kind.ToString()));
-                if (first.ExecuteScalar() is string next)
-                {
-                    SetMeta(tx, key, next);
-                }
-                else
-                {
-                    Execute(_connection, tx, "DELETE FROM meta WHERE key = $key;", ("$key", key));
+                    inUse.Add((r.GetString(0), r.GetString(1)));
                 }
             }
+
+            foreach (var f in found)
+            {
+                var match = existing.FirstOrDefault(c => c.RemoteRef == f.RemoteRef && c.Kind == f.Kind);
+                if (match is null)
+                {
+                    var (colour, shape) = CollectionStyle.Next(inUse.Count, inUse);
+                    inUse.Add((colour, shape));
+                    InsertCollection(tx, new Collection(Guid.NewGuid().ToString("N"), accountId, f.Kind, f.Name, colour, shape,
+                        true, f.ReadOnly, f.RemoteRef, f.SourceUrl));
+                    added++;
+                }
+                else if (match.Name != f.Name || match.ReadOnly != f.ReadOnly || match.SourceUrl != f.SourceUrl)
+                {
+                    Execute(_connection, tx,
+                        "UPDATE collections SET name = $name, read_only = $ro, source_url = $source WHERE id = $id;",
+                        ("$name", f.Name), ("$ro", f.ReadOnly), ("$source", f.SourceUrl), ("$id", match.Id));
+                    updated++;
+                }
+            }
+
+            if (found.Count > 0)
+            {
+                foreach (var gone in existing.Where(c => !found.Any(f => f.RemoteRef == c.RemoteRef && f.Kind == c.Kind)))
+                {
+                    Execute(_connection, tx,
+                        """
+                        INSERT INTO conflicts (item_id, collection_id, kind, local_payload, server_payload, detected_at)
+                        SELECT i.id, i.collection_id, i.kind, CASE WHEN i.deleted = 1 THEN NULL ELSE i.raw_payload END, NULL, $now
+                        FROM items i WHERE i.collection_id = $c AND EXISTS (SELECT 1 FROM outbox o WHERE o.item_id = i.id);
+                        DELETE FROM outbox WHERE item_id IN (SELECT id FROM items WHERE collection_id = $c);
+                        DELETE FROM meta WHERE key = 'hidden:' || $c;
+                        DELETE FROM collections WHERE id = $c;
+                        """,
+                        ("$c", gone.Id), ("$now", _time.GetUtcNow().ToUnixTimeMilliseconds()));
+                    removed++;
+                }
+                ReassignDefaults(tx);
+            }
             tx.Commit();
+        }
+        return new CollectionChanges(added, updated, removed);
+    }
+
+    /// <summary>A default calendar or task list that no longer exists moves to the first writable one, in sidebar order.</summary>
+    private void ReassignDefaults(SqliteTransaction tx)
+    {
+        foreach (var (key, kind) in DefaultKeys)
+        {
+            using (var exists = Command(_connection, tx,
+                "SELECT 1 FROM collections WHERE id = (SELECT value FROM meta WHERE key = $key);", ("$key", key)))
+            {
+                if (exists.ExecuteScalar() is not null)
+                {
+                    continue;
+                }
+            }
+
+            using var first = Command(_connection, tx,
+                "SELECT id FROM collections WHERE kind = $kind AND read_only = 0 ORDER BY rowid LIMIT 1;",
+                ("$kind", kind.ToString()));
+            if (first.ExecuteScalar() is string next)
+            {
+                SetMeta(tx, key, next);
+            }
+            else
+            {
+                Execute(_connection, tx, "DELETE FROM meta WHERE key = $key;", ("$key", key));
+            }
         }
     }
 
@@ -276,13 +347,58 @@ public sealed class LocalStore : IDisposable
         LocalChanged?.Invoke();
     }
 
-    /// <summary>Returns the item, or null if it does not exist or is deleted.</summary>
-    public Item? GetItem(string itemId)
+    /// <summary>
+    /// Moves an item to another collection of the same account (calendar-views R8). An item whose only change is an
+    /// unsent create is re-targeted in place. Otherwise the moved copy (with its own id) is queued as a create, then
+    /// the original as a delete, in one linked group, so the delete waits for the create. Returns the moved item's id.
+    /// </summary>
+    public string MoveItem(string itemId, Item moved)
+    {
+        string id;
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            var entries = new List<(long Id, OutboxOperation Op, bool InFlight)>();
+            using (var cmd = Command(_connection, tx, "SELECT id, operation, in_flight FROM outbox WHERE item_id = $id ORDER BY id;", ("$id", itemId)))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    entries.Add((r.GetInt64(0), Enum.Parse<OutboxOperation>(r.GetString(1)), r.GetBoolean(2)));
+                }
+            }
+
+            if (entries is [{ Op: OutboxOperation.Create, InFlight: false } create])
+            {
+                id = itemId;
+                Execute(_connection, tx, UpdateItemSql, ItemParameters(moved with { Id = id }));
+                Execute(_connection, tx, "UPDATE outbox SET payload = $p WHERE id = $id;", ("$p", moved.RawPayload), ("$id", create.Id));
+            }
+            else
+            {
+                id = moved.Id;
+                var group = Guid.NewGuid().ToString("N");
+                var baseEtag = GetLiveEtag(tx, itemId);
+                Execute(_connection, tx, InsertItemSql, ItemParameters(moved));
+                Enqueue(tx, id, OutboxOperation.Create, moved.RawPayload, null, group);
+                Execute(_connection, tx,
+                    "UPDATE items SET deleted = 1 WHERE id = $id; DELETE FROM occurrences WHERE item_id = $id;", ("$id", itemId));
+                Enqueue(tx, itemId, OutboxOperation.Delete, null, baseEtag, group);
+            }
+            RebuildItemOccurrences(tx, id, OccurrenceWindow());
+            tx.Commit();
+        }
+        LocalChanged?.Invoke();
+        return id;
+    }
+
+    /// <summary>Returns the item, or null if it does not exist or is deleted (unless <paramref name="includeDeleted"/>).</summary>
+    public Item? GetItem(string itemId, bool includeDeleted = false)
     {
         lock (_gate)
         {
             using var cmd = Command(_connection, null,
-                $"SELECT {ItemColumns} FROM items i WHERE i.id = $id AND i.deleted = 0;", ("$id", itemId));
+                $"SELECT {ItemColumns} FROM items i WHERE i.id = $id AND (i.deleted = 0 OR $all);", ("$id", itemId), ("$all", includeDeleted));
             using var r = cmd.ExecuteReader();
             return r.Read() ? ReadItem(r) : null;
         }
@@ -475,6 +591,58 @@ public sealed class LocalStore : IDisposable
     }
 
     /// <summary>
+    /// Removes a sent create or update and records the etag the server returned (null if it sent none, so the
+    /// next pull fetches the item again). Later queued entries for the item are rebased onto that etag, so they
+    /// do not fail with a false 412 (sync-radicale R6).
+    /// </summary>
+    public void CompleteOutboxWrite(long entryId, string? etag)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            Execute(_connection, tx,
+                """
+                UPDATE items SET etag = $etag WHERE id = (SELECT item_id FROM outbox WHERE id = $id);
+                UPDATE outbox SET base_etag = $etag WHERE id > $id AND item_id = (SELECT item_id FROM outbox WHERE id = $id);
+                DELETE FROM outbox WHERE id = $id;
+                """,
+                ("$id", entryId), ("$etag", etag));
+            tx.Commit();
+        }
+    }
+
+    /// <summary>
+    /// A write the server refused with 412 (conflict-resolution R1-R4): the server version wins. The local version
+    /// is kept in Conflicts, and every queued entry for the item is dropped. A null <paramref name="server"/>
+    /// means the server no longer has the item, so it is removed locally.
+    /// </summary>
+    public void ResolveConflict(long entryId, Item? server)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            using (var cmd = Command(_connection, tx, "SELECT item_id FROM outbox WHERE id = $id;", ("$id", entryId)))
+            {
+                if (cmd.ExecuteScalar() is string itemId)
+                {
+                    TakeServerVersion(tx, itemId, server);
+                }
+            }
+            tx.Commit();
+        }
+    }
+
+    /// <summary>Number of conflict copies kept (conflict-resolution R5, R7).</summary>
+    public int GetConflictCount()
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null, "SELECT COUNT(*) FROM conflicts;");
+            return Convert.ToInt32(cmd.ExecuteScalar());
+        }
+    }
+
+    /// <summary>
     /// Records a failed send; the entry stays queued. A transient failure is retried after <see cref="RetryDelay"/>;
     /// a permanent one waits for <see cref="RetryOutboxEntry"/> (R7).
     /// </summary>
@@ -573,18 +741,24 @@ public sealed class LocalStore : IDisposable
 
     /// <summary>
     /// Inserts or replaces the item with this remote id in the given collections, and rebuilds its occurrences.
-    /// Returns false, changing nothing, if the item has unsent local changes (conflict-resolution R1; the
-    /// Conflicts table comes later).
+    /// If the item has unsent local changes, the server version wins and the local one goes to Conflicts
+    /// (conflict-resolution R1, R2, R4); an entry being sent right now keeps the local version until the next sync.
     /// </summary>
-    public bool ApplyServerItem(IReadOnlyList<string> collectionIds, Item item)
+    public ServerChangeResult ApplyServerItem(IReadOnlyList<string> collectionIds, Item item)
     {
         lock (_gate)
         {
             using var tx = _connection.BeginTransaction();
             var existingId = FindByRemoteId(tx, collectionIds, item.RemoteId!);
-            if (existingId is not null && HasOutboxEntries(tx, existingId))
+            if (existingId is not null && Pending(tx, existingId) is { } pending)
             {
-                return false;
+                if (pending.InFlight)
+                {
+                    return ServerChangeResult.KeptLocal;
+                }
+                TakeServerVersion(tx, existingId, item);
+                tx.Commit();
+                return ServerChangeResult.Conflict;
             }
             if (existingId is null)
             {
@@ -597,14 +771,15 @@ public sealed class LocalStore : IDisposable
             }
             RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
             tx.Commit();
-            return true;
+            return ServerChangeResult.Applied;
         }
     }
 
     /// <summary>
-    /// Deletes the item the server removed. Returns false, keeping it, if it has unsent local changes.
+    /// Deletes the item the server removed. An item never sent (pending create) or being sent is kept. A local
+    /// edit is kept in Conflicts (conflict-resolution R3); a local delete simply agrees with the server.
     /// </summary>
-    public bool RemoveServerItem(IReadOnlyList<string> collectionIds, string remoteId)
+    public ServerChangeResult RemoveServerItem(IReadOnlyList<string> collectionIds, string remoteId)
     {
         lock (_gate)
         {
@@ -612,15 +787,24 @@ public sealed class LocalStore : IDisposable
             var id = FindByRemoteId(tx, collectionIds, remoteId);
             if (id is null)
             {
-                return true;
+                return ServerChangeResult.Applied;
             }
-            if (HasOutboxEntries(tx, id))
+            if (Pending(tx, id) is { } pending)
             {
-                return false;
+                if (pending.InFlight || pending.HasCreate)
+                {
+                    return ServerChangeResult.KeptLocal;
+                }
+                if (!pending.LocalDelete)
+                {
+                    TakeServerVersion(tx, id, null);
+                    tx.Commit();
+                    return ServerChangeResult.Conflict;
+                }
             }
-            Execute(_connection, tx, "DELETE FROM items WHERE id = $id;", ("$id", id));
+            Execute(_connection, tx, "DELETE FROM outbox WHERE item_id = $id; DELETE FROM items WHERE id = $id;", ("$id", id));
             tx.Commit();
-            return true;
+            return ServerChangeResult.Applied;
         }
     }
 
@@ -651,10 +835,46 @@ public sealed class LocalStore : IDisposable
         return cmd.ExecuteScalar() as string;
     }
 
-    private bool HasOutboxEntries(SqliteTransaction tx, string itemId)
+    /// <summary>The item's queued entries, summarised; null if it has none.</summary>
+    private (bool InFlight, bool HasCreate, bool LocalDelete)? Pending(SqliteTransaction tx, string itemId)
     {
-        using var cmd = Command(_connection, tx, "SELECT 1 FROM outbox WHERE item_id = $id LIMIT 1;", ("$id", itemId));
-        return cmd.ExecuteScalar() is not null;
+        using var cmd = Command(_connection, tx,
+            """
+            SELECT MAX(in_flight), MAX(operation = 'Create'), (SELECT deleted FROM items WHERE id = $id)
+            FROM outbox WHERE item_id = $id HAVING COUNT(*) > 0;
+            """,
+            ("$id", itemId));
+        using var r = cmd.ExecuteReader();
+        return r.Read() ? (r.GetBoolean(0), r.GetBoolean(1), r.GetBoolean(2)) : null;
+    }
+
+    /// <summary>
+    /// Keeps the local version in Conflicts (null payload: it was a local delete), drops the item's queued entries,
+    /// and replaces the item with the server version, or removes it when the server has none (conflict-resolution R2).
+    /// </summary>
+    private void TakeServerVersion(SqliteTransaction tx, string itemId, Item? server)
+    {
+        string collectionId;
+        using (var cmd = Command(_connection, tx, "SELECT collection_id FROM items WHERE id = $id;", ("$id", itemId)))
+        {
+            collectionId = (string)cmd.ExecuteScalar()!;
+        }
+        Execute(_connection, tx,
+            """
+            INSERT INTO conflicts (item_id, collection_id, kind, local_payload, server_payload, detected_at)
+            SELECT id, collection_id, kind, CASE WHEN deleted = 1 THEN NULL ELSE raw_payload END, $server, $now
+            FROM items WHERE id = $id;
+            DELETE FROM outbox WHERE item_id = $id;
+            """,
+            ("$id", itemId), ("$server", server?.RawPayload), ("$now", _time.GetUtcNow().ToUnixTimeMilliseconds()));
+        if (server is null)
+        {
+            Execute(_connection, tx, "DELETE FROM items WHERE id = $id;", ("$id", itemId));
+            return;
+        }
+        Execute(_connection, tx, UpdateItemSql + " UPDATE items SET deleted = 0 WHERE id = $id;",
+            ItemParameters(server with { Id = itemId, CollectionId = collectionId }));
+        RebuildItemOccurrences(tx, itemId, OccurrenceWindow());
     }
 
     private static string InList(IReadOnlyList<string> values) => string.Join(", ", values.Select((_, i) => $"$in{i}"));
@@ -677,12 +897,12 @@ public sealed class LocalStore : IDisposable
     private void InsertCollection(SqliteTransaction? tx, Collection c) =>
         Execute(_connection, tx,
             """
-            INSERT INTO collections (id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref)
-            VALUES ($id, $account, $kind, $name, $colour, $shape, $reminders, $readOnly, $remote);
+            INSERT INTO collections (id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref, source_url)
+            VALUES ($id, $account, $kind, $name, $colour, $shape, $reminders, $readOnly, $remote, $source);
             """,
             ("$id", c.Id), ("$account", c.AccountId), ("$kind", c.Kind.ToString()), ("$name", c.Name),
             ("$colour", c.Colour), ("$shape", c.Shape), ("$reminders", c.RemindersOn), ("$readOnly", c.ReadOnly),
-            ("$remote", c.RemoteRef));
+            ("$remote", c.RemoteRef), ("$source", c.SourceUrl));
 
     private string? GetMeta(SqliteTransaction? tx, string key)
     {

@@ -7,7 +7,7 @@ using System.Xml.Linq;
 namespace WindowsCalendar.Core.CalDav;
 
 /// <summary>
-/// Sends WebDAV requests (PROPFIND, REPORT) with Basic auth and returns the 207 multistatus body
+/// Sends WebDAV requests (PROPFIND, REPORT, PUT, DELETE) with Basic auth and returns the 207 multistatus body
 /// (sync-radicale R5, R10). Follows redirects itself, only on the same HTTPS host, so the Authorization header
 /// never leaves the server. The HttpClient must not follow redirects.
 /// </summary>
@@ -15,6 +15,7 @@ internal sealed class DavTransport
 {
     public static readonly XNamespace Dav = "DAV:";
     public static readonly XNamespace CalDavNs = "urn:ietf:params:xml:ns:caldav";
+    public static readonly XNamespace CalendarServer = "http://calendarserver.org/ns/";
     public static readonly HttpMethod Propfind = new("PROPFIND");
     public static readonly HttpMethod Report = new("REPORT");
 
@@ -31,7 +32,8 @@ internal sealed class DavTransport
 
     /// <summary>A request body with the DAV: and CalDAV namespaces declared.</summary>
     public static XElement Body(XName root, params object[] content) =>
-        new(root, new XAttribute(XNamespace.Xmlns + "d", Dav), new XAttribute(XNamespace.Xmlns + "c", CalDavNs), content);
+        new(root, new XAttribute(XNamespace.Xmlns + "d", Dav), new XAttribute(XNamespace.Xmlns + "c", CalDavNs),
+            new XAttribute(XNamespace.Xmlns + "cs", CalendarServer), content);
 
     /// <summary>Returns the multistatus document and the URI that answered (after redirects).</summary>
     public async Task<(XDocument Doc, Uri Uri)> SendAsync(HttpMethod method, Uri uri, int depth, XElement body,
@@ -81,6 +83,36 @@ internal sealed class DavTransport
                 throw new CalDavException(CalDavError.NotCalDav, status, ex);
             }
         }
+    }
+
+    /// <summary>
+    /// Sends a PUT or DELETE (sync-radicale R6) and returns the status and the ETag header, if any. Redirects are not
+    /// followed: a resource URL comes from the server itself. 401 throws, like every other request.
+    /// </summary>
+    public async Task<(HttpStatusCode Status, string? Etag)> WriteAsync(HttpMethod method, Uri uri, string? calendarData,
+        string? ifMatch, bool ifNoneMatch, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(method, uri);
+        if (calendarData is not null)
+        {
+            request.Content = new StringContent(calendarData, Encoding.UTF8, "text/calendar");
+        }
+        request.Headers.Authorization = _auth;
+        if (ifMatch is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        }
+        if (ifNoneMatch)
+        {
+            request.Headers.TryAddWithoutValidation("If-None-Match", "*");
+        }
+
+        using var response = await SendRawAsync(request, cancellationToken);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            throw new CalDavException(CalDavError.WrongCredentials, response.StatusCode);
+        }
+        return (response.StatusCode, response.Headers.ETag?.ToString());
     }
 
     /// <summary>The prop elements of a response's propstats that have status 200.</summary>

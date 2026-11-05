@@ -108,6 +108,24 @@ internal static class Migrations
         ALTER TABLE accounts ADD COLUMN username TEXT;
         ALTER TABLE accounts ADD COLUMN email TEXT;
         """,
+
+        // v4: conflict copies (conflict-resolution R2). No foreign keys: a copy outlives its item.
+        """
+        CREATE TABLE conflicts (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id        TEXT NOT NULL,
+            collection_id  TEXT NOT NULL,
+            kind           TEXT NOT NULL,
+            local_payload  TEXT,
+            server_payload TEXT,
+            detected_at    INTEGER NOT NULL
+        );
+        """,
+
+        // v5: feed URL of a subscribed calendar (sync-radicale R1a).
+        """
+        ALTER TABLE collections ADD COLUMN source_url TEXT;
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

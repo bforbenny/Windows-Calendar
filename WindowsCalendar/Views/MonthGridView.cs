@@ -70,6 +70,10 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView
 
     public event Action<DateOnly>? VisibleDayChanged;
 
+    public event Action<string>? EventOpened;
+
+    public event Action<DateTime, bool>? CreateRequested;
+
     public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events)
     {
         (_first, _weekCount, _events) = (first, days / 7, events);
@@ -176,14 +180,16 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView
         return row;
     }
 
-    private static void AddDayCell(Grid row, DateOnly date, int column, bool isToday)
+    private void AddDayCell(Grid row, DateOnly date, int column, bool isToday)
     {
         var cell = new Border
         {
             BorderBrush = Theme.Brush("DividerBrush"),
             BorderThickness = new Thickness(column == 0 ? 0 : 1, 1, 0, 0),
-            Background = ViewParts.DayShade(date, isToday),
+            Background = ViewParts.DayShade(date, isToday) ?? ViewParts.Clickable,
         };
+        // A click on the day creates an all-day event (R5 interim).
+        cell.Tapped += (_, _) => CreateRequested?.Invoke(date.ToDateTime(TimeOnly.MinValue), true);
         var number = new TextBlock
         {
             // The first of each month carries the month name, since weeks run on without month breaks.
@@ -252,6 +258,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView
             var e = inWeek[i];
             var card = EventCard.Create(e, Theme.Calendar(e.Collection.Colour), ChipHeight, chip: true,
                 prefix: e.InAllDayLane ? null : e.Start.ToString("t"));
+            ViewParts.OnOpen(card, e, () => EventOpened);
             Grid.SetRow(card, lanes[i]);
             Grid.SetColumn(card, spans[i].Item1);
             Grid.SetColumnSpan(card, spans[i].Item2 - spans[i].Item1 + 1);

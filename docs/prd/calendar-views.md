@@ -65,6 +65,15 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 - Colours: automatic assignment only; server colour snapping, overrides and tasks in the views come later.
 - Layout maths (overlap columns, periods) lives in `WindowsCalendar.Core` with tests; render time is logged for R12.
 
+## Interim (second slice: editor)
+
+- R6, R6b (click), R6c and R6d with these fields: title, all-day, start and end, location, description (plain text), calendar (writable calendars in the same account) and Delete. Other properties stay untouched in the payload ([sync-radicale](sync-radicale.md) R8).
+- Times are edited in the Windows timezone and written in the event's own timezone; floating and UTC times stay so. New events use the Windows timezone with a VTIMEZONE.
+- Recurring events and read-only calendars open view-only with a notice; recurrence editing comes with [recurring-events](recurring-events.md).
+- R5 interim: clicking an empty Week slot opens the editor on a new 1-hour event at that half hour; the all-day lane or a Month day gives an all-day event. The quick-create popup comes with [quick-add](quick-add.md).
+- R8 within an account: the move is queued as a create in the new calendar then a delete of the old one, one linked outbox group. An unsent new event is re-targeted instead.
+- R10 interim: Delete asks for confirmation until [undo](undo.md) exists. No drag, keyboard selection or undo yet.
+
 ## Out of scope
 
 - Year view, custom N-day views and schedule views (v1). Agenda is covered by [agenda-view](agenda-view.md).
@@ -72,7 +81,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 - Attendee/invite editing, and responding to invitations (done in Outlook via Open in Outlook, [attendees-invitations](attendees-invitations.md)).
 - Selecting several events at once.
 - Printing.
-- .ics file import/export and ICS URL subscriptions (subscriptions are handled in Radicale).
+- .ics file import/export and adding ICS URL subscriptions in the app (subscriptions are added in Radicale; the app fetches their feeds, [sync-radicale](sync-radicale.md) R1a).
 
 ## Acceptance criteria
 

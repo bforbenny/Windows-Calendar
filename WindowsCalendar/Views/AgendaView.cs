@@ -61,6 +61,11 @@ internal sealed partial class AgendaView : UserControl, IScrollingView
 
     public event Action<DateOnly>? VisibleDayChanged;
 
+    public event Action<string>? EventOpened;
+
+    // Agenda has no empty slots to click.
+    public event Action<DateTime, bool>? CreateRequested { add { } remove { } }
+
     public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events)
     {
         (_first, _count) = (first, days);
@@ -174,7 +179,9 @@ internal sealed partial class AgendaView : UserControl, IScrollingView
         {
             var total = e.LastDay.DayNumber - e.FirstDay.DayNumber + 1;
             var details = total > 1 ? $"Day {date.DayNumber - e.FirstDay.DayNumber + 1} of {total}" : null;
-            list.Children.Add(EventCard.Create(e, Theme.Calendar(e.Collection.Colour), double.NaN, details: details));
+            var card = EventCard.Create(e, Theme.Calendar(e.Collection.Colour), double.NaN, details: details);
+            ViewParts.OnOpen(card, e, () => EventOpened);
+            list.Children.Add(card);
         }
         if (events.Count == 0)
         {

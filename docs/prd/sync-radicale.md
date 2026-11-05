@@ -15,6 +15,12 @@ Each Radicale account syncs all its calendar collections (VEVENT and/or VTODO) t
 
 - R1. Discovery: `PROPFIND` current-user-principal → calendar-home-set → `PROPFIND Depth:1` collections, reading displayname, calendar-color, supported-calendar-component-set, getctag, sync-token. A collection supporting both VEVENT and VTODO maps to two logical collections ([account-management](account-management.md) R1).
   - Each distinct collection URL is synced once; each resource goes to the Calendar or TaskList logical collection by its component (VEVENT / VTODO). Sync state is stored on the first collection for that URL.
+- R1a. Subscribed calendars: a collection with resourcetype `CS:subscribed` (`http://calendarserver.org/ns/`) holds only a `CS:source` feed URL; Radicale does not fetch the feed. It becomes a read-only calendar, and the app downloads the feed itself:
+  - `webcal://` is fetched as `https://`; plain `http://` feeds are not fetched and are marked "not secure" in the sidebar (R10). Redirects are followed only to HTTPS.
+  - No credentials are sent to the feed host, and the feed URL is never logged (it often carries a private token).
+  - At most once an hour, with `If-None-Match` / `If-Modified-Since`; Sync now fetches regardless.
+  - Each UID in the feed (master, overrides and the timezones it uses) becomes one cached item; items that left the feed are removed. A feed that fails is logged and does not stop the account's sync.
+  - Subscribed collections are skipped by sync-collection and never written to.
 - R2. Incremental sync: `REPORT sync-collection` (Depth: 0) with the stored sync-token; then `REPORT calendar-multiget` for the changed hrefs; handle 404 entries as deletions.
   - Multiget in batches of 100. Items are keyed by href (`remote_id`); the UID stays in the payload.
 - R3. **Token fallback:** if the server rejects the token (`DAV:valid-sync-token` precondition, typically 403/409), do a full sync: list all hrefs + etags, diff against local, multiget the changes.
@@ -29,10 +35,13 @@ Each Radicale account syncs all its calendar collections (VEVENT and/or VTODO) t
 - R11. 401 → mark the account "auth required"; do not loop. Prompting follows [sync-ms365](sync-ms365.md) R11: a toast and the Sign in bar while hidden, and the masked password prompt only when the user clicks Sign in.
   - Interim (until [ui-states](ui-states.md) R2): a 401 is logged once and the account is paused until the app restarts.
 
-## Interim (first slice: pull only)
+## Interim (second slice: push)
 
-- Only PROPFIND and REPORT are sent; nothing on the server changes. Pushing the outbox (R6, R7, R8) comes with [conflict-resolution](conflict-resolution.md).
-- An incoming change for an item with a pending outbox entry keeps the local version and is logged, until the Conflicts table exists.
+- Each account sync first sends its due outbox entries (R6), then pulls. A new item's href (`<collection>/<uid>.ics`, R7) is set when it is created locally, so a send that succeeded before a crash is never duplicated.
+- After a successful write the item takes the etag from the response; later queued entries for the same item are rebased onto it, so they do not raise a false 412. If the server sends no etag, the next pull fetches the item again.
+- Responses: 412 → [conflict-resolution](conflict-resolution.md); 404 on DELETE → done; 401 → R11; network errors and 5xx → backoff ([local-store-offline](local-store-offline.md) R7); other 4xx (incl. 409) → permanent failure. A network error stops sending for that account until the next sync.
+- Only events are edited in the app so far; tasks come with [tasks](tasks.md).
+- Each sync starts with re-discovery ([account-management](account-management.md) R11), so new calendars and subscriptions appear without re-adding the account; Sync now is the manual refresh.
 
 ## Out of scope
 

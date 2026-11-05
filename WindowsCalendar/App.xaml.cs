@@ -208,9 +208,10 @@ public partial class App : Application
             }
             try
             {
-                var summary = await radicale.SyncAccountAsync(account, password, cancellationToken);
+                // Sync now also refetches subscribed feeds at once (sync-radicale R1a).
+                var summary = await radicale.SyncAccountAsync(account, password, forceFeeds: reason == "sync now", cancellationToken);
                 Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
-                changed |= summary.Fetched + summary.Removed > 0;
+                changed |= summary.AnyChange;
             }
             catch (CalDavException ex) when (ex.Error == CalDavError.WrongCredentials)
             {

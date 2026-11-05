@@ -9,7 +9,7 @@ status: in-progress
 
 ## Summary
 
-The views shade non-working hours and public holidays and can show week numbers. Holidays come from calendars you already sync, such as a holiday calendar on Radicale. The app does not subscribe to or bundle holiday data.
+The views shade non-working hours and public holidays and can show week numbers. Holidays come from calendars you already sync, such as a holiday calendar subscribed in Radicale (the app fetches its feed, [sync-radicale](sync-radicale.md) R1a). The app does not add subscriptions itself or bundle holiday data.
 
 ## Requirements
 

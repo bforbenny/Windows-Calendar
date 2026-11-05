@@ -26,12 +26,14 @@ public sealed partial class MainWindow : Window
     private readonly TimeGridView _week = new();
     private readonly MonthGridView _month = new();
     private readonly AgendaView _agenda = new();
+    private readonly EventEditor _editor = new();
     private readonly DispatcherQueueTimer _minuteTimer;
     private readonly Dictionary<string, Collection> _collections = [];
     private ViewKind _view = ViewKind.Week;
     private DateOnly _today = DateOnly.FromDateTime(DateTime.Now);
     private DateOnly? _pendingDay;
     private bool _quitting;
+    private int _conflictsDismissed;
 
     public MainWindow()
     {
@@ -65,6 +67,17 @@ public sealed partial class MainWindow : Window
             ViewSwitcher.SelectedItem = ViewSwitcher.Items.First(i => (string)i.Tag == nameof(ViewKind.Agenda));
         };
 
+        // Clicking a card opens the editor; clicking an empty slot starts a new event (calendar-views R5, R6b).
+        foreach (var view in new IScrollingView[] { _week, _month, _agenda })
+        {
+            view.EventOpened += id => _editor.OpenExisting(id, _collections);
+            view.CreateRequested += (start, allDay) => _editor.OpenNew(start, allDay, _collections);
+        }
+        EditorHost.Child = _editor;
+        _editor.Changed += RenderView;
+        _editor.OpenChanged += PlaceEditor;
+        ((FrameworkElement)Content).SizeChanged += (_, _) => PlaceEditor();
+
         // Redraw in the new theme when Windows switches light/dark (app-platform R2a).
         ((FrameworkElement)Content).ActualThemeChanged += (_, _) => RenderView();
 
@@ -83,6 +96,7 @@ public sealed partial class MainWindow : Window
 
         ShowAccounts();
         RenderView();
+        ShowConflicts();
         ScrollToToday();
     }
 
@@ -102,7 +116,39 @@ public sealed partial class MainWindow : Window
     {
         ShowAccounts();
         RenderView();
+        ShowConflicts();
+        // The open event may have been deleted or moved by the sync.
+        if (_editor.ItemId is { } id && Store?.GetItem(id) is null)
+        {
+            _editor.Hide();
+        }
     }
+
+    /// <summary>
+    /// The editor pushes the views narrower at 1200 epx and wider, and slides over them below that (calendar-views R6c).
+    /// </summary>
+    private void PlaceEditor()
+    {
+        EditorHost.Visibility = _editor.IsOpen ? Visibility.Visible : Visibility.Collapsed;
+        var push = ((FrameworkElement)Content).ActualWidth >= 1200;
+        Grid.SetColumn(EditorHost, push ? 1 : 0);
+        Grid.SetColumnSpan(EditorHost, push ? 1 : 2);
+        EditorHost.HorizontalAlignment = push ? HorizontalAlignment.Stretch : HorizontalAlignment.Right;
+    }
+
+    /// <summary>
+    /// "N conflicts" banner (conflict-resolution R5, interim): closable for the session, shown again when the count grows.
+    /// </summary>
+    private void ShowConflicts()
+    {
+        var count = Store?.GetConflictCount() ?? 0;
+        ConflictBar.Title = count == 1 ? "1 conflict" : $"{count} conflicts";
+        ConflictBar.Message = "Changed both here and on the server: the server version was kept, and your version is saved.";
+        ConflictBar.IsOpen = count > _conflictsDismissed;
+    }
+
+    private void OnConflictBarClosed(InfoBar sender, InfoBarClosedEventArgs args) =>
+        _conflictsDismissed = Store?.GetConflictCount() ?? 0;
 
     /// <summary>
     /// Loads the whole occurrence window into the current view; the view keeps its scroll position and builds only
@@ -260,7 +306,9 @@ public sealed partial class MainWindow : Window
         label.Children.Add(ShapeMarker.Create(collection.Shape, Theme.Calendar(collection.Colour).Swatch));
         label.Children.Add(new TextBlock
         {
-            Text = collection.ReadOnly ? $"{collection.Name} (read-only)" : collection.Name,
+            Text = collection.SourceUrl is not null
+                ? Core.Sync.FeedSync.FetchUrl(collection.SourceUrl) is null ? $"{collection.Name} (not secure, not synced)" : $"{collection.Name} (subscribed)"
+                : collection.ReadOnly ? $"{collection.Name} (read-only)" : collection.Name,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
         var check = new CheckBox { Content = label, IsChecked = visible, MinWidth = 0 };

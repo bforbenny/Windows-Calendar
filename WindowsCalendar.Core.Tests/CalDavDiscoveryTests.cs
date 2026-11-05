@@ -74,6 +74,27 @@ public sealed class CalDavDiscoveryTests
         new CalDavDiscovery(new HttpClient(server)).DiscoverAsync(new Uri(url), "ben", "secret");
 
     [Fact]
+    public async Task Subscription_IsReadOnlyCalendarWithItsFeedUrl()
+    {
+        var server = new FakeServer();
+        server.Routes["/"] = _ => MultiStatus(Ok("/", "<current-user-principal><href>/ben/</href></current-user-principal>"));
+        server.Routes["/ben/"] = r => r.Headers.GetValues("Depth").Single() == "0"
+            ? MultiStatus(Ok("/ben/", "<C:calendar-home-set><href>/ben/</href></C:calendar-home-set>"))
+            : MultiStatus(Ok("/ben/au-holidays/",
+                """
+                <resourcetype xmlns:CS="http://calendarserver.org/ns/"><collection/><CS:subscribed/></resourcetype>
+                <displayname>AU holidays</displayname>
+                <CS:source xmlns:CS="http://calendarserver.org/ns/"><href>webcal://feeds.example.test/au.ics?token=abc</href></CS:source>
+                """));
+
+        var found = await Discover(server);
+
+        var sub = Assert.Single(found);
+        Assert.Equal(("AU holidays", CollectionKind.Calendar, true, "webcal://feeds.example.test/au.ics?token=abc"),
+            (sub.Name, sub.Kind, sub.ReadOnly, sub.SourceUrl));
+    }
+
+    [Fact]
     public async Task ServerRoot_FollowsWellKnownAndListsCollections()
     {
         var server = Radicale();
