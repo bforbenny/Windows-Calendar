@@ -1,0 +1,34 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["build", "${workspaceFolder}/WindowsCalendar.slnx", "-p:Platform=x64", "/property:GenerateFullPaths=true", "/consoleloggerparameters:NoSummary"],
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "clean",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["clean", "${workspaceFolder}/WindowsCalendar.slnx", "-p:Platform=x64"],
+      "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "format",
+      "type": "process",
+      "command": "dotnet",
+      "args": ["format", "${workspaceFolder}/WindowsCalendar.slnx"],
+      "problemMatcher": []
+    },
+    {
+      "label": "open in Visual Studio",
+      "type": "shell",
+      "command": "start",
+      "args": ["${workspaceFolder}/WindowsCalendar.slnx"],
+      "problemMatcher": []
+    }
+  ]
+}

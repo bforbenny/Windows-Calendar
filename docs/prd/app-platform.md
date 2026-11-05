@@ -2,7 +2,7 @@
 description: Technology stack, packaging, process model, tray icon and start-with-Windows behaviour
 when-to-use: Before any project setup, build, packaging, or process/lifecycle work
 tags: [platform, winui, msix, tray, startup]
-status: pending
+status: in-progress
 ---
 
 # App platform

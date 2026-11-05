@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "WindowsCalendar (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "WindowsCalendar (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
