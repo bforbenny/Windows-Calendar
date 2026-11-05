@@ -19,6 +19,7 @@ A native Windows 11 desktop app built with C# / .NET 10 and WinUI 3 (Windows App
 - R3. Packaging: MSIX, sideloaded with a self-signed certificate. Package identity is used for toasts and startup task. Updates and install steps follow [app-updates](app-updates.md).
 - R4. Single-instance app. Launching again activates the existing instance.
 - R5. Closing the main window hides it to the system tray; the process keeps running background sync and reminders. Tray right-click menu: Open, Sync now, Quit. Quit warns and asks first when unsynced changes or open conflicts exist ("3 changes have not synced. They sync next time the app runs, but are lost if the app is uninstalled."). Tray left-click opens the [tray-flyout](tray-flyout.md).
+  - Interim (until [tray-flyout](tray-flyout.md), sync and [local-store-offline](local-store-offline.md) exist): left-click opens the main window, "Sync now" is shown disabled, and Quit exits without a warning.
 - R6. Optional "Start with Windows" (MSIX StartupTask), user-toggleable in settings, starts minimised to tray.
 - R7. Key libraries: MSAL.NET (Microsoft sign-in with WAM broker), Microsoft Graph SDK or raw HTTP, Ical.Net 5.x (iCalendar parse/serialise, recurrence expansion), Microsoft.Data.Sqlite (local store).
 - R8. Logging to a local rolling file under the app's LocalState folder. Logs must never contain credentials, tokens, or Authorization headers (CLAUDE.md security rules).
@@ -35,7 +36,7 @@ A native Windows 11 desktop app built with C# / .NET 10 and WinUI 3 (Windows App
 - [ ] App builds and installs from MSIX on Windows 11.
 - [ ] Closing the window leaves the tray icon; reminders still fire.
 - [ ] Start-with-Windows toggle works across a reboot and starts in tray.
-- [ ] Second launch focuses the existing window.
+- [x] Second launch focuses the existing window.
 - [ ] Switching Windows between light and dark mode re-themes the open app immediately when the theme is "Use Windows setting".
 - [ ] Grep of log files after a full sync shows no tokens or passwords.
 

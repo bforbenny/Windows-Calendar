@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
+using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -22,8 +23,36 @@ namespace WindowsCalendar;
 /// </summary>
 public sealed partial class MainWindow : Window
 {
+    private bool _quitting;
+
     public MainWindow()
     {
         InitializeComponent();
+
+        // Closing hides to the tray; only Quit really closes (app-platform R5).
+        AppWindow.Closing += (sender, args) =>
+        {
+            if (!_quitting)
+            {
+                args.Cancel = true;
+                sender.Hide();
+            }
+        };
+    }
+
+    public void ShowAndFocus()
+    {
+        if (AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
+        {
+            presenter.Restore();
+        }
+        AppWindow.Show();
+        Activate();
+    }
+
+    public void CloseForQuit()
+    {
+        _quitting = true;
+        Close();
     }
 }
