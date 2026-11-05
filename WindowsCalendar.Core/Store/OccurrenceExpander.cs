@@ -54,7 +54,7 @@ internal static class OccurrenceExpander
     private static CalDateTime ToCal(DateTimeOffset t) => new(t.UtcDateTime, "UTC");
 
     /// <summary>Floating and all-day values are wall-clock times in the Windows timezone (timezone-handling R6).</summary>
-    private static DateTimeOffset ToUtc(CalDateTime t, TimeZoneInfo zone)
+    internal static DateTimeOffset ToUtc(CalDateTime t, TimeZoneInfo zone)
     {
         if (!t.IsFloating)
         {

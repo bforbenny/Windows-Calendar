@@ -235,14 +235,7 @@ public sealed class LocalStore : IDisposable
         lock (_gate)
         {
             using var tx = _connection.BeginTransaction();
-            Execute(_connection, tx,
-                """
-                INSERT INTO items (id, collection_id, kind, remote_id, raw_payload, summary, start_utc, end_utc, all_day,
-                    time_zone, location, status, due_utc, completed_utc, is_recurring, etag, last_modified)
-                VALUES ($id, $collection, $kind, $remote, $raw, $summary, $start, $end, $allDay,
-                    $tz, $location, $status, $due, $completed, $recurring, $etag, $modified);
-                """,
-                ItemParameters(item));
+            Execute(_connection, tx, InsertItemSql, ItemParameters(item));
             RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
             Enqueue(tx, item.Id, OutboxOperation.Create, item.RawPayload, null, groupId);
             tx.Commit();
@@ -256,15 +249,7 @@ public sealed class LocalStore : IDisposable
         {
             using var tx = _connection.BeginTransaction();
             var baseEtag = GetLiveEtag(tx, item.Id);
-            Execute(_connection, tx,
-                """
-                UPDATE items SET collection_id = $collection, kind = $kind, remote_id = $remote, raw_payload = $raw,
-                    summary = $summary, start_utc = $start, end_utc = $end, all_day = $allDay, time_zone = $tz,
-                    location = $location, status = $status, due_utc = $due, completed_utc = $completed,
-                    is_recurring = $recurring, etag = $etag, last_modified = $modified
-                WHERE id = $id;
-                """,
-                ItemParameters(item));
+            Execute(_connection, tx, UpdateItemSql, ItemParameters(item));
             RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
             Enqueue(tx, item.Id, OutboxOperation.Update, item.RawPayload, baseEtag, groupId);
             tx.Commit();
@@ -505,7 +490,116 @@ public sealed class LocalStore : IDisposable
         }
     }
 
+    // ---- Server changes (sync engines). Never queued in the outbox. ----
+
+    /// <summary>Etags of the cached items with a remote id in the given collections, keyed by remote id (href).</summary>
+    public IReadOnlyDictionary<string, string?> GetRemoteEtags(IReadOnlyList<string> collectionIds)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
+                $"SELECT remote_id, etag FROM items WHERE remote_id IS NOT NULL AND collection_id IN ({InList(collectionIds)});",
+                InParameters(collectionIds));
+            using var r = cmd.ExecuteReader();
+            var etags = new Dictionary<string, string?>();
+            while (r.Read())
+            {
+                etags[r.GetString(0)] = NullableString(r, 1);
+            }
+            return etags;
+        }
+    }
+
+    /// <summary>
+    /// Inserts or replaces the item with this remote id in the given collections, and rebuilds its occurrences.
+    /// Returns false, changing nothing, if the item has unsent local changes (conflict-resolution R1; the
+    /// Conflicts table comes later).
+    /// </summary>
+    public bool ApplyServerItem(IReadOnlyList<string> collectionIds, Item item)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            var existingId = FindByRemoteId(tx, collectionIds, item.RemoteId!);
+            if (existingId is not null && HasOutboxEntries(tx, existingId))
+            {
+                return false;
+            }
+            if (existingId is null)
+            {
+                Execute(_connection, tx, InsertItemSql, ItemParameters(item));
+            }
+            else
+            {
+                item = item with { Id = existingId };
+                Execute(_connection, tx, UpdateItemSql, ItemParameters(item));
+            }
+            RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
+            tx.Commit();
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Deletes the item the server removed. Returns false, keeping it, if it has unsent local changes.
+    /// </summary>
+    public bool RemoveServerItem(IReadOnlyList<string> collectionIds, string remoteId)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            var id = FindByRemoteId(tx, collectionIds, remoteId);
+            if (id is null)
+            {
+                return true;
+            }
+            if (HasOutboxEntries(tx, id))
+            {
+                return false;
+            }
+            Execute(_connection, tx, "DELETE FROM items WHERE id = $id;", ("$id", id));
+            tx.Commit();
+            return true;
+        }
+    }
+
     // ---- Internals ----
+
+    private const string InsertItemSql =
+        """
+        INSERT INTO items (id, collection_id, kind, remote_id, raw_payload, summary, start_utc, end_utc, all_day,
+            time_zone, location, status, due_utc, completed_utc, is_recurring, etag, last_modified)
+        VALUES ($id, $collection, $kind, $remote, $raw, $summary, $start, $end, $allDay,
+            $tz, $location, $status, $due, $completed, $recurring, $etag, $modified);
+        """;
+
+    private const string UpdateItemSql =
+        """
+        UPDATE items SET collection_id = $collection, kind = $kind, remote_id = $remote, raw_payload = $raw,
+            summary = $summary, start_utc = $start, end_utc = $end, all_day = $allDay, time_zone = $tz,
+            location = $location, status = $status, due_utc = $due, completed_utc = $completed,
+            is_recurring = $recurring, etag = $etag, last_modified = $modified
+        WHERE id = $id;
+        """;
+
+    private string? FindByRemoteId(SqliteTransaction tx, IReadOnlyList<string> collectionIds, string remoteId)
+    {
+        using var cmd = Command(_connection, tx,
+            $"SELECT id FROM items WHERE remote_id = $remote AND collection_id IN ({InList(collectionIds)});",
+            [("$remote", remoteId), .. InParameters(collectionIds)]);
+        return cmd.ExecuteScalar() as string;
+    }
+
+    private bool HasOutboxEntries(SqliteTransaction tx, string itemId)
+    {
+        using var cmd = Command(_connection, tx, "SELECT 1 FROM outbox WHERE item_id = $id LIMIT 1;", ("$id", itemId));
+        return cmd.ExecuteScalar() is not null;
+    }
+
+    private static string InList(IReadOnlyList<string> values) => string.Join(", ", values.Select((_, i) => $"$in{i}"));
+
+    private static (string, object?)[] InParameters(IReadOnlyList<string> values) =>
+        values.Select((v, i) => ($"$in{i}", (object?)v)).ToArray();
 
     private static readonly (string Key, CollectionKind Kind)[] DefaultKeys =
         [("default_calendar", CollectionKind.Calendar), ("default_tasklist", CollectionKind.TaskList)];

@@ -12,7 +12,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [account-management](docs/prd/account-management.md) | Multiple MS365 and Radicale accounts, credential storage | in-progress |
 | [local-store-offline](docs/prd/local-store-offline.md) | SQLite cache, outbox, offline read/write | closed |
 | [sync-ms365](docs/prd/sync-ms365.md) | Graph calendar and To Do sync | pending |
-| [sync-radicale](docs/prd/sync-radicale.md) | CalDAV sync for events and tasks | pending |
+| [sync-radicale](docs/prd/sync-radicale.md) | CalDAV sync for events and tasks | in-progress |
 | [conflict-resolution](docs/prd/conflict-resolution.md) | Server wins, local copy preserved | pending |
 | [recurring-events](docs/prd/recurring-events.md) | Recurrence model and edit scopes incl. "this and following" | pending |
 | [calendar-views](docs/prd/calendar-views.md) | Day/Week/Month views, calendar colours, drag to move/resize | pending |

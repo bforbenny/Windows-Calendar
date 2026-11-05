@@ -1,5 +1,4 @@
 using System;
-using System.Net.Http;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Serilog;
@@ -14,12 +13,6 @@ namespace WindowsCalendar;
 /// </summary>
 public sealed partial class AddRadicaleDialog : ContentDialog
 {
-    // Redirects are followed by CalDavDiscovery itself, so the Authorization header stays on the same host.
-    private static readonly HttpClient Http = new(new SocketsHttpHandler { AllowAutoRedirect = false })
-    {
-        Timeout = TimeSpan.FromSeconds(30),
-    };
-
     private readonly LocalStore _store;
 
     public AddRadicaleDialog(LocalStore store)
@@ -55,7 +48,7 @@ public sealed partial class AddRadicaleDialog : ContentDialog
         SetBusy(true);
         try
         {
-            var found = await new CalDavDiscovery(Http).DiscoverAsync(url, username, password);
+            var found = await new CalDavDiscovery(App.CalDavHttp).DiscoverAsync(url, username, password);
 
             var name = DisplayNameBox.Text.Trim();
             var email = EmailBox.Text.Trim();
@@ -77,7 +70,7 @@ public sealed partial class AddRadicaleDialog : ContentDialog
             AddedAccount = account;
             Hide();
         }
-        catch (CalDavDiscoveryException ex)
+        catch (CalDavException ex)
         {
             Log.Warning("Radicale connection test failed: {Error} {Status}", ex.Error, (int?)ex.Status);
             ShowError(Message(ex.Error));
@@ -95,14 +88,14 @@ public sealed partial class AddRadicaleDialog : ContentDialog
     }
 
     /// <summary>One message per failure (account-management R4a).</summary>
-    private static string Message(DiscoveryError error) => error switch
+    private static string Message(CalDavError error) => error switch
     {
-        DiscoveryError.NotHttps => "The server address must start with https://.",
-        DiscoveryError.Unreachable => "The server could not be reached. Check the address and your connection.",
-        DiscoveryError.CertificateNotTrusted => "The server's certificate is not trusted. Install the server's certificate in Windows, then retry.",
-        DiscoveryError.WrongCredentials => "Wrong username or password.",
-        DiscoveryError.NotCalDav => "No CalDAV service was found at this address.",
-        DiscoveryError.NoCalendars => "Connected, but no calendars or task lists were found.",
+        CalDavError.NotHttps => "The server address must start with https://.",
+        CalDavError.Unreachable => "The server could not be reached. Check the address and your connection.",
+        CalDavError.CertificateNotTrusted => "The server's certificate is not trusted. Install the server's certificate in Windows, then retry.",
+        CalDavError.WrongCredentials => "Wrong username or password.",
+        CalDavError.NotCalDav => "No CalDAV service was found at this address.",
+        CalDavError.NoCalendars => "Connected, but no calendars or task lists were found.",
         _ => "The connection test failed.",
     };
 

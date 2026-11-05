@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,6 +22,7 @@ using Windows.ApplicationModel.Activation;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
 using Windows.Networking.Connectivity;
+using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Core.Sync;
 using AppInstance = Microsoft.Windows.AppLifecycle.AppInstance;
@@ -38,6 +40,18 @@ public partial class App : Application
     private TaskbarIcon? _trayIcon;
     private SyncScheduler? _scheduler;
     private bool _online;
+
+    /// <summary>Accounts skipped after a 401 or a missing password, until restart (sync-radicale R11 interim). Sync runs one at a time.</summary>
+    private readonly HashSet<string> _pausedAccounts = [];
+
+    /// <summary>
+    /// Shared client for CalDAV. Redirects are followed by DavTransport itself, so the Authorization header stays
+    /// on the same host; certificate validation stays on (account-management R5).
+    /// </summary>
+    internal static readonly HttpClient CalDavHttp = new(new SocketsHttpHandler { AllowAutoRedirect = false })
+    {
+        Timeout = TimeSpan.FromSeconds(30),
+    };
 
     /// <summary>Kept alive for ColorValuesChanged (tray icon theme swap).</summary>
     private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
@@ -159,19 +173,62 @@ public partial class App : Application
     private static bool IsOnline() =>
         NetworkInformation.GetInternetConnectionProfile()?.GetNetworkConnectivityLevel() == NetworkConnectivityLevel.InternetAccess;
 
-    private Task RunSync(string reason, CancellationToken cancellationToken)
+    private async Task RunSync(string reason, CancellationToken cancellationToken)
     {
         Log.Information("Sync requested ({Reason})", reason);
-        cancellationToken.ThrowIfCancellationRequested();
+        if (Store is not { } store)
+        {
+            return;
+        }
 
         // Pick up a Windows timezone change, and move the window daily (local-store-offline R3, timezone-handling R6).
         TimeZoneInfo.ClearCachedData();
-        if (Store?.RefreshOccurrences() == true)
+        if (store.RefreshOccurrences())
         {
             Log.Information("Occurrence index rebuilt for {Zone}", TimeZoneInfo.Local.Id);
         }
-        return Task.CompletedTask;
+
+        var radicale = new RadicaleSync(store, CalDavHttp);
+        foreach (var account in store.GetAccounts().Where(a => a.Type == AccountType.CalDAV))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_pausedAccounts.Contains(account.Id))
+            {
+                continue;
+            }
+
+            // sync-radicale R10: the password comes from Credential Manager for this run only, and is never logged.
+            var password = CredentialVault.RetrievePassword(account.Id);
+            if (password is null)
+            {
+                Log.Warning("Account {AccountId} has no saved password; paused until restart", account.Id);
+                _pausedAccounts.Add(account.Id);
+                continue;
+            }
+            try
+            {
+                var summary = await radicale.SyncAccountAsync(account, password, cancellationToken);
+                Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
+            }
+            catch (CalDavException ex) when (ex.Error == CalDavError.WrongCredentials)
+            {
+                // sync-radicale R11 interim: no retry loop; the Sign in bar comes with ui-states.
+                Log.Warning("Account {AccountId} rejected the saved password (401); paused until restart", account.Id);
+                _pausedAccounts.Add(account.Id);
+            }
+            catch (CalDavException ex)
+            {
+                Log.Warning("Account {AccountId} sync failed: {Error} {Status}", account.Id, ex.Error, (int?)ex.Status);
+            }
+            finally
+            {
+                password = null;
+            }
+        }
     }
+
+    /// <summary>Asks for a sync now, e.g. after an account is added (local-store-offline R10).</summary>
+    internal void RequestSync(string reason) => _scheduler?.Request(reason);
 
     /// <summary>Tray and toolbar Sync now: retry failed changes immediately (local-store-offline R7, R10).</summary>
     private void SyncNow()

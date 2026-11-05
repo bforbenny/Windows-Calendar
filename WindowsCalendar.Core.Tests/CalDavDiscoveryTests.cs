@@ -127,9 +127,9 @@ public sealed class CalDavDiscoveryTests
     public async Task PlainHttp_IsRejectedWithoutARequest()
     {
         var server = Radicale();
-        var ex = await Assert.ThrowsAsync<CalDavDiscoveryException>(() => Discover(server, "http://dav.example.test/"));
+        var ex = await Assert.ThrowsAsync<CalDavException>(() => Discover(server, "http://dav.example.test/"));
 
-        Assert.Equal(DiscoveryError.NotHttps, ex.Error);
+        Assert.Equal(CalDavError.NotHttps, ex.Error);
         Assert.Empty(server.Requests);
     }
 
@@ -139,8 +139,8 @@ public sealed class CalDavDiscoveryTests
         var server = Radicale();
         server.Routes["/"] = _ => new HttpResponseMessage(HttpStatusCode.Unauthorized);
 
-        var ex = await Assert.ThrowsAsync<CalDavDiscoveryException>(() => Discover(server));
-        Assert.Equal(DiscoveryError.WrongCredentials, ex.Error);
+        var ex = await Assert.ThrowsAsync<CalDavException>(() => Discover(server));
+        Assert.Equal(CalDavError.WrongCredentials, ex.Error);
     }
 
     [Fact]
@@ -148,8 +148,8 @@ public sealed class CalDavDiscoveryTests
     {
         var server = new FakeServer { Throw = new HttpRequestException("ssl", new AuthenticationException("untrusted root")) };
 
-        var ex = await Assert.ThrowsAsync<CalDavDiscoveryException>(() => Discover(server));
-        Assert.Equal(DiscoveryError.CertificateNotTrusted, ex.Error);
+        var ex = await Assert.ThrowsAsync<CalDavException>(() => Discover(server));
+        Assert.Equal(CalDavError.CertificateNotTrusted, ex.Error);
     }
 
     [Fact]
@@ -157,15 +157,15 @@ public sealed class CalDavDiscoveryTests
     {
         var server = new FakeServer { Throw = new HttpRequestException("No such host is known.") };
 
-        var ex = await Assert.ThrowsAsync<CalDavDiscoveryException>(() => Discover(server));
-        Assert.Equal(DiscoveryError.Unreachable, ex.Error);
+        var ex = await Assert.ThrowsAsync<CalDavException>(() => Discover(server));
+        Assert.Equal(CalDavError.Unreachable, ex.Error);
     }
 
     [Fact]
     public async Task NonCalDavServer_IsReported()
     {
-        var ex = await Assert.ThrowsAsync<CalDavDiscoveryException>(() => Discover(new FakeServer()));
-        Assert.Equal(DiscoveryError.NotCalDav, ex.Error);
+        var ex = await Assert.ThrowsAsync<CalDavException>(() => Discover(new FakeServer()));
+        Assert.Equal(CalDavError.NotCalDav, ex.Error);
     }
 
     [Fact]
@@ -176,8 +176,8 @@ public sealed class CalDavDiscoveryTests
             ? MultiStatus(Ok("/ben/", "<C:calendar-home-set><href>/ben/</href></C:calendar-home-set>"))
             : MultiStatus(Ok("/ben/", "<resourcetype><collection/><principal/></resourcetype>"));
 
-        var ex = await Assert.ThrowsAsync<CalDavDiscoveryException>(() => Discover(server));
-        Assert.Equal(DiscoveryError.NoCalendars, ex.Error);
+        var ex = await Assert.ThrowsAsync<CalDavException>(() => Discover(server));
+        Assert.Equal(CalDavError.NoCalendars, ex.Error);
     }
 
     [Fact]
@@ -187,15 +187,15 @@ public sealed class CalDavDiscoveryTests
         server.Routes["/.well-known/caldav"] = _ => Redirect("https://evil.example.test/");
         server.Routes.Remove("/");
 
-        var ex = await Assert.ThrowsAsync<CalDavDiscoveryException>(() => Discover(server));
-        Assert.Equal(DiscoveryError.NotCalDav, ex.Error);
+        var ex = await Assert.ThrowsAsync<CalDavException>(() => Discover(server));
+        Assert.Equal(CalDavError.NotCalDav, ex.Error);
         Assert.DoesNotContain(server.Requests, r => r.RequestUri!.Host == "evil.example.test");
     }
 
     [Fact]
     public void ErrorMessage_HasNoCredentials()
     {
-        var ex = new CalDavDiscoveryException(DiscoveryError.WrongCredentials, HttpStatusCode.Unauthorized);
-        Assert.Equal("CalDAV discovery failed: WrongCredentials (HTTP 401)", ex.Message);
+        var ex = new CalDavException(CalDavError.WrongCredentials, HttpStatusCode.Unauthorized);
+        Assert.Equal("CalDAV request failed: WrongCredentials (HTTP 401)", ex.Message);
     }
 }

@@ -121,6 +121,7 @@ public sealed partial class MainWindow : Window
         if (dialog.AddedAccount is not null)
         {
             ShowAccounts();
+            ((App)Application.Current).RequestSync("account added");
         }
     }
 
