@@ -18,7 +18,7 @@ A search box finds events and tasks across all accounts using a local SQLite FTS
 - R3. Results list: type icon (event/task), title, date/time, calendar colour + name, and a snippet with the match highlighted. Upcoming items first (soonest first), then past items (newest first).
 - R4. Filters: All / Events / Tasks; account or calendar. The active calendar set is the default filter, shown as a removable chip; "Clear filters" removes it.
 - R5. Selecting a result navigates the calendar to the date shown and opens that occurrence.
-- R6. Scope: everything in the local store (the sync window for MS365; full collections for Radicale). Online server-side search beyond the window is out of scope. When MS365 accounts exist, results show "Microsoft 365 searched from <date>" so the window is visible. Declined events are included ([attendees-invitations](attendees-invitations.md) R4).
+- R6. Scope: everything in the local store from calendars and task lists shown in the sidebar (the sync window for MS365; full collections for Radicale). Hidden calendars and task lists are not searched. Online server-side search beyond the window is out of scope. When MS365 accounts exist, results show "Microsoft 365 searched from <date>" so the window is visible. Declined events are included ([attendees-invitations](attendees-invitations.md) R4).
 - R7. Recurring series appear once (series result), with the next occurrence date. If the series has ended, the last occurrence is shown; if the match is only in an exception, that occurrence is shown.
 - R8. Search across ~10,000 items returns in < 100 ms.
 
@@ -29,7 +29,7 @@ A search box finds events and tasks across all accounts using a local SQLite FTS
 - MS365 HTML descriptions are indexed as plain text.
 - Results drop down under the toolbar search box. Esc closes them. Up to 50 results are shown.
 - R7: a Radicale recurring event is one stored item, so a match only in an exception's text shows the series result, not that occurrence. MS365 exceptions are stored on their own and are shown as the occurrence.
-- Results from calendars hidden in the sidebar are included (R6: everything in the local store). Choosing one opens it in the editor, but the calendar does not draw it.
+- Calendars and task lists hidden in the sidebar are not searched (R6). Showing one again makes its items searchable at once; the index is not changed.
 
 ## Out of scope
 

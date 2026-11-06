@@ -8,7 +8,12 @@ using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar.Core.Tests;
 
+/// <summary>Search tests run alone, so the R8 timing is not measured against other tests' load.</summary>
+[CollectionDefinition(nameof(SearchTests), DisableParallelization = true)]
+public sealed class SearchTimingCollection;
+
 /// <summary>Offline full-text search (search R1-R3, R6-R8).</summary>
+[Collection(nameof(SearchTests))]
 public sealed class SearchTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("wincal-search-").FullName;
@@ -143,6 +148,18 @@ public sealed class SearchTests : IDisposable
     }
 
     [Fact]
+    public void HiddenCalendars_AreNotSearched_UntilShownAgain()
+    {
+        _store.CreateItem(CalDav("r1", "Dentist", "20261110T010000Z"));
+
+        _store.SetCollectionHidden("c1", true);
+        Assert.Empty(_store.Search("dentist"));
+
+        _store.SetCollectionHidden("c1", false);
+        Assert.Single(_store.Search("dentist"));
+    }
+
+    [Fact]
     public void ExistingItems_AreIndexedOnOpenAfterTheUpgrade()
     {
         _store.CreateItem(CalDav("r1", "Dentist", "20261110T010000Z"));
@@ -248,7 +265,7 @@ public sealed class SearchTests : IDisposable
         }
         _store.Search("agenda"); // Warm-up: JIT and the SQLite page cache.
 
-        // "meeting" matches every item, the worst case. Best of five, as other tests share the machine.
+        // "meeting" matches every item, the worst case. Best of five.
         foreach (var text in new[] { "meeting", "project 42", "room 7" })
         {
             var best = long.MaxValue;

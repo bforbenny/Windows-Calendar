@@ -670,7 +670,7 @@ public sealed class LocalStore : IDisposable
     // ---- Search ----
 
     /// <summary>
-    /// Live events and tasks matching every typed word as a prefix, in any account or collection (search R1, R2, R6).
+    /// Live events and tasks matching every typed word as a prefix, in collections that are not hidden (search R1, R2, R6).
     /// A series is one result (R7): items of one MS365 series, or one CalDAV item, are grouped and shown by the next
     /// matched occurrence, else the last one. Upcoming results come first, soonest first, then past ones, newest first,
     /// then undated tasks (R3). Titles and snippets mark matches with <see cref="SearchResult.MarkStart"/> and
@@ -694,7 +694,8 @@ public sealed class LocalStore : IDisposable
                        COALESCE(o.start_utc, i.start_utc, i.due_utc), COALESCE(o.end_utc, i.end_utc, i.due_utc), o.recurrence_utc,
                        o.item_id IS NOT NULL
                 FROM search_index s JOIN items i ON i.rowid = s.rowid LEFT JOIN occurrences o ON o.item_id = i.id
-                WHERE search_index MATCH $q AND i.deleted = 0;
+                WHERE search_index MATCH $q AND i.deleted = 0
+                  AND i.collection_id NOT IN (SELECT substr(key, 8) FROM meta WHERE key LIKE 'hidden:%');
                 """, ("$q", query)))
             using (var r = cmd.ExecuteReader())
             {
