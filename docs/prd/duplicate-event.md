@@ -30,6 +30,14 @@ The user can copy an existing event into a new, independent event and then adjus
 - Undo (R7) deletes the copy: an unsent create is dropped from the outbox, a sent one is deleted on the server. Edits made to the copy since are deleted with it, and no server-change check is made.
 - Later: R5 "from the series editor" (the editor has no Duplicate yet) and R6 into another calendar (the copy goes into the same calendar; it can then be moved to any calendar from the editor's Calendar field, per [calendar-views](calendar-views.md) R8; a copy of a meeting has no attendees, so it can move).
 
+## Pending user check
+
+Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or merged:
+
+- [ ] Ctrl+D on a Teams meeting: the copy has no attendees or Join link and appears in Outlook after sync.
+- [ ] Right-click Duplicate opens the copy in the editor; the Undo banner removes it.
+- [ ] Ctrl+drag to another day creates a copy there and leaves the original unchanged.
+
 ## Out of scope
 
 - Duplicating tasks.

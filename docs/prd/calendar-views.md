@@ -88,6 +88,14 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
   - Refused: meetings and invitations, in any account and also within one account (the Calendar field is disabled for them); repeating MS365 events (as within an account).
 - R10 interim: Delete asks for confirmation until [undo](undo.md) exists. No keyboard selection yet. For a recurring event Delete asks for the scope: one occurrence is deleted at once with the undo banner, the entire series asks for confirmation.
 
+### Pending user check (R8 across accounts)
+
+Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or merged:
+
+- [ ] Move a repeating Radicale event to MS365: the confirmation lists what is lost; the series appears in Outlook.
+- [ ] Move an MS365 event with a reminder and "Out of office" to Radicale: both carry over.
+- [ ] A meeting or invitation opens with the Calendar field disabled.
+
 ## Interim (third slice: drag)
 
 - R7 with mouse and pen. On touch, a swipe keeps scrolling; press-and-hold to drag comes later.
