@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Destructive confirmations (ui-colour-theme R3): Cancel stays the default button, so Enter cancels, but is drawn as
+     a plain grey button rather than in the accent colour. Merged into those dialogs' resources only. -->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Default">
+            <StaticResource x:Key="AccentButtonBackground" ResourceKey="ButtonBackground" />
+            <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="ButtonBackgroundPointerOver" />
+            <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="ButtonBackgroundPressed" />
+            <StaticResource x:Key="AccentButtonBackgroundDisabled" ResourceKey="ButtonBackgroundDisabled" />
+            <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="ButtonBorderBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="ButtonBorderBrushPointerOver" />
+            <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="ButtonBorderBrushPressed" />
+            <StaticResource x:Key="AccentButtonBorderBrushDisabled" ResourceKey="ButtonBorderBrushDisabled" />
+            <StaticResource x:Key="AccentButtonForeground" ResourceKey="ButtonForeground" />
+            <StaticResource x:Key="AccentButtonForegroundPointerOver" ResourceKey="ButtonForegroundPointerOver" />
+            <StaticResource x:Key="AccentButtonForegroundPressed" ResourceKey="ButtonForegroundPressed" />
+            <StaticResource x:Key="AccentButtonForegroundDisabled" ResourceKey="ButtonForegroundDisabled" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Light">
+            <StaticResource x:Key="AccentButtonBackground" ResourceKey="ButtonBackground" />
+            <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="ButtonBackgroundPointerOver" />
+            <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="ButtonBackgroundPressed" />
+            <StaticResource x:Key="AccentButtonBackgroundDisabled" ResourceKey="ButtonBackgroundDisabled" />
+            <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="ButtonBorderBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="ButtonBorderBrushPointerOver" />
+            <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="ButtonBorderBrushPressed" />
+            <StaticResource x:Key="AccentButtonBorderBrushDisabled" ResourceKey="ButtonBorderBrushDisabled" />
+            <StaticResource x:Key="AccentButtonForeground" ResourceKey="ButtonForeground" />
+            <StaticResource x:Key="AccentButtonForegroundPointerOver" ResourceKey="ButtonForegroundPointerOver" />
+            <StaticResource x:Key="AccentButtonForegroundPressed" ResourceKey="ButtonForegroundPressed" />
+            <StaticResource x:Key="AccentButtonForegroundDisabled" ResourceKey="ButtonForegroundDisabled" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="HighContrast">
+            <StaticResource x:Key="AccentButtonBackground" ResourceKey="ButtonBackground" />
+            <StaticResource x:Key="AccentButtonBackgroundPointerOver" ResourceKey="ButtonBackgroundPointerOver" />
+            <StaticResource x:Key="AccentButtonBackgroundPressed" ResourceKey="ButtonBackgroundPressed" />
+            <StaticResource x:Key="AccentButtonBackgroundDisabled" ResourceKey="ButtonBackgroundDisabled" />
+            <StaticResource x:Key="AccentButtonBorderBrush" ResourceKey="ButtonBorderBrush" />
+            <StaticResource x:Key="AccentButtonBorderBrushPointerOver" ResourceKey="ButtonBorderBrushPointerOver" />
+            <StaticResource x:Key="AccentButtonBorderBrushPressed" ResourceKey="ButtonBorderBrushPressed" />
+            <StaticResource x:Key="AccentButtonBorderBrushDisabled" ResourceKey="ButtonBorderBrushDisabled" />
+            <StaticResource x:Key="AccentButtonForeground" ResourceKey="ButtonForeground" />
+            <StaticResource x:Key="AccentButtonForegroundPointerOver" ResourceKey="ButtonForegroundPointerOver" />
+            <StaticResource x:Key="AccentButtonForegroundPressed" ResourceKey="ButtonForegroundPressed" />
+            <StaticResource x:Key="AccentButtonForegroundDisabled" ResourceKey="ButtonForegroundDisabled" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>
