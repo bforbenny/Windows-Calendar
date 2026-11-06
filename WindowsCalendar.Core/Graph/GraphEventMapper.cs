@@ -102,8 +102,10 @@ public static class GraphEventMapper
         var startWall = TimeZoneInfo.ConvertTime(start, zone).DateTime;
         var endWall = TimeZoneInfo.ConvertTime(end, zone).DateTime;
         var source = ev.TryGetProperty("subject", out _) || masterDoc is null ? ev : masterDoc.RootElement;
+        var showAs = GraphClient.Text(ev, "showAs") ?? (masterDoc is null ? null : GraphClient.Text(masterDoc.RootElement, "showAs"));
         return new CalDav.EventFields(GraphClient.Text(source, "subject") ?? "", allDay,
-            allDay ? startWall.Date : startWall, allDay ? endWall.Date : endWall, Location(source), Description(source));
+            allDay ? startWall.Date : startWall, allDay ? endWall.Date : endWall, Location(source), Description(source),
+            ShowAsValues.FromGraph(showAs));
     }
 
     /// <summary>

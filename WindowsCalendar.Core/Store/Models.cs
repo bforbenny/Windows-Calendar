@@ -124,7 +124,8 @@ public sealed record OccurrenceView(
     DateTimeOffset? RecurrenceUtc = null,
     bool ReadOnly = false,
     bool Unaccepted = false,
-    bool Completed = false);
+    bool Completed = false,
+    ShowAs ShowAs = ShowAs.Busy);
 
 /// <summary>One expanded instance of an item in the occurrence index (local-store-offline R3).</summary>
 public sealed record ItemOccurrence(string ItemId, DateTimeOffset StartUtc, DateTimeOffset EndUtc);

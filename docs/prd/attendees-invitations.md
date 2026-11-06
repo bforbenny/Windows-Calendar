@@ -35,6 +35,7 @@ The app shows who is invited to a meeting and whether you still need to respond,
 
 - R3, first part: MS365 events where you are an attendee (not the organiser) and `responseStatus.response` is `none`, `notResponded` or `tentativelyAccepted` are drawn muted in Day, Week, Month and Agenda: no fill (the view's background), a 1 epx border and the left bar in the calendar colour, normal text. An occurrence of such a series follows its series. High contrast keeps the same outline with system colours.
 - The "needs response" glyph and the editor's "You have not responded" text come later; until then the muted style is the only marker.
+- Replaced by [event-show-as](event-show-as.md) R5 (2026-11-06, branch `event-show-as`): the muted outline looked the same as Free, so unanswered invitations are now drawn by their show-as, which is usually Tentative. Until the "needs response" glyph is built, an unanswered invitation has no marker of its own.
 
 ## Out of scope
 

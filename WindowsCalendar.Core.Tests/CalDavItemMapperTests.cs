@@ -40,7 +40,7 @@ public sealed class CalDavItemMapperTests
         var item = CalDavItemMapper.Map("https://dav.example.test/ben/personal/s1.ics", "\"e1\"", data, London)!;
 
         Assert.Equal(ItemKind.Event, item.Kind);
-        Assert.Equal(("Standup", "Room 1", "CONFIRMED", "Europe/London"), (item.Summary, item.Location, item.Status, item.TimeZone));
+        Assert.Equal(("Standup", "Room 1", "busy", "Europe/London"), (item.Summary, item.Location, item.Status, item.TimeZone));
         Assert.Equal(new DateTimeOffset(2026, 10, 19, 8, 0, 0, TimeSpan.Zero), item.StartUtc);
         Assert.Equal(new DateTimeOffset(2026, 10, 19, 9, 0, 0, TimeSpan.Zero), item.EndUtc);
         Assert.True(item.IsRecurring);

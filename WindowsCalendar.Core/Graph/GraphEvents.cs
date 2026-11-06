@@ -65,6 +65,12 @@ public static class GraphEvents
             changed.Add("body");
             any = true;
         }
+        if (fields.ShowAs != old.ShowAs)
+        {
+            ev["showAs"] = ShowAsValues.ToGraph(fields.ShowAs);
+            changed.Add("showAs");
+            any = true;
+        }
         if (fields.AllDay != old.AllDay || fields.Start != old.Start || fields.End != old.End)
         {
             SetTimes(ev, fields, zone, OwnZone(ev, zone));
@@ -177,6 +183,7 @@ public static class GraphEvents
     {
         ev["subject"] = fields.Title;
         ev["body"] = new JsonObject { ["contentType"] = "text", ["content"] = fields.Description ?? "" };
+        ev["showAs"] = ShowAsValues.ToGraph(fields.ShowAs);
         if (!string.IsNullOrEmpty(fields.Location))
         {
             ev["location"] = new JsonObject { ["displayName"] = fields.Location };

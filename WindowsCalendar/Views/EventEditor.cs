@@ -34,6 +34,7 @@ internal sealed partial class EventEditor : UserControl
     private readonly TimePicker _endTime = new() { VerticalAlignment = VerticalAlignment.Bottom };
     private readonly TextBox _location = new() { Header = "Location" };
     private readonly ComboBox _calendar = new() { Header = "Calendar", HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox _showAs = new() { Header = "Show as", HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBox _description = new()
     {
         Header = "Description",
@@ -57,6 +58,8 @@ internal sealed partial class EventEditor : UserControl
     private bool _loading;
     private bool _readOnly;
     private DateTime _shownStart;
+    // A new event whose show-as the user has not chosen: it follows all-day (event-show-as R4).
+    private bool _defaultShowAs;
 
     private readonly DropDownButton _switch;
     private readonly MenuFlyoutItem _switchItem;
@@ -87,6 +90,7 @@ internal sealed partial class EventEditor : UserControl
         form.Children.Add(DateTimeRow(_endDate, _endTime));
         form.Children.Add(_repeat);
         form.Children.Add(_location);
+        form.Children.Add(_showAs);
         form.Children.Add(_calendar);
         form.Children.Add(_description);
 
@@ -115,7 +119,23 @@ internal sealed partial class EventEditor : UserControl
             }
         };
         // Pickers and checkboxes save at once.
-        _allDay.Click += (_, _) => { ShowTimePickers(); Save(); };
+        _allDay.Click += (_, _) =>
+        {
+            ShowTimePickers();
+            if (_defaultShowAs)
+            {
+                ShowShowAs(_allDay.IsChecked == true ? ShowAs.Free : ShowAs.Busy);
+            }
+            Save();
+        };
+        _showAs.SelectionChanged += (_, _) =>
+        {
+            if (!_loading)
+            {
+                _defaultShowAs = false;
+                Save();
+            }
+        };
         _startDate.DateChanged += (_, _) => StartChanged();
         _startTime.TimeChanged += (_, _) => StartChanged();
         _endDate.DateChanged += (_, _) => Save();
@@ -250,7 +270,7 @@ internal sealed partial class EventEditor : UserControl
         _savedRule = RepeatRule.None;
         _ruleAutosave = true;
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
-        Show("New event", new EventFields(title, allDay, start, end, null, null), choices, defaultId);
+        Show("New event", new EventFields(title, allDay, start, end, null, null, allDay ? ShowAs.Free : ShowAs.Busy), choices, defaultId);
         _notice.IsOpen = false;
         _title.Focus(FocusState.Programmatic);
     }
@@ -355,13 +375,15 @@ internal sealed partial class EventEditor : UserControl
             _calendar.Items.Add(new ComboBoxItem { Content = label, Tag = c });
         }
         _calendar.SelectedIndex = choices.FindIndex(c => c.Id == selectedId);
+        _defaultShowAs = _itemId is null;
+        ShowShowAs(fields.ShowAs);
 
         _delete.Visibility = _itemId is null || _readOnly ? Visibility.Collapsed : Visibility.Visible;
         foreach (var box in new[] { _title, _location, _description })
         {
             box.IsReadOnly = _readOnly;
         }
-        foreach (var control in new Control[] { _allDay, _startDate, _startTime, _endDate, _endTime, _calendar })
+        foreach (var control in new Control[] { _allDay, _startDate, _startTime, _endDate, _endTime, _showAs, _calendar })
         {
             control.IsEnabled = !_readOnly;
         }
@@ -392,9 +414,43 @@ internal sealed partial class EventEditor : UserControl
         _location.Text = fields.Location ?? "";
         _description.Text = (fields.Description ?? "").Replace("\r\n", "\r").Replace("\n", "\r");
         _shownStart = fields.Start;
+        ShowShowAs(fields.ShowAs);
         ShowTimePickers();
         _loading = loading;
     }
+
+    /// <summary>
+    /// The show-as choices for the event's backend (event-show-as R2): all five for MS365, Busy and Free for CalDAV. A
+    /// CalDAV event carrying another value (R3) shows it as a further choice. A new event moved to a calendar that
+    /// lacks its value becomes Busy.
+    /// </summary>
+    private void ShowShowAs(ShowAs current)
+    {
+        var graph = _itemId is null ? (_calendar.SelectedItem as ComboBoxItem)?.Tag is Collection c && IsGraphCalendar(c) : _graph;
+        List<ShowAs> values = graph ? [.. Enum.GetValues<ShowAs>()] : [ShowAs.Busy, ShowAs.Free];
+        if (!values.Contains(current))
+        {
+            if (_itemId is null)
+            {
+                current = ShowAs.Busy;
+            }
+            else
+            {
+                values.Add(current);
+            }
+        }
+        var loading = _loading;
+        _loading = true;
+        _showAs.Items.Clear();
+        foreach (var value in values)
+        {
+            _showAs.Items.Add(new ComboBoxItem { Content = ShowAsValues.Label(value), Tag = value });
+        }
+        _showAs.SelectedIndex = values.IndexOf(current);
+        _loading = loading;
+    }
+
+    private ShowAs ReadShowAs() => (_showAs.SelectedItem as ComboBoxItem)?.Tag is ShowAs value ? value : ShowAs.Busy;
 
     private void ShowTimePickers() =>
         _startTime.Visibility = _endTime.Visibility = _allDay.IsChecked == true ? Visibility.Collapsed : Visibility.Visible;
@@ -438,7 +494,7 @@ internal sealed partial class EventEditor : UserControl
             _loading = loading;
         }
         var description = _description.Text.Replace("\r\n", "\n").Replace("\r", "\n");
-        return new EventFields(_title.Text.Trim(), allDay, start, end, _location.Text.Trim(), description);
+        return new EventFields(_title.Text.Trim(), allDay, start, end, _location.Text.Trim(), description, ReadShowAs());
     }
 
     private void Save()

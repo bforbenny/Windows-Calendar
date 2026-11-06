@@ -48,6 +48,7 @@ public sealed class LocalStore : IDisposable
         {
             connection.Open();
             Migrations.Apply(connection);
+            RemapShowAs(connection);
             Execute(connection, null, "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
             // Entries left in flight by a crash are sent again (R4).
             Execute(connection, null, "UPDATE outbox SET in_flight = 0 WHERE in_flight = 1;");
@@ -61,6 +62,45 @@ public sealed class LocalStore : IDisposable
     }
 
     public void Dispose() => _connection.Dispose();
+
+    /// <summary>
+    /// After migration v11: the status column of stored CalDAV events is set to their show-as (event-show-as), once.
+    /// </summary>
+    private static void RemapShowAs(SqliteConnection connection)
+    {
+        using (var check = Command(connection, null, "SELECT 1 FROM meta WHERE key = 'remap-show-as';"))
+        {
+            if (check.ExecuteScalar() is null)
+            {
+                return;
+            }
+        }
+        using var tx = connection.BeginTransaction();
+        var rows = new List<(string Id, string Payload)>();
+        using (var cmd = Command(connection, tx, "SELECT id, raw_payload FROM items WHERE kind = 'Event' AND raw_payload NOT LIKE '{%';"))
+        using (var r = cmd.ExecuteReader())
+        {
+            while (r.Read())
+            {
+                rows.Add((r.GetString(0), r.GetString(1)));
+            }
+        }
+        foreach (var (id, payload) in rows)
+        {
+            string status;
+            try
+            {
+                status = ShowAsValues.ToGraph(CalDav.CalDavEvents.ReadShowAs(CalDav.CalDavEvents.Master(Ical.Net.Calendar.Load(payload)!)));
+            }
+            catch (Exception)
+            {
+                continue;
+            }
+            Execute(connection, tx, "UPDATE items SET status = $status WHERE id = $id;", ("$status", status), ("$id", id));
+        }
+        Execute(connection, tx, "DELETE FROM meta WHERE key = 'remap-show-as';");
+        tx.Commit();
+    }
 
     // ---- Accounts and collections ----
 
@@ -521,7 +561,8 @@ public sealed class LocalStore : IDisposable
 
     /// <summary>
     /// Occurrences overlapping [from, to) in collections that are not hidden, with the fields the views draw,
-    /// ordered by start (calendar-views R12: one query per render).
+    /// ordered by start (calendar-views R12: one query per render). An MS365 occurrence without its own show-as
+    /// takes its series' (event-show-as).
     /// </summary>
     public IReadOnlyList<OccurrenceView> GetOccurrenceViews(DateTimeOffset from, DateTimeOffset to)
     {
@@ -532,7 +573,8 @@ public sealed class LocalStore : IDisposable
                 SELECT o.item_id, i.collection_id, i.kind, COALESCE(i.summary, m.summary), COALESCE(i.location, m.location),
                        o.start_utc, o.end_utc, i.all_day, i.is_recurring, o.recurrence_utc, i.read_only OR COALESCE(m.read_only, 0),
                        CASE WHEN i.series_id IS NOT NULL AND i.summary IS NULL THEN COALESCE(m.unaccepted, 0) ELSE i.unaccepted END,
-                       i.completed_utc IS NOT NULL OR lower(COALESCE(i.status, '')) = 'completed'
+                       i.completed_utc IS NOT NULL OR lower(COALESCE(i.status, '')) = 'completed',
+                       CASE WHEN i.kind = 'Event' THEN COALESCE(i.status, m.status) END
                 FROM occurrences o JOIN items i ON i.id = o.item_id
                 LEFT JOIN items m ON i.series_id IS NOT NULL AND m.collection_id = i.collection_id AND m.remote_id = i.series_id AND m.deleted = 0
                 WHERE i.deleted = 0 AND o.start_utc < $to AND o.end_utc >= $from
@@ -546,7 +588,8 @@ public sealed class LocalStore : IDisposable
             {
                 list.Add(new OccurrenceView(r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)),
                     NullableString(r, 3), NullableString(r, 4), Time(r, 5), Time(r, 6), r.GetBoolean(7), r.GetBoolean(8),
-                    r.IsDBNull(9) ? null : Time(r, 9), r.GetBoolean(10), r.GetBoolean(11), r.GetBoolean(12)));
+                    r.IsDBNull(9) ? null : Time(r, 9), r.GetBoolean(10), r.GetBoolean(11), r.GetBoolean(12),
+                    ShowAsValues.FromGraph(NullableString(r, 13))));
             }
             return list;
         }

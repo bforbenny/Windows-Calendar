@@ -2,7 +2,7 @@
 description: Show-as (Busy / Free / Tentative / Out of office / Working elsewhere) on events, mapped to Graph and CalDAV
 when-to-use: Before working on the show-as field, its sync mapping, or how free/tentative/OOF events are drawn
 tags: [events, show-as, free-busy, ui]
-status: pending
+status: in-progress
 ---
 
 # Event show-as
@@ -39,6 +39,26 @@ Each event has a show-as value that controls how it blocks your availability for
   Icons come from Segoe Fluent Icons. Styles work in light, dark and high-contrast themes.
 - R6. Show-as is editable offline and synced via the outbox; for recurring events the scope prompt applies.
 - R7. Graph `unknown` is displayed as Busy and preserved unless the user edits it.
+
+## Interim (first slice)
+
+- Built: R1 to R7. The editor's "Show as" drop-down sits under Location. Unanswered MS365 invitations are drawn by their show-as (usually Tentative). This replaces the muted outline from [attendees-invitations](attendees-invitations.md) interim, because that outline looked the same as Free.
+- Glyphs: Out of office uses Airplane (U+E709) and Working elsewhere uses CityNext (U+EC06) from Segoe Fluent Icons.
+- A CalDAV event carrying Working elsewhere in `X-MICROSOFT-CDO-BUSYSTATUS` shows it read-only, like Tentative and Out of office.
+- `X-MICROSOFT-CDO-BUSYSTATUS` is written when the event already has it, and when the value is neither Busy nor Free (for example an MS365 event moved to Radicale).
+- A CalDAV series is drawn with its master's show-as. A changed occurrence keeps its own value in the editor and on the server, but its card shows the series' style. Titles of changed occurrences behave the same way.
+- Existing CalDAV events get their show-as from the stored data once, on the first start after the update (store v11).
+
+## Pending user check
+
+Built on branch `event-show-as` (2026-11-06). The branch is stacked on `duplicate-event`. Nothing here is verified in the app or merged yet:
+
+- [ ] Show as Out of office on an MS365 event, then check that Outlook shows Out of office.
+- [ ] Show as Free on a Radicale event, then check that another CalDAV client shows it as free.
+- [ ] Each value looks distinct in Day, Week, Month and Agenda, in light, dark and high contrast. Check the hatched bar, the dashed and dotted borders, and both glyphs.
+- [ ] New event: timed starts as Busy and all-day as Free. Toggling All day switches it until you pick a value yourself.
+- [ ] A Radicale event set to Tentative in Outlook shows Tentative, offers Busy and Free, and keeps Tentative unless you change it.
+- [ ] A repeating event: changing show-as asks for the scope.
 
 ## Out of scope
 

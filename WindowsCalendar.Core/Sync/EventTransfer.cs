@@ -16,8 +16,8 @@ public sealed record TransferResult(Item Moved, IReadOnlyList<string> Lost);
 /// <summary>
 /// Moving an event to a calendar in another account (calendar-views R8). Between two accounts of the same kind the
 /// stored event is copied whole. Between CalDAV and Microsoft 365 the fields are mapped: title, times in the event's
-/// own timezone, all-day, location (with coordinates), description, repeat rule, first reminder, show-as, privacy,
-/// importance and categories. Meetings, invitations and repeating Microsoft 365 events are refused.
+/// own timezone, all-day, location (with coordinates), description, show-as (event-show-as R1, R3), repeat rule, first
+/// reminder, privacy, importance and categories. Meetings, invitations and repeating Microsoft 365 events are refused.
 /// </summary>
 public static partial class EventTransfer
 {
@@ -77,15 +77,6 @@ public static partial class EventTransfer
             lost.Add(others == 1 ? "1 other reminder" : $"{others} other reminders");
         }
 
-        ev["showAs"] = BusyStatus(master) switch
-        {
-            "FREE" => "free",
-            "TENTATIVE" => "tentative",
-            "OOF" => "oof",
-            "WORKINGELSEWHERE" => "workingElsewhere",
-            "BUSY" => "busy",
-            _ => "TRANSPARENT".Equals(master.Transparency, StringComparison.OrdinalIgnoreCase) ? "free" : "busy",
-        };
         switch (master.Class?.ToUpperInvariant())
         {
             case "PRIVATE":
@@ -143,9 +134,6 @@ public static partial class EventTransfer
     /// <summary><see cref="IsMeeting(CalendarEvent)"/> for a stored CalDAV event.</summary>
     public static bool IsMeeting(Item item) => IsMeeting(CalDavEvents.Master(Calendar.Load(item.RawPayload)!));
 
-    private static string? BusyStatus(CalendarEvent ev) =>
-        ev.Properties.Get<string>("X-MICROSOFT-CDO-BUSYSTATUS")?.Trim().ToUpperInvariant();
-
     /// <summary>A TZID (IANA or Windows) as a Windows timezone, which Graph understands.</summary>
     private static TimeZoneInfo? WindowsZone(string tzId) =>
         (TimeZoneInfo.TryConvertIanaIdToWindowsId(tzId, out var windowsId) ? windowsId : tzId) is var id
@@ -189,12 +177,6 @@ public static partial class EventTransfer
         {
             var minutes = ev["reminderMinutesBeforeStart"] is JsonValue m && m.TryGetValue<int>(out var n) ? n : 15;
             vevent.Alarms.Add(new Alarm { Action = "DISPLAY", Description = "Reminder", Trigger = new Trigger(Duration.FromMinutes(-minutes)) });
-        }
-        var showAs = Text(ev["showAs"]);
-        vevent.Transparency = showAs == "free" ? "TRANSPARENT" : "OPAQUE";
-        if (showAs is "tentative" or "oof" or "workingElsewhere")
-        {
-            vevent.Properties.Add(new CalendarProperty("X-MICROSOFT-CDO-BUSYSTATUS", showAs.ToUpperInvariant()));
         }
         vevent.Class = Text(ev["sensitivity"]) switch
         {

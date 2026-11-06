@@ -160,6 +160,12 @@ internal static class Migrations
         ALTER TABLE collections ADD COLUMN colour_override INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE collections ADD COLUMN server_colour TEXT;
         """,
+
+        // v11: CalDAV events keep their show-as in the status column, as MS365 events do (event-show-as); the store
+        // reads existing CalDAV events again once on open (LocalStore.RemapShowAs).
+        """
+        INSERT INTO meta (key, value) VALUES ('remap-show-as', '1');
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

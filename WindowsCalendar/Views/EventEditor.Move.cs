@@ -33,6 +33,11 @@ internal sealed partial class EventEditor
 
     private void CalendarChanged()
     {
+        if (!_loading && _itemId is null)
+        {
+            // A new event may have moved between MS365 and CalDAV (event-show-as R2).
+            ShowShowAs(ReadShowAs());
+        }
         if (!_loading && !_readOnly && _itemId is { } id && (_calendar.SelectedItem as ComboBoxItem)?.Tag is Collection target
             && Store?.GetItem(id) is { } item && _all.TryGetValue(item.CollectionId, out var from) && from.AccountId != target.AccountId)
         {

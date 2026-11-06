@@ -10,7 +10,8 @@ namespace WindowsCalendar.Core.CalDav;
 /// The editor's fields (calendar-views R6, interim). Start and End are wall-clock times in the Windows timezone;
 /// for all-day events they are dates, with End exclusive.
 /// </summary>
-public sealed record EventFields(string Title, bool AllDay, DateTime Start, DateTime End, string? Location, string? Description);
+public sealed record EventFields(string Title, bool AllDay, DateTime Start, DateTime End, string? Location, string? Description,
+    ShowAs ShowAs = ShowAs.Busy);
 
 /// <summary>
 /// Creates and edits CalDAV events for the editor. Edits change the stored iCalendar object in place and touch only
@@ -50,7 +51,7 @@ public static class CalDavEvents
         var old = Read(ev, zone);
         var timesChanged = old.AllDay != fields.AllDay || old.Start != fields.Start || old.End != fields.End;
         var textChanged = old.Title != fields.Title || Blank(old.Location) != Blank(fields.Location)
-            || Blank(old.Description) != Blank(fields.Description);
+            || Blank(old.Description) != Blank(fields.Description) || old.ShowAs != fields.ShowAs;
         if (!timesChanged && !textChanged)
         {
             return null;
@@ -137,10 +138,49 @@ public static class CalDavEvents
         if (!start.HasTime)
         {
             var endDate = ev.DtEnd is { } e ? e.Value.Date : start.Value.Date.AddDays(1);
-            return new EventFields(ev.Summary ?? "", true, start.Value.Date, endDate, ev.Location, ev.Description);
+            return new EventFields(ev.Summary ?? "", true, start.Value.Date, endDate, ev.Location, ev.Description, ReadShowAs(ev));
         }
         var end = ev.DtEnd ?? start.Add(ev.EffectiveDuration);
-        return new EventFields(ev.Summary ?? "", false, Wall(start, zone), Wall(end, zone), ev.Location, ev.Description);
+        return new EventFields(ev.Summary ?? "", false, Wall(start, zone), Wall(end, zone), ev.Location, ev.Description, ReadShowAs(ev));
+    }
+
+    private const string BusyStatus = "X-MICROSOFT-CDO-BUSYSTATUS";
+
+    /// <summary>
+    /// X-MICROSOFT-CDO-BUSYSTATUS when it holds a known value, else TRANSP: TRANSPARENT is Free, anything else Busy
+    /// (event-show-as R1, R3).
+    /// </summary>
+    internal static ShowAs ReadShowAs(CalendarEvent ev) =>
+        ev.Properties.Get<string>(BusyStatus)?.Trim().ToUpperInvariant() switch
+        {
+            "BUSY" => ShowAs.Busy,
+            "FREE" => ShowAs.Free,
+            "TENTATIVE" => ShowAs.Tentative,
+            "OOF" => ShowAs.OutOfOffice,
+            "WORKINGELSEWHERE" => ShowAs.WorkingElsewhere,
+            _ => "TRANSPARENT".Equals(ev.Transparency, StringComparison.OrdinalIgnoreCase) ? ShowAs.Free : ShowAs.Busy,
+        };
+
+    /// <summary>
+    /// TRANSP (TRANSPARENT for Free, OPAQUE otherwise) and, when the event already carries it or the value is neither
+    /// Busy nor Free, X-MICROSOFT-CDO-BUSYSTATUS to match (event-show-as R3).
+    /// </summary>
+    private static void WriteShowAs(CalendarEvent ev, ShowAs value)
+    {
+        ev.Transparency = value == ShowAs.Free ? "TRANSPARENT" : "OPAQUE";
+        var had = ev.Properties.ContainsKey(BusyStatus);
+        ev.Properties.Remove(BusyStatus);
+        if (had || value is not (ShowAs.Busy or ShowAs.Free))
+        {
+            ev.Properties.Add(new CalendarProperty(BusyStatus, value switch
+            {
+                ShowAs.Free => "FREE",
+                ShowAs.Tentative => "TENTATIVE",
+                ShowAs.OutOfOffice => "OOF",
+                ShowAs.WorkingElsewhere => "WORKINGELSEWHERE",
+                _ => "BUSY",
+            }));
+        }
     }
 
     internal static DateTime Wall(CalDateTime t, TimeZoneInfo zone) =>
@@ -187,7 +227,7 @@ public static class CalDavEvents
     }
 
     /// <summary>
-    /// Writes the text fields that differ from <paramref name="old"/> (all of them when null), so untouched properties
+    /// Writes the text fields and show-as that differ from <paramref name="old"/> (all of them when null), so untouched properties
     /// keep their parameters. A changed location is written fresh, without its old parameters, GEO or
     /// X-APPLE-STRUCTURED-LOCATION (event-location R3).
     /// </summary>
@@ -211,6 +251,10 @@ public static class CalDavEvents
         if (old is null || Blank(old.Description) != Blank(fields.Description))
         {
             ev.Description = Blank(fields.Description);
+        }
+        if (old is null || old.ShowAs != fields.ShowAs)
+        {
+            WriteShowAs(ev, fields.ShowAs);
         }
     }
 
