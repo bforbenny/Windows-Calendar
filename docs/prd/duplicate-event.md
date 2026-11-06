@@ -28,7 +28,7 @@ The user can copy an existing event into a new, independent event and then adjus
 - R3/R4 on CalDAV: the VEVENT is copied with a new UID and href, and SEQUENCE 0. ATTENDEE, ORGANIZER and CONFERENCE are dropped. Alarms, TRANSP, GEO and other properties stay. The TZID form stays. An occurrence copies its override when it has one.
 - R3/R4 on MS365: only the fields a create may write are copied (subject, body, times, all-day, location incl. coordinates, show-as, sensitivity, importance, categories, reminder). Times are written in the event's own timezone. A stub occurrence takes its master's fields. A repeating event still syncing is refused with a message.
 - Undo (R7) deletes the copy: an unsent create is dropped from the outbox, a sent one is deleted on the server. Edits made to the copy since are deleted with it, and no server-change check is made.
-- Later: R5 "from the series editor" (the editor has no Duplicate yet) and R6 into another calendar (the copy goes into the same calendar; it can then be moved within the account from the editor's Calendar field).
+- Later: R5 "from the series editor" (the editor has no Duplicate yet) and R6 into another calendar (the copy goes into the same calendar; it can then be moved to any calendar from the editor's Calendar field, per [calendar-views](calendar-views.md) R8; a copy of a meeting has no attendees, so it can move).
 
 ## Out of scope
 

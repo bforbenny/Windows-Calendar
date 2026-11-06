@@ -37,12 +37,11 @@ internal sealed partial class EventEditor
         _readOnly = collection.ReadOnly || waiting || !GraphEvents.CanEdit(item, master);
         _savedRule = GraphRecurrence.ReadRule(master ?? item, zone);
         _ruleAutosave = master is null;
-        var choices = collections.Values
-            .Where(c => c.Kind == CollectionKind.Calendar && c.AccountId == collection.AccountId && (!c.ReadOnly || c.Id == collection.Id))
-            .ToList();
-        Show("Event", GraphEventMapper.Read(item, master, zone), choices, collection.Id);
-        // A series moves to another calendar in Outlook (its exceptions would be lost here).
-        _calendar.IsEnabled = !_readOnly && master is null;
+        // A series moves to another calendar in Outlook (its exceptions would be lost here). Meetings and invitations
+        // are read-only, so they stay in their calendar (calendar-views R8).
+        var movable = !_readOnly && master is null && !item.IsRecurring;
+        Show("Event", GraphEventMapper.Read(item, master, zone), CalendarChoices(collection, movable), collection.Id);
+        _calendar.IsEnabled = movable;
         var message = collection.ReadOnly ? "This calendar is read-only."
             : waiting ? "This repeating event is still syncing; try again shortly."
             : _readOnly ? "Meetings can't be changed from this app yet."

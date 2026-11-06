@@ -120,7 +120,7 @@ internal sealed partial class EventEditor : UserControl
         _startTime.TimeChanged += (_, _) => StartChanged();
         _endDate.DateChanged += (_, _) => Save();
         _endTime.TimeChanged += (_, _) => Save();
-        _calendar.SelectionChanged += (_, _) => Save();
+        _calendar.SelectionChanged += (_, _) => CalendarChanged();
         _repeat.RuleChanged += RuleChanged;
         _repeat.ApplyClicked += async () => await ApplyRuleAsync();
 
@@ -190,6 +190,7 @@ internal sealed partial class EventEditor : UserControl
             return;
         }
         var account = Store.GetAccounts().FirstOrDefault(a => a.Id == collection.AccountId);
+        _all = collections;
         if (account?.Type == AccountType.MS365)
         {
             OpenGraph(item, collection, collections);
@@ -213,10 +214,10 @@ internal sealed partial class EventEditor : UserControl
         _readOnly = collection.ReadOnly || account?.Type != AccountType.CalDAV;
         _savedRule = CalDavRecurrence.ReadRule(item, TimeZoneInfo.Local);
         _ruleAutosave = recurrence is null;
-        var choices = collections.Values
-            .Where(c => c.Kind == CollectionKind.Calendar && c.AccountId == collection.AccountId && (!c.ReadOnly || c.Id == collection.Id))
-            .ToList();
-        Show("Event", fields, choices, collection.Id);
+        // Meetings and invitations stay in their calendar (calendar-views R8).
+        var meeting = Core.Sync.EventTransfer.IsMeeting(item);
+        Show("Event", fields, CalendarChoices(collection, !meeting), collection.Id);
+        _calendar.IsEnabled = !_readOnly && !meeting;
         var message = collection.SourceUrl is not null ? "This is a subscribed calendar and can't be edited here."
             : collection.ReadOnly ? "This calendar is read-only."
             : _readOnly ? "Editing events in this account comes later."
@@ -239,6 +240,7 @@ internal sealed partial class EventEditor : UserControl
             return;
         }
         var defaultId = Store?.DefaultCalendarId is { } id && choices.Any(c => c.Id == id) ? id : choices[0].Id;
+        _all = collections;
         _itemId = null;
         _recurrence = null;
         _scope = null;
