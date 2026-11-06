@@ -570,6 +570,31 @@ public sealed class LocalStore : IDisposable
         }
     }
 
+    /// <summary>
+    /// Server ids of series (Graph seriesMasterId) whose live occurrences are stored without their master, in one
+    /// collection. A master waiting to be deleted still counts as stored.
+    /// </summary>
+    public IReadOnlyList<string> GetOrphanSeriesIds(string collectionId)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
+                """
+                SELECT DISTINCT i.series_id FROM items i
+                WHERE i.collection_id = $c AND i.series_id IS NOT NULL AND i.deleted = 0
+                  AND NOT EXISTS (SELECT 1 FROM items m WHERE m.collection_id = i.collection_id AND m.remote_id = i.series_id);
+                """,
+                ("$c", collectionId));
+            using var r = cmd.ExecuteReader();
+            var ids = new List<string>();
+            while (r.Read())
+            {
+                ids.Add(r.GetString(0));
+            }
+            return ids;
+        }
+    }
+
     /// <summary>Returns the item, or null if it does not exist or is deleted (unless <paramref name="includeDeleted"/>).</summary>
     public Item? GetItem(string itemId, bool includeDeleted = false)
     {

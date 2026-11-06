@@ -182,6 +182,35 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
                 removed++;
             }
         }
+
+        // Occurrences left without their master: delta does not always report every instance of a series deleted in
+        // Outlook. The master is fetched again; when the server has none, the series' leftovers go (R6).
+        foreach (var seriesId in store.GetOrphanSeriesIds(calendar.Id))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Item? master;
+            try
+            {
+                master = await FetchAsync(client, calendar, seriesId, cancellationToken);
+            }
+            catch (GraphException ex) when (ex.Error == GraphError.Http)
+            {
+                continue;
+            }
+            if (master is not null)
+            {
+                store.ApplyServerItem([calendar.Id], master);
+                fetched++;
+                continue;
+            }
+            foreach (var leftover in store.GetSeriesItems(calendar.Id, seriesId))
+            {
+                if (leftover.RemoteId is { } remoteId && store.RemoveServerItem([calendar.Id], remoteId) == ServerChangeResult.Applied)
+                {
+                    removed++;
+                }
+            }
+        }
         return summary with
         {
             Fetched = summary.Fetched + fetched,

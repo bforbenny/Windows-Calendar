@@ -499,6 +499,40 @@ public sealed class GraphSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task SeriesDeletedInOutlook_LeavesNoOrphanedOccurrences()
+    {
+        _graph.PutJson("m1", Nov10, Nov10.AddHours(1), MasterJson);
+        _graph.Hidden.Add("m1");
+        _graph.PutJson("o1", Nov10, Nov10.AddHours(1), Stub(Nov10));
+        _graph.PutJson("o2", Nov10.AddDays(7), Nov10.AddDays(7).AddHours(1), Stub(Nov10.AddDays(7)));
+        await SyncAsync();
+
+        // The master is gone from the server and the store; delta did not report its occurrences.
+        _graph.Delete("m1");
+        _store.RemoveServerItem([CalendarId], "m1");
+        var summary = await SyncAsync();
+
+        Assert.Empty(_store.GetOccurrenceViews(Nov10.AddDays(-1), Nov10.AddDays(10)));
+        Assert.Null(_store.FindItemByRemoteId(CalendarId, "o1"));
+        Assert.Equal(2, summary.Removed);
+    }
+
+    [Fact]
+    public async Task OccurrencesWithoutTheirMaster_GetItBackWhenTheServerStillHasIt()
+    {
+        _graph.PutJson("m1", Nov10, Nov10.AddHours(1), MasterJson);
+        _graph.Hidden.Add("m1");
+        _graph.PutJson("o1", Nov10, Nov10.AddHours(1), Stub(Nov10));
+        await SyncAsync();
+
+        _store.RemoveServerItem([CalendarId], "m1");
+        await SyncAsync();
+
+        Assert.NotNull(_store.FindItemByRemoteId(CalendarId, "m1"));
+        Assert.Equal("Weekly sync", _store.GetOccurrenceViews(Nov10.AddDays(-1), Nov10.AddDays(1)).Single().Summary);
+    }
+
+    [Fact]
     public async Task Create_IsPosted_AndGetsItsGraphId()
     {
         var calendar = _store.GetCollections("a1").Single();
