@@ -29,6 +29,7 @@ When a local pending change and a server change hit the same item, **the server 
 - R1–R4, R7 and R8 (CalDAV, per resource) are in place. The `conflicts` table holds `{ id, item_id, collection_id, kind, local_payload, server_payload, detected_at }`; a null local payload means the local change was a delete, a null server payload means the server deleted the item.
 - R5: an "N conflicts" banner in the main window, closable for the session. The toast comes with [reminders-notifications](reminders-notifications.md) toasts.
 - R6 (Conflicts view) and R9 (discarded outbox entries) come later.
+- A conflict on an entry in a linked outbox group cancels the group's later entries: a create is not sent (its local copy goes to Conflicts and it leaves the calendar), a delete is not sent (the item comes back). So a failed series truncate does not create the new series ([recurring-events](recurring-events.md) R6), and a failed calendar move does not delete the original ([calendar-views](calendar-views.md) R8).
 
 ## Out of scope
 

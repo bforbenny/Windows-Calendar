@@ -37,7 +37,7 @@ public sealed partial class MainWindow : Window
     private bool _quitting;
     private int _conflictsDismissed;
     private readonly DispatcherQueueTimer _undoTimer;
-    private (string ItemId, string PayloadBefore, string PayloadAfter)? _lastChange;
+    private (string ItemId, string PayloadBefore, string PayloadAfter, Item? Following)? _lastChange;
     private bool _renderPending;
 
     public MainWindow()
@@ -109,10 +109,10 @@ public sealed partial class MainWindow : Window
         };
         EditorHost.Child = _editor;
         _editor.Changed += RenderView;
-        _editor.OccurrenceDeleted += (id, before, after) =>
+        _editor.OccurrenceDeleted += (title, id, before, after) =>
         {
-            _lastChange = (id, before, after);
-            ShowUndo("Occurrence deleted", canUndo: true);
+            _lastChange = (id, before, after, null);
+            ShowUndo(title, canUndo: true);
         };
         _editor.OpenChanged += PlaceEditor;
         ((FrameworkElement)Content).SizeChanged += (_, _) => PlaceEditor();
@@ -198,7 +198,9 @@ public sealed partial class MainWindow : Window
         var scope = (EditScope?)null;
         if (e.Recurrence is not null)
         {
-            scope = await ScopeDialog.AskAsync(Content.XamlRoot, "Move a repeating event");
+            var allowFollowing = Store?.GetItem(e.ItemId) is { } series && !CalDavRecurrence.IsOrganisedMeeting(series,
+                Store.GetAccounts().FirstOrDefault(a => a.Id == e.Collection.AccountId)?.Email);
+            scope = await ScopeDialog.AskAsync(Content.XamlRoot, "Move a repeating event", allowFollowing);
             if (scope is null)
             {
                 return;
@@ -214,10 +216,16 @@ public sealed partial class MainWindow : Window
             var zone = TimeZoneInfo.Local;
             var now = DateTimeOffset.UtcNow;
             Item? edited;
+            Item? following = null;
             if (e.Recurrence is { } recurrence)
             {
                 var fields = CalDavRecurrence.ReadOccurrence(item, recurrence, zone) with { AllDay = target.AllDay, Start = target.Start, End = target.End };
-                if (scope == EditScope.Series)
+                if (scope == EditScope.Following)
+                {
+                    var split = CalDavRecurrence.SplitSeries(item, recurrence, fields, e.Collection, zone, now);
+                    (edited, following, to) = (split?.Original, split?.Following, split?.Recurrence ?? to);
+                }
+                else if (scope == EditScope.Series)
                 {
                     to = CalDavRecurrence.MovedRecurrence(item, recurrence, fields, zone);
                     edited = CalDavRecurrence.EditSeries(item, recurrence, fields, zone, now);
@@ -236,9 +244,21 @@ public sealed partial class MainWindow : Window
             {
                 return;
             }
-            Store.UpdateItem(edited);
-            _lastChange = (item.Id, item.RawPayload, edited.RawPayload);
-            ShowUndo(scope == EditScope.Series ? "Series moved" : "Event moved", canUndo: true);
+            if (following is not null)
+            {
+                Store.SplitItem(edited, following);
+            }
+            else
+            {
+                Store.UpdateItem(edited);
+            }
+            _lastChange = (item.Id, item.RawPayload, edited.RawPayload, following);
+            ShowUndo(scope switch
+            {
+                EditScope.Series => "Series moved",
+                EditScope.Following => "Following events moved",
+                _ => "Event moved",
+            }, canUndo: true);
             Log.Information("Event {ItemId} moved by drag ({Scope})", item.Id, scope?.ToString() ?? "single");
         }
         catch (EditRefusedException ex)
@@ -266,12 +286,22 @@ public sealed partial class MainWindow : Window
         _lastChange = null;
         try
         {
-            if (store.GetItem(change.ItemId) is not { } item || item.RawPayload != change.PayloadAfter)
+            if (store.GetItem(change.ItemId) is not { } item || item.RawPayload != change.PayloadAfter
+                || (change.Following is { } split && store.GetItem(split.Id)?.RawPayload != split.RawPayload))
             {
                 ShowUndo("This item changed on the server; can't undo", canUndo: false);
                 return;
             }
-            store.UpdateItem(CalDavEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local));
+            var restored = CalDavEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local);
+            if (change.Following is { } following)
+            {
+                // Undo of a split (undo R5): the original back and the new series deleted, one linked group.
+                store.UndoSplit(restored, following.Id);
+            }
+            else
+            {
+                store.UpdateItem(restored);
+            }
             UndoBar.IsOpen = false;
             Log.Information("Change to event {ItemId} undone", change.ItemId);
         }

@@ -392,6 +392,49 @@ public sealed class LocalStore : IDisposable
         return id;
     }
 
+    /// <summary>
+    /// A "this and following" split (recurring-events R6): the shortened original as an update, then the new series
+    /// as a create, in one linked group, so the new series is only sent once the original is.
+    /// </summary>
+    public void SplitItem(Item original, Item following)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            var group = Guid.NewGuid().ToString("N");
+            var window = OccurrenceWindow();
+            var baseEtag = GetLiveEtag(tx, original.Id);
+            Execute(_connection, tx, UpdateItemSql, ItemParameters(original));
+            RebuildItemOccurrences(tx, original.Id, window);
+            Enqueue(tx, original.Id, OutboxOperation.Update, original.RawPayload, baseEtag, group);
+            Execute(_connection, tx, InsertItemSql, ItemParameters(following));
+            RebuildItemOccurrences(tx, following.Id, window);
+            Enqueue(tx, following.Id, OutboxOperation.Create, following.RawPayload, null, group);
+            tx.Commit();
+        }
+        LocalChanged?.Invoke();
+    }
+
+    /// <summary>Undo of a split (undo R5): the original put back, then the new series deleted, in one linked group.</summary>
+    public void UndoSplit(Item restored, string followingId)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            var group = Guid.NewGuid().ToString("N");
+            var baseEtag = GetLiveEtag(tx, restored.Id);
+            Execute(_connection, tx, UpdateItemSql, ItemParameters(restored));
+            RebuildItemOccurrences(tx, restored.Id, OccurrenceWindow());
+            Enqueue(tx, restored.Id, OutboxOperation.Update, restored.RawPayload, baseEtag, group);
+            var followingEtag = GetLiveEtag(tx, followingId);
+            Execute(_connection, tx,
+                "UPDATE items SET deleted = 1 WHERE id = $id; DELETE FROM occurrences WHERE item_id = $id;", ("$id", followingId));
+            Enqueue(tx, followingId, OutboxOperation.Delete, null, followingEtag, group);
+            tx.Commit();
+        }
+        LocalChanged?.Invoke();
+    }
+
     /// <summary>Returns the item, or null if it does not exist or is deleted (unless <paramref name="includeDeleted"/>).</summary>
     public Item? GetItem(string itemId, bool includeDeleted = false)
     {
@@ -623,11 +666,21 @@ public sealed class LocalStore : IDisposable
         lock (_gate)
         {
             using var tx = _connection.BeginTransaction();
-            using (var cmd = Command(_connection, tx, "SELECT item_id FROM outbox WHERE id = $id;", ("$id", entryId)))
+            string? itemId = null, group = null;
+            using (var cmd = Command(_connection, tx, "SELECT item_id, group_id FROM outbox WHERE id = $id;", ("$id", entryId)))
+            using (var r = cmd.ExecuteReader())
             {
-                if (cmd.ExecuteScalar() is string itemId)
+                if (r.Read())
                 {
-                    TakeServerVersion(tx, itemId, server);
+                    (itemId, group) = (r.GetString(0), NullableString(r, 1));
+                }
+            }
+            if (itemId is not null)
+            {
+                TakeServerVersion(tx, itemId, server);
+                if (group is not null)
+                {
+                    CancelGroup(tx, group);
                 }
             }
             tx.Commit();
@@ -877,6 +930,44 @@ public sealed class LocalStore : IDisposable
         Execute(_connection, tx, UpdateItemSql + " UPDATE items SET deleted = 0 WHERE id = $id;",
             ItemParameters(server with { Id = itemId, CollectionId = collectionId }));
         RebuildItemOccurrences(tx, itemId, OccurrenceWindow());
+    }
+
+    /// <summary>
+    /// After a conflict in a linked group, its later entries are not sent (conflict-resolution interim): a create's
+    /// item goes to Conflicts and leaves the calendar; a deleted item comes back.
+    /// </summary>
+    private void CancelGroup(SqliteTransaction tx, string group)
+    {
+        var entries = new List<(long Id, string ItemId, OutboxOperation Op)>();
+        using (var cmd = Command(_connection, tx, "SELECT id, item_id, operation FROM outbox WHERE group_id = $g ORDER BY id;", ("$g", group)))
+        using (var r = cmd.ExecuteReader())
+        {
+            while (r.Read())
+            {
+                entries.Add((r.GetInt64(0), r.GetString(1), Enum.Parse<OutboxOperation>(r.GetString(2))));
+            }
+        }
+        foreach (var (id, itemId, op) in entries)
+        {
+            if (op == OutboxOperation.Create)
+            {
+                Execute(_connection, tx,
+                    """
+                    INSERT INTO conflicts (item_id, collection_id, kind, local_payload, server_payload, detected_at)
+                    SELECT id, collection_id, kind, raw_payload, NULL, $now FROM items WHERE id = $id;
+                    DELETE FROM outbox WHERE item_id = $id;
+                    DELETE FROM occurrences WHERE item_id = $id;
+                    DELETE FROM items WHERE id = $id;
+                    """,
+                    ("$id", itemId), ("$now", _time.GetUtcNow().ToUnixTimeMilliseconds()));
+            }
+            else if (op == OutboxOperation.Delete)
+            {
+                Execute(_connection, tx, "UPDATE items SET deleted = 0 WHERE id = $item; DELETE FROM outbox WHERE id = $id;",
+                    ("$item", itemId), ("$id", id));
+                RebuildItemOccurrences(tx, itemId, OccurrenceWindow());
+            }
+        }
     }
 
     private static string InList(IReadOnlyList<string> values) => string.Join(", ", values.Select((_, i) => $"$in{i}"));

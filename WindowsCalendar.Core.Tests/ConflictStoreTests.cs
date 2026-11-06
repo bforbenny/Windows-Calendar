@@ -163,4 +163,58 @@ public sealed class ConflictStoreTests : IDisposable
         // The delete waits for the create.
         Assert.Equal("new", Assert.Single(_store.GetDueOutbox()).ItemId);
     }
+
+    [Fact]
+    public void SplitItem_QueuesUpdateThenCreateAsOneGroup()
+    {
+        SeedSynced();
+
+        _store.SplitItem(NewItem("short", "\"e1\""), NewItem("rest", id: "new", href: "https://example.test/cal/new.ics"));
+
+        var entries = _store.GetOutbox();
+        Assert.Equal([("i1", OutboxOperation.Update), ("new", OutboxOperation.Create)], entries.Select(e => (e.ItemId, e.Operation)));
+        Assert.Equal(entries[0].GroupId, entries[1].GroupId);
+        Assert.Equal("i1", Assert.Single(_store.GetDueOutbox()).ItemId);
+    }
+
+    [Fact]
+    public void ConflictOnTruncate_DoesNotCreateTheNewSeries()
+    {
+        SeedSynced();
+        _store.SplitItem(NewItem("short", "\"e1\""), NewItem("rest", id: "new", href: "https://example.test/cal/new.ics"));
+
+        _store.ResolveConflict(_store.GetOutbox()[0].Id, NewItem("theirs", "\"e9\""));
+
+        Assert.Empty(_store.GetOutbox());
+        Assert.Null(_store.GetItem("new", includeDeleted: true));
+        Assert.Equal("theirs", _store.GetItem("i1")!.RawPayload);
+        Assert.Equal(2, _store.GetConflictCount());
+    }
+
+    [Fact]
+    public void ConflictOnMoveCopy_KeepsTheOriginal()
+    {
+        SeedSynced();
+        _store.MoveItem("i1", NewItem("v1", id: "new", collection: "c2", href: "https://example.test/work/i1.ics"));
+
+        _store.ResolveConflict(_store.GetOutbox()[0].Id, NewItem("other", "\"e5\"", collection: "c2"));
+
+        Assert.Empty(_store.GetOutbox());
+        Assert.Equal("v1", _store.GetItem("i1")!.RawPayload);
+    }
+
+    [Fact]
+    public void UndoSplit_RestoresOriginalThenDeletesNewSeries()
+    {
+        SeedSynced();
+        _store.SplitItem(NewItem("short", "\"e1\""), NewItem("rest", id: "new", href: "https://example.test/cal/new.ics"));
+
+        _store.UndoSplit(NewItem("v1", "\"e1\""), "new");
+
+        Assert.Equal("v1", _store.GetItem("i1")!.RawPayload);
+        Assert.Null(_store.GetItem("new"));
+        var undo = _store.GetOutbox().Skip(2).ToList();
+        Assert.Equal([("i1", OutboxOperation.Update), ("new", OutboxOperation.Delete)], undo.Select(e => (e.ItemId, e.Operation)));
+        Assert.Equal(undo[0].GroupId, undo[1].GroupId);
+    }
 }

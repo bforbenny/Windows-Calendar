@@ -277,6 +277,131 @@ public sealed class CalDavRecurrenceTests
         Assert.Null(CalDavRecurrence.Describe(Existing(Weekly.Replace("RRULE:FREQ=WEEKLY;BYDAY=MO\n", ""))));
     }
 
+    // ---- This and following (R6) ----
+
+    private static readonly Collection Home = new("c1", "a1", CollectionKind.Calendar, "Home", "Navy", "Circle", true, false, "https://dav.example.test/ben/home/");
+
+    private static SplitResult Split(Item item, DateTimeOffset rid, Func<EventFields, EventFields> change) =>
+        CalDavRecurrence.SplitSeries(item, rid, change(CalDavRecurrence.ReadOccurrence(item, rid, London)), Home, London, Now)!;
+
+    [Fact]
+    public void Split_EndsOriginalAndStartsNewSeries()
+    {
+        var item = Existing(Weekly);
+        var nov16 = Nov9.AddDays(7);
+
+        var split = Split(item, nov16, f => f with { Title = "New standup" });
+
+        Assert.Contains("UNTIL=20261116T085959Z", split.Original.RawPayload);
+        Assert.Equal([Nov9.AddDays(-7), Nov9], Occurrences(split.Original).Select(o => o.Start));
+        var following = split.Following!;
+        Assert.NotEqual(item.Id, following.Id);
+        Assert.Null(following.Etag);
+        var uid = Calendar.Load(following.RawPayload)!.Events[0].Uid!;
+        Assert.NotEqual("w1", uid);
+        Assert.Equal($"https://dav.example.test/ben/home/{uid}.ics", following.RemoteId);
+        Assert.Equal([nov16, nov16.AddDays(7), nov16.AddDays(14)], Occurrences(following).Select(o => o.Start));
+        Assert.All(Occurrences(following), o => Assert.Equal("New standup", CalDavRecurrence.ReadOccurrence(following, o.Recurrence, London).Title));
+        Assert.Equal(nov16, split.Recurrence);
+    }
+
+    [Fact]
+    public void Split_ExceptionsGoToTheirSide()
+    {
+        var item = Existing(Weekly);
+        item = CalDavRecurrence.DeleteOccurrence(item, Nov9, London, Now);
+        item = CalDavRecurrence.DeleteOccurrence(item, Nov9.AddDays(21), London, Now);
+        var nov23 = Nov9.AddDays(14);
+        item = CalDavRecurrence.EditOccurrence(item, nov23, CalDavRecurrence.ReadOccurrence(item, nov23, London) with { Title = "Retro" }, London, Now)!;
+
+        var split = Split(item, Nov9.AddDays(7), f => f with { Location = "Room 2" });
+
+        var original = Calendar.Load(split.Original.RawPayload)!;
+        Assert.Single(original.Events);
+        Assert.Single(original.Events[0].ExceptionDates.GetAllDates());
+        var following = Calendar.Load(split.Following!.RawPayload)!;
+        Assert.Equal(2, following.Events.Count);
+        Assert.All(following.Events, e => Assert.Equal(following.Events[0].Uid, e.Uid));
+        Assert.Equal("Retro", CalDavRecurrence.ReadOccurrence(split.Following, nov23, London).Title);
+        Assert.Equal([Nov9.AddDays(7), nov23], Occurrences(split.Following).Select(o => o.Start));
+    }
+
+    [Fact]
+    public void Split_CountIsSharedOutCountingExcludedOccurrences()
+    {
+        var item = Existing(Weekly.Replace("BYDAY=MO", "BYDAY=MO;COUNT=5"));
+        item = CalDavRecurrence.DeleteOccurrence(item, Nov9, London, Now);
+        var nov23 = Nov9.AddDays(14);
+
+        var split = Split(item, nov23, f => f with { Title = "Later" });
+
+        Assert.DoesNotContain("COUNT", split.Original.RawPayload);
+        Assert.Equal([Nov9.AddDays(-7), Nov9.AddDays(7)], Occurrences(split.Original).Select(o => o.Start));
+        Assert.Contains("COUNT=2", split.Following!.RawPayload);
+        Assert.Equal([nov23, nov23.AddDays(7)], Occurrences(split.Following).Select(o => o.Start));
+    }
+
+    [Fact]
+    public void Split_FirstOccurrence_ActsAsAll()
+    {
+        var item = Existing(Weekly);
+
+        var split = Split(item, Nov9.AddDays(-7), f => f with { Title = "Everyone" });
+
+        Assert.Null(split.Following);
+        Assert.Equal("Everyone", CalDavRecurrence.ReadOccurrence(split.Original, Nov9.AddDays(14), London).Title);
+    }
+
+    [Fact]
+    public void Split_MoveToTuesday_ShiftsTheNewSeriesOnly()
+    {
+        var item = Existing(Weekly);
+        var nov16 = Nov9.AddDays(7);
+
+        var split = Split(item, nov16, f => f with { Start = Wall(11, 17, 9), End = Wall(11, 17, 10) });
+
+        Assert.Contains("BYDAY=MO", split.Original.RawPayload);
+        Assert.Contains("BYDAY=TU", split.Following!.RawPayload);
+        Assert.Equal(nov16.AddDays(1), split.Recurrence);
+        Assert.Equal(Wall(11, 17, 9), CalDavRecurrence.ReadOccurrence(split.Following, split.Recurrence, London).Start);
+    }
+
+    [Theory]
+    [InlineData("DTSTART;VALUE=DATE:20261102\nDTEND;VALUE=DATE:20261103", "UNTIL=20261104", 0)]
+    [InlineData("DTSTART:20261102T090000\nDURATION:PT1H", "UNTIL=20261105T085959", 9)]
+    public void Split_UntilKeepsTheSeriesForm(string times, string until, int hour)
+    {
+        var item = Existing($"BEGIN:VEVENT\nUID:d1\nDTSTAMP:20260101T000000Z\n{times}\nRRULE:FREQ=DAILY;COUNT=6\nSUMMARY:Run\nEND:VEVENT\n");
+        var rid = new DateTimeOffset(2026, 11, 5, hour, 0, 0, TimeSpan.Zero);
+
+        var split = Split(item, rid, f => f with { Title = "Walk" });
+
+        Assert.Contains($"RRULE:FREQ=DAILY;{until}\r\n", split.Original.RawPayload);
+        Assert.Equal(3, Occurrences(split.Original).Count);
+        Assert.Equal(3, Occurrences(split.Following!).Count);
+    }
+
+    [Fact]
+    public void DeleteFollowing_EndsSeries_FirstGivesNull()
+    {
+        var item = Existing(Weekly);
+
+        var ended = CalDavRecurrence.DeleteFollowing(item, Nov9.AddDays(7), London, Now)!;
+
+        Assert.Equal(2, Occurrences(ended).Count);
+        Assert.Null(CalDavRecurrence.DeleteFollowing(item, Nov9.AddDays(-7), London, Now));
+    }
+
+    [Fact]
+    public void IsOrganisedMeeting_MatchesOrganiserWithAttendees()
+    {
+        var meeting = Existing(Weekly.Replace("SUMMARY:Standup", "SUMMARY:Standup\nORGANIZER:mailto:ben@example.test\nATTENDEE:mailto:amy@example.test"));
+
+        Assert.True(CalDavRecurrence.IsOrganisedMeeting(meeting, "Ben@example.test"));
+        Assert.False(CalDavRecurrence.IsOrganisedMeeting(meeting, "amy@example.test"));
+        Assert.False(CalDavRecurrence.IsOrganisedMeeting(Existing(Weekly), "ben@example.test"));
+    }
+
     private static string Monthly(string parts, int day) => $"""
         BEGIN:VEVENT
         UID:m1

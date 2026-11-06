@@ -43,6 +43,7 @@ internal sealed partial class EventEditor : UserControl
     private string? _itemId;
     private DateTimeOffset? _recurrence;
     private EditScope? _scope;
+    private bool _allowFollowing;
     private bool _asking;
     private bool _loading;
     private bool _readOnly;
@@ -124,8 +125,11 @@ internal sealed partial class EventEditor : UserControl
     /// <summary>Raised when the panel opens or closes.</summary>
     public event Action? OpenChanged;
 
-    /// <summary>Raised after one occurrence was deleted: item id, payload before and after, for Undo (undo interim).</summary>
-    public event Action<string, string, string>? OccurrenceDeleted;
+    /// <summary>
+    /// Raised after one occurrence, or an occurrence and those after it, was deleted: banner title, item id, payload
+    /// before and after, for Undo (undo interim).
+    /// </summary>
+    public event Action<string, string, string, string>? OccurrenceDeleted;
 
     public bool IsOpen => Visibility == Visibility.Visible;
 
@@ -155,6 +159,7 @@ internal sealed partial class EventEditor : UserControl
         _itemId = itemId;
         _recurrence = recurrence;
         _scope = null;
+        _allowFollowing = recurrence is not null && !CalDavRecurrence.IsOrganisedMeeting(item, account?.Email);
         _readOnly = collection.ReadOnly || account?.Type != AccountType.CalDAV;
         var choices = collections.Values
             .Where(c => c.Kind == CollectionKind.Calendar && c.AccountId == collection.AccountId && (!c.ReadOnly || c.Id == collection.Id))
@@ -395,7 +400,7 @@ internal sealed partial class EventEditor : UserControl
                 }
                 if (_recurrence is { } recurrence)
                 {
-                    SaveRecurring(item, recurrence, fields);
+                    SaveRecurring(item, recurrence, fields, target);
                     return;
                 }
                 if (CalDavEvents.Edit(item, fields, zone, now) is { } edited)
@@ -412,10 +417,11 @@ internal sealed partial class EventEditor : UserControl
     }
 
     /// <summary>
-    /// A change to a repeating event: asks the scope at the first change (R6d), then writes this occurrence or the
-    /// whole series. Cancel or a refused change puts the form back.
+    /// A change to a repeating event: asks the scope at the first change (R6d), then writes this occurrence, this and
+    /// the following ones (a split; the panel then follows the new series, where the scope is the whole series), or
+    /// the whole series. Cancel or a refused change puts the form back.
     /// </summary>
-    private async void SaveRecurring(Item item, DateTimeOffset recurrence, EventFields fields)
+    private async void SaveRecurring(Item item, DateTimeOffset recurrence, EventFields fields, Collection collection)
     {
         var zone = TimeZoneInfo.Local;
         try
@@ -432,7 +438,7 @@ internal sealed partial class EventEditor : UserControl
                     return;
                 }
                 _asking = true;
-                var scope = await ScopeDialog.AskAsync(XamlRoot, "Change a repeating event");
+                var scope = await ScopeDialog.AskAsync(XamlRoot, "Change a repeating event", _allowFollowing);
                 _asking = false;
                 if (_itemId != item.Id || _recurrence != recurrence)
                 {
@@ -451,6 +457,28 @@ internal sealed partial class EventEditor : UserControl
 
             Item? edited;
             var to = recurrence;
+            if (_scope == EditScope.Following)
+            {
+                if (CalDavRecurrence.SplitSeries(item, recurrence, fields, collection, zone, DateTimeOffset.UtcNow) is not { } split)
+                {
+                    return;
+                }
+                if (split.Following is { } following)
+                {
+                    Store!.SplitItem(split.Original, following);
+                    _itemId = following.Id;
+                }
+                else
+                {
+                    Store!.UpdateItem(split.Original);
+                }
+                _recurrence = split.Recurrence;
+                _scope = EditScope.Series;
+                _shownStart = fields.Start;
+                Log.Information("Repeating event {ItemId} split", item.Id);
+                Changed?.Invoke();
+                return;
+            }
             if (_scope == EditScope.Occurrence)
             {
                 edited = CalDavRecurrence.EditOccurrence(item, recurrence, fields, zone, DateTimeOffset.UtcNow);
@@ -485,8 +513,8 @@ internal sealed partial class EventEditor : UserControl
     }
 
     /// <summary>
-    /// Asks first until undo exists (R10 interim). A repeating event asks the scope: one occurrence goes at once with
-    /// Undo, the entire series asks for confirmation.
+    /// Asks first until undo exists (R10 interim). A repeating event asks the scope: one occurrence, or it and the
+    /// following ones, go at once with Undo; the entire series (or "following" from the first) asks for confirmation.
     /// </summary>
     private async System.Threading.Tasks.Task DeleteAsync()
     {
@@ -496,21 +524,31 @@ internal sealed partial class EventEditor : UserControl
         }
         if (_recurrence is { } recurrence)
         {
-            var scope = await ScopeDialog.AskAsync(XamlRoot, "Delete a repeating event");
+            var scope = await ScopeDialog.AskAsync(XamlRoot, "Delete a repeating event", _allowFollowing);
             if (scope is null)
             {
                 return;
             }
-            if (scope == EditScope.Occurrence)
+            var zone = TimeZoneInfo.Local;
+            if (scope == EditScope.Following && store.GetItem(id) is { } series
+                && CalDavRecurrence.DeleteFollowing(series, recurrence, zone, DateTimeOffset.UtcNow) is null)
+            {
+                // From the first occurrence, "this and following" is the whole series.
+                scope = EditScope.Series;
+            }
+            if (scope != EditScope.Series)
             {
                 try
                 {
                     if (store.GetItem(id) is { } item)
                     {
-                        var deleted = CalDavRecurrence.DeleteOccurrence(item, recurrence, TimeZoneInfo.Local, DateTimeOffset.UtcNow);
+                        var deleted = scope == EditScope.Following
+                            ? CalDavRecurrence.DeleteFollowing(item, recurrence, zone, DateTimeOffset.UtcNow)!
+                            : CalDavRecurrence.DeleteOccurrence(item, recurrence, zone, DateTimeOffset.UtcNow);
                         store.UpdateItem(deleted);
-                        Log.Information("Occurrence of event {ItemId} deleted", id);
-                        OccurrenceDeleted?.Invoke(id, item.RawPayload, deleted.RawPayload);
+                        Log.Information("Occurrence(s) of event {ItemId} deleted ({Scope})", id, scope);
+                        OccurrenceDeleted?.Invoke(scope == EditScope.Following ? "Following events deleted" : "Occurrence deleted",
+                            id, item.RawPayload, deleted.RawPayload);
                     }
                 }
                 catch (Exception ex)

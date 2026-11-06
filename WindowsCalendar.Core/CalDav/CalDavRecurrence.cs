@@ -9,6 +9,9 @@ namespace WindowsCalendar.Core.CalDav;
 /// <summary>A change that is not made, with the reason to show the user.</summary>
 public sealed class EditRefusedException(string message) : Exception(message);
 
+/// <summary>A "this and following" split: the shortened original, the new series, and the occurrence's id in its series.</summary>
+public sealed record SplitResult(Item Original, Item? Following, DateTimeOffset Recurrence);
+
 /// <summary>
 /// Edits of recurring CalDAV events (recurring-events interim: R4 this occurrence, R5 entire series). An occurrence is
 /// named by its original start in UTC (its RECURRENCE-ID), as stored in the occurrence index. Edits keep everything
@@ -142,6 +145,59 @@ public static class CalDavRecurrence
         return CalDavEvents.ToItem(item.Id, item.CollectionId, item.RemoteId!, item.Etag, calendar, zone);
     }
 
+    /// <summary>
+    /// R6 "this and following": the original ends before the occurrence and a new series (new UID) starts at it, with
+    /// the change applied as an entire-series change. On the first occurrence it acts as <see cref="EditSeries"/>
+    /// (Following is null). <see cref="SplitResult.Recurrence"/> is the occurrence's id in the series that now holds
+    /// it. Null when nothing changed.
+    /// </summary>
+    public static SplitResult? SplitSeries(Item item, DateTimeOffset recurrence, EventFields fields, Collection collection,
+        TimeZoneInfo zone, DateTimeOffset now)
+    {
+        var calendar = Load(item);
+        var master = CalDavEvents.Master(calendar);
+        var split = Instance(master, recurrence, zone).Period.StartTime;
+        if (IsFirst(master, split))
+        {
+            var to = MovedRecurrence(item, recurrence, fields, zone);
+            return EditSeries(item, recurrence, fields, zone, now) is { } edited ? new SplitResult(edited, null, to) : null;
+        }
+        if (!Changed(ReadOccurrence(calendar, recurrence, zone), fields))
+        {
+            return null;
+        }
+        var following = Following(item, split, collection, zone, now);
+        var moved = MovedRecurrence(following, recurrence, fields, zone);
+        following = EditSeries(following, recurrence, fields, zone, now) ?? following;
+        Truncate(calendar, master, split, zone);
+        Stamp(master, now);
+        return new SplitResult(CalDavEvents.ToItem(item.Id, item.CollectionId, item.RemoteId!, item.Etag, calendar, zone), following, moved);
+    }
+
+    /// <summary>R6 delete: the series ends before the occurrence. Null on the first occurrence (the whole series goes).</summary>
+    public static Item? DeleteFollowing(Item item, DateTimeOffset recurrence, TimeZoneInfo zone, DateTimeOffset now)
+    {
+        var calendar = Load(item);
+        var master = CalDavEvents.Master(calendar);
+        var split = Instance(master, recurrence, zone).Period.StartTime;
+        if (IsFirst(master, split))
+        {
+            return null;
+        }
+        Truncate(calendar, master, split, zone);
+        Stamp(master, now);
+        return CalDavEvents.ToItem(item.Id, item.CollectionId, item.RemoteId!, item.Etag, calendar, zone);
+    }
+
+    /// <summary>R6: a meeting with attendees that the account's user organises; "this and following" is not offered.</summary>
+    public static bool IsOrganisedMeeting(Item item, string? email)
+    {
+        var master = CalDavEvents.Master(Load(item));
+        var organizer = master.Organizer?.Value?.OriginalString;
+        return master.Attendees.Count > 0 && email is not null && organizer is not null
+            && string.Equals(organizer.Replace("mailto:", "", StringComparison.OrdinalIgnoreCase), email, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>The rule in words for the editor, e.g. "Repeats weekly on Monday"; null when not recurring.</summary>
     public static string? Describe(Item item)
     {
@@ -184,6 +240,109 @@ public static class CalDavRecurrence
             text += $", until {until.Value:d}";
         }
         return text;
+    }
+
+    // ---- Splitting a series (R6) ----
+
+    /// <summary>No live occurrence of the series before <paramref name="split"/>.</summary>
+    private static bool IsFirst(CalendarEvent master, CalDateTime split) =>
+        !master.GetOccurrences(master.DtStart).TakeWhileBefore(split).Any();
+
+    /// <summary>
+    /// The original part: the rule ends just before <paramref name="split"/> (a COUNT becomes an UNTIL), and its
+    /// EXDATEs and overrides from the split on are dropped.
+    /// </summary>
+    private static void Truncate(Calendar calendar, CalendarEvent master, CalDateTime split, TimeZoneInfo zone)
+    {
+        RefuseDateLists(master);
+        var at = OccurrenceExpander.ToUtc(split, zone);
+        var rule = master.RecurrenceRule!;
+        rule.Count = null;
+        rule.Until = !split.HasTime ? new CalDateTime(DateOnly.FromDateTime(split.Value).AddDays(-1))
+            : split.IsFloating ? new CalDateTime(split.Value.AddSeconds(-1), null)
+            : new CalDateTime(at.UtcDateTime.AddSeconds(-1), "UTC");
+        KeepExceptions(master, d => OccurrenceExpander.ToUtc(d, zone) < at);
+        KeepOverrides(calendar, id => OccurrenceExpander.ToUtc(id, zone) < at);
+    }
+
+    /// <summary>
+    /// The following part, unchanged: a copy with a new UID starting at <paramref name="split"/>, keeping the EXDATEs
+    /// and overrides from the split on. A COUNT is reduced by the occurrences before the split, excluded ones included
+    /// (RFC 5545 counts generated occurrences).
+    /// </summary>
+    private static Item Following(Item item, CalDateTime split, Collection collection, TimeZoneInfo zone, DateTimeOffset now)
+    {
+        var calendar = Load(item);
+        var master = CalDavEvents.Master(calendar);
+        RefuseDateLists(master);
+        var at = OccurrenceExpander.ToUtc(split, zone);
+        var rule = master.RecurrenceRule!;
+        if (rule.Count is { } count)
+        {
+            var before = master.GetOccurrences(master.DtStart).TakeWhileBefore(split)
+                .Select(o => OccurrenceExpander.ToUtc(o.Period.StartTime, zone))
+                .Concat(master.ExceptionDates.GetAllDates().Select(d => OccurrenceExpander.ToUtc(d, zone)))
+                .Concat(calendar.Events.Where(e => e.RecurrenceIdentifier is not null)
+                    .Select(e => OccurrenceExpander.ToUtc(e.RecurrenceIdentifier!.StartTime, zone)))
+                .Where(t => t < at)
+                .Distinct()
+                .Count();
+            rule.Count = count - before;
+        }
+        if (master.DtEnd is { } end)
+        {
+            var length = end.Value - master.DtStart!.Value;
+            master.DtStart = split;
+            master.DtEnd = Shift(split, length);
+        }
+        else
+        {
+            master.DtStart = split;
+        }
+        KeepExceptions(master, d => OccurrenceExpander.ToUtc(d, zone) >= at);
+        KeepOverrides(calendar, id => OccurrenceExpander.ToUtc(id, zone) >= at);
+
+        var uid = Guid.NewGuid().ToString();
+        foreach (var ev in calendar.Events)
+        {
+            ev.Uid = uid;
+        }
+        master.Sequence = 0;
+        master.Created = CalDavEvents.Utc(now);
+        master.DtStamp = CalDavEvents.Utc(now);
+        master.LastModified = CalDavEvents.Utc(now);
+        return CalDavEvents.ToItem(Guid.NewGuid().ToString("N"), collection.Id, CalDavEvents.Href(collection, uid), null, calendar, zone);
+    }
+
+    private static void RefuseDateLists(CalendarEvent master)
+    {
+        if (master.RecurrenceRule is null || master.RecurrenceDates.GetAllDates().Any())
+        {
+            throw new EditRefusedException("This series repeats on listed dates, so it can't be split. Choose This event or All events instead.");
+        }
+    }
+
+    private static void KeepExceptions(CalendarEvent master, Func<CalDateTime, bool> keep)
+    {
+        var dates = master.ExceptionDates.GetAllDates().Where(keep).ToList();
+        master.ExceptionDates.Clear();
+        foreach (var date in dates)
+        {
+            master.ExceptionDates.Add(date);
+        }
+    }
+
+    /// <summary>Keeps the overrides whose RECURRENCE-ID passes <paramref name="keep"/>; removal is by reference.</summary>
+    private static void KeepOverrides(Calendar calendar, Func<CalDateTime, bool> keep)
+    {
+        var children = calendar.Children
+            .Where(c => c is not CalendarEvent { RecurrenceIdentifier: { } id } || keep(id.StartTime))
+            .ToList();
+        calendar.Children.Clear();
+        foreach (var child in children)
+        {
+            calendar.Children.Add(child);
+        }
     }
 
     // ---- Occurrences ----
