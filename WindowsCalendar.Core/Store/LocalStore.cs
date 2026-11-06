@@ -18,7 +18,7 @@ public sealed class LocalStore : IDisposable
     private const string ItemColumns =
         """
         i.id, i.collection_id, i.kind, i.remote_id, i.raw_payload, i.summary, i.start_utc, i.end_utc, i.all_day, i.time_zone,
-        i.location, i.status, i.due_utc, i.completed_utc, i.is_recurring, i.etag, i.last_modified
+        i.location, i.status, i.due_utc, i.completed_utc, i.is_recurring, i.etag, i.last_modified, i.series_id, i.read_only, i.unaccepted
         """;
 
     private const string OutboxColumns =
@@ -435,6 +435,37 @@ public sealed class LocalStore : IDisposable
         LocalChanged?.Invoke();
     }
 
+    /// <summary>The live item with this server id in the collection, or null.</summary>
+    public Item? FindItemByRemoteId(string collectionId, string remoteId)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
+                $"SELECT {ItemColumns} FROM items i WHERE i.collection_id = $c AND i.remote_id = $remote AND i.deleted = 0;",
+                ("$c", collectionId), ("$remote", remoteId));
+            using var r = cmd.ExecuteReader();
+            return r.Read() ? ReadItem(r) : null;
+        }
+    }
+
+    /// <summary>The live occurrences and exceptions of a server-expanded series (Graph), by the master's server id.</summary>
+    public IReadOnlyList<Item> GetSeriesItems(string collectionId, string seriesId)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
+                $"SELECT {ItemColumns} FROM items i WHERE i.collection_id = $c AND i.series_id = $s AND i.deleted = 0 ORDER BY i.start_utc;",
+                ("$c", collectionId), ("$s", seriesId));
+            using var r = cmd.ExecuteReader();
+            var items = new List<Item>();
+            while (r.Read())
+            {
+                items.Add(ReadItem(r));
+            }
+            return items;
+        }
+    }
+
     /// <summary>Returns the item, or null if it does not exist or is deleted (unless <paramref name="includeDeleted"/>).</summary>
     public Item? GetItem(string itemId, bool includeDeleted = false)
     {
@@ -481,9 +512,11 @@ public sealed class LocalStore : IDisposable
         {
             using var cmd = Command(_connection, null,
                 """
-                SELECT o.item_id, i.collection_id, i.kind, i.summary, i.location, o.start_utc, o.end_utc, i.all_day, i.is_recurring,
-                       o.recurrence_utc
+                SELECT o.item_id, i.collection_id, i.kind, COALESCE(i.summary, m.summary), COALESCE(i.location, m.location),
+                       o.start_utc, o.end_utc, i.all_day, i.is_recurring, o.recurrence_utc, i.read_only OR COALESCE(m.read_only, 0),
+                       CASE WHEN i.series_id IS NOT NULL AND i.summary IS NULL THEN COALESCE(m.unaccepted, 0) ELSE i.unaccepted END
                 FROM occurrences o JOIN items i ON i.id = o.item_id
+                LEFT JOIN items m ON i.series_id IS NOT NULL AND m.collection_id = i.collection_id AND m.remote_id = i.series_id AND m.deleted = 0
                 WHERE i.deleted = 0 AND o.start_utc < $to AND o.end_utc >= $from
                   AND NOT EXISTS (SELECT 1 FROM meta WHERE key = 'hidden:' || i.collection_id)
                 ORDER BY o.start_utc, o.item_id;
@@ -495,7 +528,7 @@ public sealed class LocalStore : IDisposable
             {
                 list.Add(new OccurrenceView(r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)),
                     NullableString(r, 3), NullableString(r, 4), Time(r, 5), Time(r, 6), r.GetBoolean(7), r.GetBoolean(8),
-                    r.IsDBNull(9) ? null : Time(r, 9)));
+                    r.IsDBNull(9) ? null : Time(r, 9), r.GetBoolean(10), r.GetBoolean(11)));
             }
             return list;
         }
@@ -638,13 +671,19 @@ public sealed class LocalStore : IDisposable
     /// <summary>
     /// Removes a sent create or update and records the etag the server returned (null if it sent none, so the
     /// next pull fetches the item again). Later queued entries for the item are rebased onto that etag, so they
-    /// do not fail with a false 412 (sync-radicale R6).
+    /// do not fail with a false 412 (sync-radicale R6). A <paramref name="remoteId"/> is the id the server gave a
+    /// created item (Graph).
     /// </summary>
-    public void CompleteOutboxWrite(long entryId, string? etag)
+    public void CompleteOutboxWrite(long entryId, string? etag, string? remoteId = null)
     {
         lock (_gate)
         {
             using var tx = _connection.BeginTransaction();
+            if (remoteId is not null)
+            {
+                Execute(_connection, tx, "UPDATE items SET remote_id = $remote WHERE id = (SELECT item_id FROM outbox WHERE id = $id);",
+                    ("$remote", remoteId), ("$id", entryId));
+            }
             Execute(_connection, tx,
                 """
                 UPDATE items SET etag = $etag WHERE id = (SELECT item_id FROM outbox WHERE id = $id);
@@ -868,9 +907,9 @@ public sealed class LocalStore : IDisposable
     private const string InsertItemSql =
         """
         INSERT INTO items (id, collection_id, kind, remote_id, raw_payload, summary, start_utc, end_utc, all_day,
-            time_zone, location, status, due_utc, completed_utc, is_recurring, etag, last_modified)
+            time_zone, location, status, due_utc, completed_utc, is_recurring, etag, last_modified, series_id, read_only, unaccepted)
         VALUES ($id, $collection, $kind, $remote, $raw, $summary, $start, $end, $allDay,
-            $tz, $location, $status, $due, $completed, $recurring, $etag, $modified);
+            $tz, $location, $status, $due, $completed, $recurring, $etag, $modified, $series, $readOnly, $unaccepted);
         """;
 
     private const string UpdateItemSql =
@@ -878,7 +917,7 @@ public sealed class LocalStore : IDisposable
         UPDATE items SET collection_id = $collection, kind = $kind, remote_id = $remote, raw_payload = $raw,
             summary = $summary, start_utc = $start, end_utc = $end, all_day = $allDay, time_zone = $tz,
             location = $location, status = $status, due_utc = $due, completed_utc = $completed,
-            is_recurring = $recurring, etag = $etag, last_modified = $modified
+            is_recurring = $recurring, etag = $etag, last_modified = $modified, series_id = $series, read_only = $readOnly, unaccepted = $unaccepted
         WHERE id = $id;
         """;
 
@@ -1092,7 +1131,7 @@ public sealed class LocalStore : IDisposable
         {
             r.Read();
             item = ReadItem(r);
-            accountType = Enum.Parse<AccountType>(r.GetString(17));
+            accountType = Enum.Parse<AccountType>(r.GetString(20));
         }
 
         Execute(_connection, tx, "DELETE FROM occurrences WHERE item_id = $id;", ("$id", itemId));
@@ -1124,7 +1163,7 @@ public sealed class LocalStore : IDisposable
         r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)), NullableString(r, 3), r.GetString(4),
         NullableString(r, 5), NullableTime(r, 6), NullableTime(r, 7), r.GetBoolean(8), NullableString(r, 9),
         NullableString(r, 10), NullableString(r, 11), NullableTime(r, 12), NullableTime(r, 13), r.GetBoolean(14),
-        NullableString(r, 15), NullableTime(r, 16));
+        NullableString(r, 15), NullableTime(r, 16), NullableString(r, 17), r.GetBoolean(18), r.GetBoolean(19));
 
     private static (string, object?)[] ItemParameters(Item i) =>
     [
@@ -1133,7 +1172,7 @@ public sealed class LocalStore : IDisposable
         ("$end", i.EndUtc?.ToUnixTimeMilliseconds()), ("$allDay", i.AllDay), ("$tz", i.TimeZone),
         ("$location", i.Location), ("$status", i.Status), ("$due", i.DueUtc?.ToUnixTimeMilliseconds()),
         ("$completed", i.CompletedUtc?.ToUnixTimeMilliseconds()), ("$recurring", i.IsRecurring), ("$etag", i.Etag),
-        ("$modified", i.LastModifiedUtc?.ToUnixTimeMilliseconds()),
+        ("$modified", i.LastModifiedUtc?.ToUnixTimeMilliseconds()), ("$series", i.SeriesId), ("$readOnly", i.ReadOnly), ("$unaccepted", i.Unaccepted),
     ];
 
     private static SqliteCommand Command(SqliteConnection connection, SqliteTransaction? tx, string sql, params (string Name, object? Value)[] parameters)

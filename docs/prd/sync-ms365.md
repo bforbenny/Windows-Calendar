@@ -39,6 +39,16 @@ Each MS365 account syncs its calendars and To Do task lists through Microsoft Gr
 - R11 interim: a 401, or MSAL needing interaction, pauses the account until restart, with a log warning. The toast and Sign in bar come with [ui-states](ui-states.md).
 - Access tokens are fetched silently for each sync run, used for that run only and never logged.
 
+## Interim (second slice: series masters and event writes)
+
+- R6: calendarView delta returns occurrences as stubs (id, start, end, seriesMasterId). Series masters are now stored: kept from delta when it returns them, otherwise fetched with `GET /me/events/{seriesMasterId}` (the number fetched is logged). A master is not drawn itself; an occurrence without its own subject or location shows its master's. Each occurrence and exception records its master's id.
+- Reads ask for plain-text bodies (`Prefer: outlook.body-content-type="text"`). The chunk state is reset once by this slice, so every calendar is pulled again and gets its masters.
+- R7: queued changes are sent before the pull, in outbox order. Create is `POST /me/calendars/{id}/events`; the reply gives the event its Graph id, etag and stored JSON. Update is `PATCH /me/events/{id}`, delete is `DELETE /me/events/{id}`, both with `If-Match`. A 412 or 404 is a conflict ([conflict-resolution](conflict-resolution.md)): the event is fetched again and the server version wins. A 429 or 503 backs the account off (R10); a 5xx or 408 is retried later; any other 4xx waits for the user.
+- R12: an edit remembers which fields it changed (subject, start/end and all-day, location, body); the PATCH sends only those. A changed location is sent as `location.displayName`. The description is always editable: unchanged it is never sent; changed, it replaces the body as plain text.
+- R8 for writes: a new event is written in the Windows timezone; an edited event keeps its own timezone (`originalStartTimeZone`) when Windows knows it, else the Windows timezone. All-day events are written as midnight-to-midnight dates with `isAllDay`.
+- Editable in the app: create, edit, delete, drag, move to another calendar (a create in the new calendar, then a delete, one linked group), undo, and the recurring operations in [recurring-events](recurring-events.md). Calendars with `canEdit` false stay read-only.
+- Meetings stay view-only: an event (or the series of an occurrence) with attendees, or one you did not organise, cannot be edited, dragged or deleted from the app, so the app never sends meeting updates or cancellations.
+
 ## Out of scope
 
 - Graph change notifications (webhooks) — they need a public endpoint; polling is used instead.

@@ -48,7 +48,7 @@ internal sealed partial class EventEditor : UserControl
     private RepeatRule? _savedRule;
     // Opened as a new or single event: rule changes save at once, with no scope question.
     private bool _ruleAutosave;
-    // An MS365 event: Graph JSON, shown view-only (sync-ms365 slice 1).
+    // An MS365 event: Graph JSON (EventEditor.Graph.cs).
     private bool _graph;
     private DateTimeOffset? _recurrence;
     private EditScope? _scope;
@@ -163,29 +163,28 @@ internal sealed partial class EventEditor : UserControl
             return;
         }
         var account = Store.GetAccounts().FirstOrDefault(a => a.Id == collection.AccountId);
-        var graph = account?.Type == AccountType.MS365;
-        if (graph)
+        if (account?.Type == AccountType.MS365)
         {
-            // Each Graph occurrence is its own item.
-            recurrence = null;
+            OpenGraph(item, collection, collections);
+            return;
         }
         EventFields fields;
         try
         {
-            fields = graph ? GraphEventMapper.Read(item, TimeZoneInfo.Local)
-                : recurrence is { } r ? CalDavRecurrence.ReadOccurrence(item, r, TimeZoneInfo.Local) : CalDavEvents.Read(item, TimeZoneInfo.Local);
+            fields = recurrence is { } r ? CalDavRecurrence.ReadOccurrence(item, r, TimeZoneInfo.Local) : CalDavEvents.Read(item, TimeZoneInfo.Local);
         }
         catch (EditRefusedException)
         {
             return;
         }
-        _graph = graph;
+        _graph = false;
+        _occurrenceId = null;
         _itemId = itemId;
         _recurrence = recurrence;
         _scope = null;
-        _allowFollowing = !graph && recurrence is not null && !CalDavRecurrence.IsOrganisedMeeting(item, account?.Email);
+        _allowFollowing = recurrence is not null && !CalDavRecurrence.IsOrganisedMeeting(item, account?.Email);
         _readOnly = collection.ReadOnly || account?.Type != AccountType.CalDAV;
-        _savedRule = graph ? null : CalDavRecurrence.ReadRule(item, TimeZoneInfo.Local);
+        _savedRule = CalDavRecurrence.ReadRule(item, TimeZoneInfo.Local);
         _ruleAutosave = recurrence is null;
         var choices = collections.Values
             .Where(c => c.Kind == CollectionKind.Calendar && c.AccountId == collection.AccountId && (!c.ReadOnly || c.Id == collection.Id))
@@ -206,7 +205,7 @@ internal sealed partial class EventEditor : UserControl
             return;
         }
         Save();
-        var accounts = Store?.GetAccounts().Where(a => a.Type == AccountType.CalDAV).Select(a => a.Id).ToHashSet() ?? [];
+        var accounts = Store?.GetAccounts().Select(a => a.Id).ToHashSet() ?? [];
         var choices = collections.Values.Where(c => c.Kind == CollectionKind.Calendar && !c.ReadOnly && accounts.Contains(c.AccountId)).ToList();
         if (choices.Count == 0)
         {
@@ -218,6 +217,7 @@ internal sealed partial class EventEditor : UserControl
         _scope = null;
         _readOnly = false;
         _graph = false;
+        _occurrenceId = null;
         _savedRule = RepeatRule.None;
         _ruleAutosave = true;
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
@@ -258,7 +258,7 @@ internal sealed partial class EventEditor : UserControl
     /// </summary>
     public void Reload(string itemId, DateTimeOffset? from = null, DateTimeOffset? to = null)
     {
-        if (!IsOpen || _itemId != itemId || Store?.GetItem(itemId) is not { } item)
+        if (!IsOpen || _itemId is null || (_itemId != itemId && _occurrenceId != itemId) || Store?.GetItem(_itemId) is not { } item)
         {
             return;
         }
@@ -292,7 +292,7 @@ internal sealed partial class EventEditor : UserControl
     public string? ItemId => _itemId;
 
     /// <summary>The open event's fields: its occurrence's when it repeats.</summary>
-    private EventFields Fields(Item item) => _graph ? GraphEventMapper.Read(item, TimeZoneInfo.Local)
+    private EventFields Fields(Item item) => _graph ? GraphFields(item)
         : _recurrence is { } r ? CalDavRecurrence.ReadOccurrence(item, r, TimeZoneInfo.Local)
         : CalDavEvents.Read(item, TimeZoneInfo.Local);
 
@@ -422,26 +422,33 @@ internal sealed partial class EventEditor : UserControl
                 {
                     return;
                 }
-                var created = CalDavEvents.Create(target, fields, zone, now);
                 DateTimeOffset? recurrence = null;
-                // A repeat chosen before the title is written with the new event (R3 interim).
-                if (CalDavRecurrence.ChangeRule(created, null, false, _repeat.Read(), target, zone, now) is { } repeating)
+                if (IsGraphCalendar(target))
                 {
-                    created = repeating.Original;
-                    recurrence = repeating.Recurrence;
+                    recurrence = CreateGraph(store, target, fields);
                 }
-                store.CreateItem(created);
-                _itemId = created.Id;
+                else
+                {
+                    var created = CalDavEvents.Create(target, fields, zone, now);
+                    // A repeat chosen before the title is written with the new event (R3 interim).
+                    if (CalDavRecurrence.ChangeRule(created, null, false, _repeat.Read(), target, zone, now) is { } repeating)
+                    {
+                        created = repeating.Original;
+                        recurrence = repeating.Recurrence;
+                    }
+                    store.CreateItem(created);
+                    _itemId = created.Id;
+                    Log.Information("Event {ItemId} created", created.Id);
+                }
                 _recurrence = recurrence;
                 _scope = recurrence is null ? null : EditScope.Series;
                 _heading.Text = "Event";
                 _delete.Visibility = Visibility.Visible;
-                Log.Information("Event {ItemId} created", created.Id);
                 if (recurrence is not null)
                 {
                     // A weekly start may have moved to the first chosen weekday.
                     Changed?.Invoke();
-                    Reload(created.Id);
+                    Reload(_itemId!);
                     return;
                 }
             }
@@ -451,6 +458,11 @@ internal sealed partial class EventEditor : UserControl
                 {
                     // Deleted meanwhile (e.g. by a sync).
                     Hide();
+                    return;
+                }
+                if (_graph)
+                {
+                    SaveGraph(store, item, fields, target);
                     return;
                 }
                 if (target.Id != item.CollectionId)
@@ -598,13 +610,13 @@ internal sealed partial class EventEditor : UserControl
     /// <summary>Shows the saved rule again after a save moved the series (e.g. its weekday), unless one is staged.</summary>
     private void RefreshRule()
     {
-        if (_itemId is null || _graph || RuleDirty || Store?.GetItem(_itemId) is not { } item)
+        if (_itemId is null || RuleDirty || Store?.GetItem(_itemId) is not { } item)
         {
             return;
         }
         try
         {
-            _savedRule = CalDavRecurrence.ReadRule(item, TimeZoneInfo.Local);
+            _savedRule = _graph ? GraphRecurrence.ReadRule(item, TimeZoneInfo.Local) : CalDavRecurrence.ReadRule(item, TimeZoneInfo.Local);
         }
         catch (Exception ex)
         {
@@ -625,7 +637,11 @@ internal sealed partial class EventEditor : UserControl
         }
         try
         {
-            if (CalDavRecurrence.ChangeRule(item, _recurrence, false, _repeat.Read(), target, TimeZoneInfo.Local, DateTimeOffset.UtcNow) is { } change)
+            if (_graph)
+            {
+                SaveGraphRule(store, item, target);
+            }
+            else if (CalDavRecurrence.ChangeRule(item, _recurrence, false, _repeat.Read(), target, TimeZoneInfo.Local, DateTimeOffset.UtcNow) is { } change)
             {
                 store.UpdateItem(change.Original);
                 RuleSaved(change);
@@ -657,6 +673,14 @@ internal sealed partial class EventEditor : UserControl
         _asking = true;
         try
         {
+            if (_graph)
+            {
+                if (store.GetItem(id) is { } master)
+                {
+                    await ApplyGraphRuleAsync(store, master, recurrence, target);
+                }
+                return;
+            }
             var scope = _allowFollowing
                 ? await ScopeDialog.AskAsync(XamlRoot, "Change the repeat pattern", true, allowOccurrence: false)
                 : EditScope.Series;
@@ -786,14 +810,24 @@ internal sealed partial class EventEditor : UserControl
             {
                 return;
             }
+            if (_graph)
+            {
+                if (scope != EditScope.Series && DeleteGraphOccurrences(store, id, recurrence, scope.Value))
+                {
+                    Hide();
+                    Changed?.Invoke();
+                    return;
+                }
+                scope = EditScope.Series;
+            }
             var zone = TimeZoneInfo.Local;
-            if (scope == EditScope.Following && store.GetItem(id) is { } series
+            if (scope == EditScope.Following && !_graph && store.GetItem(id) is { } series
                 && CalDavRecurrence.DeleteFollowing(series, recurrence, zone, DateTimeOffset.UtcNow) is null)
             {
                 // From the first occurrence, "this and following" is the whole series.
                 scope = EditScope.Series;
             }
-            if (scope != EditScope.Series)
+            if (scope != EditScope.Series && !_graph)
             {
                 try
                 {

@@ -20,6 +20,13 @@ internal static class OccurrenceExpander
         {
             return Expand(calendar, windowStart, windowEnd, zone);
         }
+        if (accountType == AccountType.MS365 && item.Kind == ItemKind.Event && item.RemoteId is not null
+            && Graph.GraphEventMapper.IsSeriesMaster(item.RawPayload))
+        {
+            // Drawn through its occurrences, which calendarView lists (sync-ms365 R6). A series not sent yet shows its
+            // first occurrence until then.
+            return [];
+        }
         if (accountType == AccountType.MS365 && item.Kind == ItemKind.Event && Graph.GraphEventMapper.Times(item.RawPayload, zone) is { } t)
         {
             // All-day dates follow the Windows timezone (sync-ms365 R8).

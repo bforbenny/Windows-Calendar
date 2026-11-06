@@ -27,7 +27,9 @@ internal sealed class Ms365Auth
         _app = PublicClientApplicationBuilder.Create(clientId)
             .WithAuthority(AzureCloudInstance.AzurePublic, tenantId)
             .WithDefaultRedirectUri()
-            .WithBroker(new BrokerOptions(BrokerOptions.OperatingSystems.Windows))
+            // MSAL's own cache is in memory only (no tokens are stored by the app); listing the accounts Windows knows
+            // lets a sync after a restart find the signed-in account in WAM.
+            .WithBroker(new BrokerOptions(BrokerOptions.OperatingSystems.Windows) { ListOperatingSystemAccounts = true })
             .Build();
     }
 
@@ -65,9 +67,10 @@ internal sealed class Ms365Auth
     /// </summary>
     public async Task<string> GetTokenAsync(string username, CancellationToken cancellationToken)
     {
-        var account = (await _app.GetAccountsAsync()).FirstOrDefault(a => string.Equals(a.Username, username, StringComparison.OrdinalIgnoreCase))
-            ?? throw new MsalUiRequiredException(MsalError.UserNullError, "The account is not signed in to this app.");
-        var result = await _app.AcquireTokenSilent(Scopes, account).ExecuteAsync(cancellationToken);
+        var account = (await _app.GetAccountsAsync()).FirstOrDefault(a => string.Equals(a.Username, username, StringComparison.OrdinalIgnoreCase));
+        // After a restart MSAL's in-memory list is empty; WAM still knows the account by its sign-in name.
+        var request = account is not null ? _app.AcquireTokenSilent(Scopes, account) : _app.AcquireTokenSilent(Scopes, username);
+        var result = await request.ExecuteAsync(cancellationToken);
         return result.AccessToken;
     }
 

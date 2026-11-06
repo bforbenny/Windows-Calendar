@@ -51,7 +51,9 @@ public sealed record Collection(
 
 /// <summary>
 /// A cached event or task (local-store-offline R2): the raw server payload plus normalised columns.
-/// RemoteId is the CalDAV UID or Graph id; null until the server knows the item.
+/// RemoteId is the CalDAV UID or Graph id; null until the server knows the item. SeriesId is the Graph id of an
+/// occurrence's series master. ReadOnly marks an event the app must not change (an MS365 meeting). Unaccepted marks
+/// an invitation not yet accepted (not responded or tentative).
 /// </summary>
 public sealed record Item(
     string Id,
@@ -70,7 +72,10 @@ public sealed record Item(
     DateTimeOffset? CompletedUtc = null,
     bool IsRecurring = false,
     string? Etag = null,
-    DateTimeOffset? LastModifiedUtc = null);
+    DateTimeOffset? LastModifiedUtc = null,
+    string? SeriesId = null,
+    bool ReadOnly = false,
+    bool Unaccepted = false);
 
 /// <summary>A queued local change (local-store-offline R4). Id order is replay order.</summary>
 public sealed record OutboxEntry(
@@ -111,7 +116,9 @@ public sealed record OccurrenceView(
     DateTimeOffset EndUtc,
     bool AllDay,
     bool IsRecurring = false,
-    DateTimeOffset? RecurrenceUtc = null);
+    DateTimeOffset? RecurrenceUtc = null,
+    bool ReadOnly = false,
+    bool Unaccepted = false);
 
 /// <summary>One expanded instance of an item in the occurrence index (local-store-offline R3).</summary>
 public sealed record ItemOccurrence(string ItemId, DateTimeOffset StartUtc, DateTimeOffset EndUtc);

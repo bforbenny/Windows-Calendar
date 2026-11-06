@@ -32,7 +32,7 @@ public sealed class GraphException(GraphError error, HttpStatusCode? status = nu
 }
 
 /// <summary>
-/// GETs from Microsoft Graph v1.0 for one sync run with an access token that the caller obtained for this run only
+/// Calls to Microsoft Graph v1.0 for one sync run with an access token that the caller obtained for this run only
 /// (sync-ms365 R8, R10, R11). Reads ask for UTC times and pages of 50. The token is never logged.
 /// </summary>
 public sealed class GraphClient(HttpClient http, string accessToken)
@@ -44,11 +44,68 @@ public sealed class GraphClient(HttpClient http, string accessToken)
     public async Task<JsonDocument> GetAsync(string pathOrUrl, CancellationToken cancellationToken)
     {
         var url = pathOrUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? pathOrUrl : BaseUrl + pathOrUrl;
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var request = Request(HttpMethod.Get, url);
+        request.Headers.Add("Prefer", "odata.maxpagesize=50");
+        using var response = await SendRawAsync(request, cancellationToken);
+        if (response.IsSuccessStatusCode)
+        {
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+        }
+        var status = response.StatusCode;
+        if (status == HttpStatusCode.Gone || await ErrorCodeAsync(response, cancellationToken) is "syncStateNotFound" or "resyncRequired")
+        {
+            throw new GraphException(GraphError.SyncStateGone, status);
+        }
+        throw new GraphException(GraphError.Http, status);
+    }
+
+    /// <summary>
+    /// A write (sync-ms365 R7): POST, PATCH or DELETE of <paramref name="path"/> under v1.0 with an optional JSON body
+    /// and <c>If-Match</c> etag. Returns the status and, on success, the reply's etag and id. Throws only for
+    /// Network, Unauthorized and Throttled; other statuses are for the caller (412, 404, 4xx, 5xx).
+    /// </summary>
+    public async Task<(HttpStatusCode Status, string? Etag, string? Id)> SendAsync(HttpMethod method, string path, string? json,
+        string? ifMatch, CancellationToken cancellationToken)
+    {
+        using var request = Request(method, BaseUrl + path);
+        if (json is not null)
+        {
+            request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        }
+        if (ifMatch is not null)
+        {
+            request.Headers.TryAddWithoutValidation("If-Match", ifMatch);
+        }
+        using var response = await SendRawAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode || response.StatusCode == HttpStatusCode.NoContent)
+        {
+            return (response.StatusCode, null, null);
+        }
+        try
+        {
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+            return (response.StatusCode, Text(doc.RootElement, "@odata.etag"), Text(doc.RootElement, "id"));
+        }
+        catch (JsonException)
+        {
+            return (response.StatusCode, null, null);
+        }
+    }
+
+    /// <summary>Times in UTC (R8) and bodies as plain text (sync-ms365 second slice).</summary>
+    private HttpRequestMessage Request(HttpMethod method, string url)
+    {
+        var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         request.Headers.Add("Prefer", "outlook.timezone=\"UTC\"");
-        request.Headers.Add("Prefer", "odata.maxpagesize=50");
+        request.Headers.Add("Prefer", "outlook.body-content-type=\"text\"");
+        return request;
+    }
 
+    /// <summary>Sends; throws for no response, 401 and 429/503 (R10, R11). The caller disposes the response.</summary>
+    private async Task<HttpResponseMessage> SendRawAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
         HttpResponseMessage response;
         try
         {
@@ -62,32 +119,21 @@ public sealed class GraphClient(HttpClient http, string accessToken)
         {
             throw new GraphException(GraphError.Network);
         }
-
-        using (response)
+        var status = response.StatusCode;
+        if (status == HttpStatusCode.Unauthorized)
         {
-            if (response.IsSuccessStatusCode)
-            {
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                return await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
-            }
-            var status = response.StatusCode;
-            if (status == HttpStatusCode.Unauthorized)
-            {
-                throw new GraphException(GraphError.Unauthorized, status);
-            }
-            if (status is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable)
-            {
-                var wait = response.Headers.RetryAfter is { } r
-                    ? r.Delta ?? (r.Date is { } d ? d - DateTimeOffset.UtcNow : null)
-                    : null;
-                throw new GraphException(GraphError.Throttled, status, wait is { } w && w > TimeSpan.Zero ? w : DefaultRetryAfter);
-            }
-            if (status == HttpStatusCode.Gone || await ErrorCodeAsync(response, cancellationToken) is "syncStateNotFound" or "resyncRequired")
-            {
-                throw new GraphException(GraphError.SyncStateGone, status);
-            }
-            throw new GraphException(GraphError.Http, status);
+            response.Dispose();
+            throw new GraphException(GraphError.Unauthorized, status);
         }
+        if (status is HttpStatusCode.TooManyRequests or HttpStatusCode.ServiceUnavailable)
+        {
+            var wait = response.Headers.RetryAfter is { } r
+                ? r.Delta ?? (r.Date is { } d ? d - DateTimeOffset.UtcNow : null)
+                : null;
+            response.Dispose();
+            throw new GraphException(GraphError.Throttled, status, wait is { } w && w > TimeSpan.Zero ? w : DefaultRetryAfter);
+        }
+        return response;
     }
 
     /// <summary>The signed-in user's display name and email (mail, else userPrincipalName).</summary>

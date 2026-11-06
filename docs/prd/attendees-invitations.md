@@ -2,7 +2,7 @@
 description: Read-only attendee list, "needs response" marker, Open in Outlook, and guards on meetings you organise
 when-to-use: Before working on events that have attendees, invitations, cancelled or declined meetings, or deleting/editing meetings
 tags: [events, attendees, invitations, ms365, safety]
-status: pending
+status: in-progress
 ---
 
 # Attendees and invitations
@@ -30,6 +30,11 @@ The app shows who is invited to a meeting and whether you still need to respond,
   - Moving to another calendar or account is not offered.
   - Radicale meetings with attendees: the app does no scheduling ([sync-radicale](sync-radicale.md)), so the delete and change prompts say "Attendees are not notified" instead.
 - R9. The Graph behaviour assumed in R8 (organiser delete sends cancellations; PATCH of time or location sends updates) is verified during implementation; the guards stay either way.
+
+## Interim (muted invitations, MS365)
+
+- R3, first part: MS365 events where you are an attendee (not the organiser) and `responseStatus.response` is `none`, `notResponded` or `tentativelyAccepted` are drawn muted in Day, Week, Month and Agenda: no fill (the view's background), a 1 epx border and the left bar in the calendar colour, normal text. An occurrence of such a series follows its series. High contrast keeps the same outline with system colours.
+- The "needs response" glyph and the editor's "You have not responded" text come later; until then the muted style is the only marker.
 
 ## Out of scope
 

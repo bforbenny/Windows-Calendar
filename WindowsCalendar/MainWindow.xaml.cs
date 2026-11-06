@@ -31,8 +31,8 @@ public sealed partial class MainWindow : Window
     private readonly EventEditor _editor = new();
     private readonly DispatcherQueueTimer _minuteTimer;
     private readonly Dictionary<string, Collection> _collections = [];
-    // Accounts whose events can't be changed yet (MS365 is pull-only in sync-ms365 slice 1).
-    private readonly HashSet<string> _viewOnlyAccounts = [];
+    // MS365 accounts: their events are edited as Graph JSON (sync-ms365 second slice).
+    private readonly HashSet<string> _graphAccounts = [];
     private ViewKind _view = ViewKind.Week;
     private DateOnly _today = DateOnly.FromDateTime(DateTime.Now);
     private DateOnly? _pendingDay;
@@ -197,6 +197,11 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private async void OnEventDropped(DisplayEvent e, DragTarget target)
     {
+        if (IsGraph(e.Collection))
+        {
+            await DropGraphAsync(e, target);
+            return;
+        }
         var scope = (EditScope?)null;
         if (e.Recurrence is not null)
         {
@@ -294,7 +299,9 @@ public sealed partial class MainWindow : Window
                 ShowUndo("This item changed on the server; can't undo", canUndo: false);
                 return;
             }
-            var restored = CalDavEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local);
+            var restored = _collections.TryGetValue(item.CollectionId, out var collection) && IsGraph(collection)
+                ? Core.Graph.GraphEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local)
+                : CalDavEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local);
             if (change.Following is { } following)
             {
                 // Undo of a split (undo R5): the original back and the new series deleted, one linked group.
@@ -353,7 +360,7 @@ public sealed partial class MainWindow : Window
         var from = new DateTimeOffset(start, TimeZoneInfo.Local.GetUtcOffset(start));
         var events = (Store?.GetOccurrenceViews(from, from.AddDays(days + 1)) ?? [])
             .Where(o => o.Kind == ItemKind.Event && _collections.ContainsKey(o.CollectionId))
-            .Select(o => DisplayEvent.From(o, _collections[o.CollectionId], !_viewOnlyAccounts.Contains(_collections[o.CollectionId].AccountId)))
+            .Select(o => DisplayEvent.From(o, _collections[o.CollectionId]))
             .ToList();
 
         var view = (UIElement)CurrentView;
@@ -412,8 +419,8 @@ public sealed partial class MainWindow : Window
         AccountList.Children.Clear();
         _collections.Clear();
         var accounts = Store?.GetAccounts() ?? [];
-        _viewOnlyAccounts.Clear();
-        _viewOnlyAccounts.UnionWith(accounts.Where(a => a.Type != AccountType.CalDAV).Select(a => a.Id));
+        _graphAccounts.Clear();
+        _graphAccounts.UnionWith(accounts.Where(a => a.Type == AccountType.MS365).Select(a => a.Id));
         var hidden = Store?.GetHiddenCollectionIds() ?? new HashSet<string>();
         var byAccount = accounts.ToDictionary(a => a.Id, a => Store!.GetCollections(a.Id));
         foreach (var collection in byAccount.Values.SelectMany(c => c))
@@ -545,9 +552,12 @@ public sealed partial class MainWindow : Window
         {
             AddMs365Button.IsEnabled = AddAccountLink.IsEnabled = false;
             (var username, token) = await auth.SignInAsync(WinRT.Interop.WindowNative.GetWindowHandle(this), default);
-            if (store.GetAccounts().Any(a => a.Type == AccountType.MS365 && string.Equals(a.Username, username, StringComparison.OrdinalIgnoreCase)))
+            if (store.GetAccounts().FirstOrDefault(a => a.Type == AccountType.MS365 && string.Equals(a.Username, username, StringComparison.OrdinalIgnoreCase)) is { } existing)
             {
-                await ShowMessageAsync("Already added", "This Microsoft 365 account is already in the app.");
+                // Signing in an account that is already here resumes its sync (e.g. after "needs to sign in again").
+                ((App)Application.Current).ResumeAccount(existing.Id);
+                Log.Information("MS365 account {AccountId} signed in again", existing.Id);
+                await ShowMessageAsync("Signed in", "This Microsoft 365 account is already in the app; it is signed in again and will sync now.");
                 return;
             }
             var client = new Core.Graph.GraphClient(App.GraphHttp, token);

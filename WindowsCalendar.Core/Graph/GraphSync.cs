@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -7,8 +8,9 @@ using WindowsCalendar.Core.Sync;
 namespace WindowsCalendar.Core.Graph;
 
 /// <summary>
-/// Pull-only sync of an MS365 account's calendars (sync-ms365 slice 1: R1–R4, R8, R12). The calendar list is
-/// re-read first (account-management R11). Each calendar's -3/+12 month window is covered by fixed 30-day chunks,
+/// Two-way sync of an MS365 account's calendars (sync-ms365 R1–R4, R6–R8, R12). The calendar list is re-read first
+/// (account-management R11), then queued changes are sent, then each calendar is pulled. Series masters referenced
+/// by occurrences are kept; any not returned by delta are fetched by id. Each calendar's -3/+12 month window is covered by fixed 30-day chunks,
 /// each pulled with its own calendarView delta. Each chunk remembers the event ids it returned; an event leaves the
 /// store only when no chunk of its calendar holds it. A chunk that pages too long, repeats a page or loses its delta
 /// state restarts once from a fresh delta (R3). Throws <see cref="GraphException"/> for Unauthorized and Throttled
@@ -30,13 +32,18 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
     /// <summary>A chunk restarted from a fresh delta (R3): calendar's local id, chunk start, reason. For the log.</summary>
     public event Action<string, string, string>? ChunkRestarted;
 
+    /// <summary>Series masters fetched by id for a calendar (R6): calendar's local id, count. For the log.</summary>
+    public event Action<string, int>? MastersFetched;
+
     /// <summary>Syncs one account with an access token obtained for this run.</summary>
     public async Task<SyncSummary> SyncAccountAsync(Account account, string accessToken, CancellationToken cancellationToken = default)
     {
         var client = new GraphClient(http, accessToken);
         var changes = store.SyncCollections(account.Id, await DiscoverAsync(client, cancellationToken));
         var calendars = store.GetCollections(account.Id).Where(c => c.Kind == CollectionKind.Calendar).ToList();
-        var summary = new SyncSummary(calendars.Count, 0, 0, 0, 0, 0, 0, CalendarListChanges: changes.Added + changes.Updated + changes.Removed);
+        var (sent, conflicts, failed) = await PushAsync(client, calendars, cancellationToken);
+        var summary = new SyncSummary(calendars.Count, 0, 0, 0, 0, 0, 0, sent, conflicts, failed,
+            CalendarListChanges: changes.Added + changes.Updated + changes.Removed);
         foreach (var calendar in calendars)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -101,9 +108,11 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
             cancellationToken.ThrowIfCancellationRequested();
             var key = Key(chunk);
             state.TryGetValue(key, out var old);
+            _series.Clear();
             try
             {
                 var (next, applied, gone, restarted) = await PullChunkAsync(client, calendar, chunk, old, cancellationToken);
+                applied += await KeepMastersAsync(client, calendar, next.Ids, gone, cancellationToken);
                 state[key] = next;
                 candidates.UnionWith(gone);
                 fetched += applied;
@@ -191,6 +200,16 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
                             }
                             ids.Add(id);
                             gone.Remove(id);
+                            if (item.SeriesId is { } series)
+                            {
+                                _series.Add(series);
+                            }
+                            // The echo of the app's own write keeps the local version (and its Undo).
+                            if (store.FindItemByRemoteId(calendar.Id, id) is { } local && local.Etag == item.Etag
+                                && local.RawPayload.Contains(GraphEvents.ChangedKey))
+                            {
+                                continue;
+                            }
                             store.ApplyServerItem([calendar.Id], item);
                             applied++;
                         }
@@ -226,6 +245,137 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
             restarted = true;
             old = new ChunkState(null, old?.Ids ?? []);
         }
+    }
+
+    // Series masters referenced by the chunk being pulled.
+    private readonly HashSet<string> _series = [];
+
+    /// <summary>
+    /// After a chunk's round: the masters its occurrences reference stay held by the chunk, and any not stored yet are
+    /// fetched by id (R6). Returns how many were fetched.
+    /// </summary>
+    private async Task<int> KeepMastersAsync(GraphClient client, Collection calendar, HashSet<string> ids, HashSet<string> gone,
+        CancellationToken cancellationToken)
+    {
+        var fetched = 0;
+        foreach (var series in _series)
+        {
+            ids.Add(series);
+            gone.Remove(series);
+            if (store.FindItemByRemoteId(calendar.Id, series) is not null)
+            {
+                continue;
+            }
+            if (await FetchAsync(client, calendar, series, cancellationToken) is { } master)
+            {
+                store.ApplyServerItem([calendar.Id], master);
+                fetched++;
+            }
+        }
+        _series.Clear();
+        if (fetched > 0)
+        {
+            MastersFetched?.Invoke(calendar.Id, fetched);
+        }
+        return fetched;
+    }
+
+    /// <summary>The server's current version of one event, or null if it has none.</summary>
+    private async Task<Item?> FetchAsync(GraphClient client, Collection calendar, string remoteId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var doc = await client.GetAsync($"/me/events/{Uri.EscapeDataString(remoteId)}", cancellationToken);
+            return GraphEventMapper.Map(doc.RootElement, calendar.Id, _time.LocalTimeZone);
+        }
+        catch (GraphException ex) when (ex.Error == GraphError.Http && ex.Status is HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Sends the due outbox entries of these calendars in replay order (R7): POST to the calendar, PATCH of the changed
+    /// fields or DELETE, with If-Match. 412 or 404: the server version wins (conflict-resolution). Network, 401 and
+    /// throttling stop the account (thrown); 5xx and 408 retry later; other 4xx wait for the user.
+    /// </summary>
+    private async Task<(int Sent, int Conflicts, int Failed)> PushAsync(GraphClient client, IReadOnlyList<Collection> calendars,
+        CancellationToken cancellationToken)
+    {
+        var byId = calendars.ToDictionary(c => c.Id);
+        int sent = 0, conflicts = 0, failed = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var next = store.GetDueOutbox()
+                .Select(e => (Entry: e, Item: store.GetItem(e.ItemId, includeDeleted: true)))
+                .FirstOrDefault(x => x.Item is { } i && byId.ContainsKey(i.CollectionId)
+                    && (i.RemoteId is not null || x.Entry.Operation == OutboxOperation.Create));
+            if (next.Item is not { } item)
+            {
+                break;
+            }
+            var entry = next.Entry;
+            var calendar = byId[item.CollectionId];
+            store.MarkInFlight(entry.Id);
+
+            HttpStatusCode status;
+            string? etag, id;
+            try
+            {
+                var path = $"/me/events/{Uri.EscapeDataString(item.RemoteId ?? "")}";
+                (status, etag, id) = entry.Operation switch
+                {
+                    OutboxOperation.Create => await client.SendAsync(HttpMethod.Post,
+                        $"/me/calendars/{Uri.EscapeDataString(calendar.RemoteRef)}/events", GraphEvents.CreateBody(entry.Payload!), null, cancellationToken),
+                    OutboxOperation.Update => await client.SendAsync(HttpMethod.Patch, path, GraphEvents.PatchBody(entry.Payload!), entry.BaseEtag, cancellationToken),
+                    _ => await client.SendAsync(HttpMethod.Delete, path, null, entry.BaseEtag, cancellationToken),
+                };
+            }
+            catch (GraphException ex)
+            {
+                store.RecordOutboxFailure(entry.Id, ex.Error.ToString());
+                throw;
+            }
+
+            if ((int)status is >= 200 and < 300 || entry.Operation == OutboxOperation.Delete && status == HttpStatusCode.NotFound)
+            {
+                switch (entry.Operation)
+                {
+                    case OutboxOperation.Delete:
+                        store.CompleteOutboxEntry(entry.Id);
+                        break;
+                    case OutboxOperation.Create:
+                        store.CompleteOutboxWrite(entry.Id, etag, id);
+                        break;
+                    default:
+                        store.CompleteOutboxWrite(entry.Id, etag);
+                        break;
+                }
+                sent++;
+            }
+            else if (status is HttpStatusCode.PreconditionFailed or HttpStatusCode.NotFound && item.RemoteId is { } remoteId)
+            {
+                var server = await FetchAsync(client, calendar, remoteId, cancellationToken);
+                if (server is null && entry.Operation == OutboxOperation.Delete)
+                {
+                    store.CompleteOutboxEntry(entry.Id);
+                    sent++;
+                }
+                else
+                {
+                    store.ResolveConflict(entry.Id, server);
+                    conflicts++;
+                }
+            }
+            else
+            {
+                var transient = (int)status >= 500 || status == HttpStatusCode.RequestTimeout;
+                store.RecordOutboxFailure(entry.Id, $"HTTP {(int)status}", permanent: !transient);
+                failed++;
+            }
+        }
+        return (sent, conflicts, failed);
     }
 
     private static string InitialUrl(Collection calendar, DateOnly chunk)

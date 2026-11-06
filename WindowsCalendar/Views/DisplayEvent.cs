@@ -13,10 +13,10 @@ namespace WindowsCalendar.Views;
 /// <summary>
 /// An occurrence in local wall-clock time, ready to draw (calendar-views). End is exclusive.
 /// All-day and 24-hour-or-longer events go in the all-day lane (R3). Editable events can be dragged (R7); read-only
-/// calendars, subscriptions and accounts the app cannot write to yet (MS365, sync-ms365 slice 1) cannot. <paramref name="Recurrence"/> names the occurrence of a repeating event.
+/// calendars, subscriptions and MS365 meetings (sync-ms365 second slice) cannot. <paramref name="Recurrence"/> names the occurrence of a repeating event.
 /// </summary>
 internal sealed record DisplayEvent(string ItemId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay,
-    Collection Collection, bool Editable, DateTimeOffset? Recurrence)
+    Collection Collection, bool Editable, DateTimeOffset? Recurrence, bool Muted = false)
 {
     public bool InAllDayLane => AllDay || End - Start >= TimeSpan.FromHours(24);
 
@@ -25,7 +25,7 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
     /// <summary>Last day touched (inclusive); an event ending at midnight does not touch the next day.</summary>
     public DateOnly LastDay => End > Start ? DateOnly.FromDateTime(End.AddTicks(-1)) : FirstDay;
 
-    public static DisplayEvent From(OccurrenceView o, Collection collection, bool accountWritable = true) => new(
+    public static DisplayEvent From(OccurrenceView o, Collection collection) => new(
         o.ItemId,
         string.IsNullOrWhiteSpace(o.Summary) ? "(No title)" : o.Summary,
         o.Location,
@@ -33,8 +33,9 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
         TimeZoneInfo.ConvertTime(o.EndUtc, TimeZoneInfo.Local).DateTime,
         o.AllDay,
         collection,
-        accountWritable && !collection.ReadOnly && collection.SourceUrl is null,
-        o.RecurrenceUtc);
+        !o.ReadOnly && !collection.ReadOnly && collection.SourceUrl is null,
+        o.RecurrenceUtc,
+        o.Unaccepted);
 
     /// <summary>Times in the Windows region format (ui-style R7).</summary>
     public string TimeText()
@@ -51,7 +52,10 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
         string.Join(", ", new[] { Title, TimeText(), Location, Collection.Name }.Where(s => !string.IsNullOrWhiteSpace(s)));
 }
 
-/// <summary>An event card: calendar fill, left bar, shape marker before the title (ui-colour-theme R6, R7).</summary>
+/// <summary>
+/// An event card: calendar fill, left bar, shape marker before the title (ui-colour-theme R6, R7). An invitation not
+/// accepted is an outline instead: surface background with a 1 epx border in the calendar colour (attendees-invitations interim).
+/// </summary>
 internal static class EventCard
 {
     /// <summary>Below this height a timed card shows only its bar and fill (calendar-views R4a).</summary>
@@ -76,9 +80,9 @@ internal static class EventCard
     {
         var card = new Border
         {
-            Background = brushes.Fill,
+            Background = e.Muted ? Theme.Brush("SurfaceBaseBrush") : brushes.Fill,
             BorderBrush = brushes.Swatch,
-            BorderThickness = new Thickness(3, 0, 0, 0),
+            BorderThickness = e.Muted ? new Thickness(3, 1, 1, 1) : new Thickness(3, 0, 0, 0),
             CornerRadius = new CornerRadius(4),
             Padding = new Thickness(4, 1, 4, 1),
             Height = height,

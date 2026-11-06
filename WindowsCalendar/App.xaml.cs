@@ -249,7 +249,7 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Pulls each MS365 account (sync-ms365 slice 1). The access token is fetched silently for this run only and never
+    /// Syncs each MS365 account: queued changes out, then calendars in (sync-ms365). The access token is fetched silently for this run only and never
     /// logged. Needing sign-in pauses the account until restart (R11 interim); throttling backs it off (R10).
     /// </summary>
     private async Task<bool> SyncMs365Async(LocalStore store, CancellationToken cancellationToken)
@@ -267,6 +267,8 @@ public partial class App : Application
         var graph = new GraphSync(store, GraphHttp);
         graph.ChunkRestarted += (collectionId, chunk, why) =>
             Log.Warning("Calendar {CollectionId} chunk {Chunk} restarted: {Reason}", collectionId, chunk, why);
+        graph.MastersFetched += (collectionId, count) =>
+            Log.Information("Calendar {CollectionId}: {Count} series masters fetched by id", collectionId, count);
         var changed = false;
         foreach (var account in accounts)
         {
@@ -314,6 +316,13 @@ public partial class App : Application
             }
         }
         return changed;
+    }
+
+    /// <summary>After the user signed an account in again: it syncs again (sync-ms365 R11 interim).</summary>
+    internal void ResumeAccount(string accountId)
+    {
+        _pausedAccounts.Remove(accountId);
+        _scheduler?.Request("signed in again");
     }
 
     /// <summary>Asks for a sync now, e.g. after an account is added (local-store-offline R10).</summary>

@@ -133,6 +133,22 @@ internal static class Migrations
         ALTER TABLE occurrences ADD COLUMN recurrence_utc INTEGER;
         DELETE FROM meta WHERE key = 'occurrences_built';
         """,
+
+        // v7: an occurrence's series master (Graph seriesMasterId) and events the app must not change (MS365
+        // meetings), sync-ms365 second slice. The Graph chunk state is reset so every calendar is pulled again with
+        // its series masters.
+        """
+        ALTER TABLE items ADD COLUMN series_id TEXT;
+        ALTER TABLE items ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0;
+        DELETE FROM sync_state WHERE key = 'graph-chunks';
+        """,
+
+        // v8: invitations you have not accepted, drawn muted (attendees-invitations interim). The Graph chunk state is
+        // reset again so every event is read with it.
+        """
+        ALTER TABLE items ADD COLUMN unaccepted INTEGER NOT NULL DEFAULT 0;
+        DELETE FROM sync_state WHERE key = 'graph-chunks';
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

@@ -55,7 +55,19 @@ Recurring events can be created, edited and deleted with three scopes: **this oc
   - This and following: the series is split as in R6, and the new series gets the new rule. The same confirmation applies to the overrides that move to the new series.
   - On the first occurrence, This and following acts as All (R6). Not offered for meetings you organise (R6).
 - **Doesn't repeat** on an existing series: with All, the series becomes a single event at its first occurrence (overrides and EXDATEs are dropped, after confirmation). With This and following, the series ends before this occurrence and this occurrence becomes a new single event, one linked outbox group.
-- Not yet: MS365, undo for rule changes, and rule creation from quick add.
+- Not yet: undo for rule changes, and rule creation from quick add.
+
+## Interim (MS365: this event, entire series, this and following, rule editing)
+
+- The same scope question, editor and Repeat panel as for CalDAV, for MS365 events that are not meetings ([sync-ms365](sync-ms365.md) second slice). Each Graph occurrence is its own stored event; its series master is stored too (R2).
+- This event (R4): the occurrence is PATCHed (Graph makes it an exception) or DELETEd.
+- Entire series (R5): title, location and description are PATCHed on the master. A time change moves the master's start and end by the same amount; a move to another day shifts the pattern like CalDAV (weekly days of week, monthly day of month, nth weekday to the new weekday, yearly day and month), and `recurrence.range.startDate` follows the start. Switching a series between all-day and timed is refused, as for CalDAV.
+- This and following (R6): the master's `recurrence.range` ends the day before the occurrence (a numbered range becomes an end date), and a new series is POSTed starting at the occurrence with the rest of the pattern (a numbered range keeps the occurrences left). Both are one linked outbox group, truncate first. On the first occurrence it acts as All.
+- Rule editing (R3): the Repeat panel reads and writes Graph patterns: daily, weekly (days of week), absoluteMonthly (day D), relativeMonthly (1st-4th or last weekday), absoluteYearly; ranges noEnd, numbered (After N times) and endDate (On date, inclusive). Other patterns (e.g. relativeYearly, several weekdays on a monthly pattern) are shown read-only (R7). Doesn't repeat with All replaces the series with a single event at its first occurrence (a create, then the series delete, one linked group); with This and following the series ends before this occurrence and this occurrence becomes a single event.
+- Exchange drops a series' exceptions when its time or pattern changes, and drops the original's exceptions after a split point. Before such a change the app counts the stored exceptions affected and asks ("N changed occurrences will be lost"); cancelling saves nothing.
+- Series-wide time and rule changes reach the occurrences when the sync that sends them pulls the calendar again (seconds when online; on reconnect when offline). Title and location changes show at once. A new series (or the new half of a split) shows its first occurrence until it is sent.
+- Undo works for drags (one occurrence, the series, or a split) and for deleting this and following events, on the master for series changes. Deleting one occurrence has no Undo yet.
+- A series cannot be moved to another calendar from the editor (its exceptions would be lost); single events can.
 
 ## Out of scope
 
