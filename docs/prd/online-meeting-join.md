@@ -50,7 +50,7 @@ Built on branch `online-meeting-join` (2026-11-06). The branch is stacked on `ev
 - [x] An `http://` link or an unrecognised link never shows Join.
 - [x] Ctrl+J on a selected meeting, and Ctrl+Shift+J with zero, one and two meetings due.
 - [x] Clicking a card's Join button neither opens the editor nor starts a drag.
-- [ ] A Join button appears on its own at the 10-minute mark without any other action.
+- [x] A Join button appears on its own at the 10-minute mark without any other action.
 
 ## Out of scope
 
@@ -60,9 +60,9 @@ Built on branch `online-meeting-join` (2026-11-06). The branch is stacked on `ev
 
 ## Acceptance criteria
 
-- [ ] A Teams meeting from Outlook shows Join, and clicking it opens Teams.
-- [ ] A Radicale event with a Zoom link in its location or notes shows Join.
-- [ ] A non-HTTPS or unrecognised link never shows Join.
+- [x] A Teams meeting from Outlook shows Join, and clicking it opens Teams.
+- [x] A Radicale event with a Zoom link in its location or notes shows Join.
+- [x] A non-HTTPS or unrecognised link never shows Join.
 - [ ] The reminder toast and the tray flyout both offer Join for a meeting with a link.
 
 ## Dependencies

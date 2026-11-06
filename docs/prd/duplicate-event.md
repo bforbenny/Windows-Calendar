@@ -45,9 +45,9 @@ Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or m
 
 ## Acceptance criteria
 
-- [ ] Ctrl+D on an event creates an identical copy, opens it in the editor panel, and after sync a second event exists on the server.
-- [ ] Ctrl+drag of an event to another day creates a copy there and leaves the original unchanged.
-- [ ] A duplicated Teams meeting has no Join link and no attendees.
+- [x] Ctrl+D on an event creates an identical copy, opens it in the editor panel, and after sync a second event exists on the server.
+- [x] Ctrl+drag of an event to another day creates a copy there and leaves the original unchanged.
+- [x] A duplicated Teams meeting has no Join link and no attendees.
 
 ## Dependencies
 

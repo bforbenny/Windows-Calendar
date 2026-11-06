@@ -67,9 +67,9 @@ Built on branch `event-show-as` (2026-11-06). The branch is stacked on `duplicat
 
 ## Acceptance criteria
 
-- [ ] Setting Out of office in the app shows as Out of office in Outlook.
-- [ ] Setting Free on a Radicale event writes `TRANSP:TRANSPARENT`, and another CalDAV client shows it as free.
-- [ ] Each show-as value is visually distinct in Day, Week, Month and Agenda views, in both themes.
+- [x] Setting Out of office in the app shows as Out of office in Outlook.
+- [x] Setting Free on a Radicale event writes `TRANSP:TRANSPARENT`, and another CalDAV client shows it as free.
+- [x] Each show-as value is visually distinct in Day, Week, Month and Agenda views, in both themes.
 
 ## Dependencies
 

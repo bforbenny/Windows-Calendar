@@ -94,7 +94,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or merged:
 
 - [x] Move a repeating Radicale event to MS365: the confirmation lists what is lost; the series appears in Outlook.
-- [ ] Move an MS365 event with a reminder and "Out of office" to Radicale: both carry over.
+- [x] Move an MS365 event with a reminder and "Out of office" to Radicale: both carry over.
 - [x] A meeting or invitation opens with the Calendar field disabled.
 
 ## Interim (third slice: drag)
