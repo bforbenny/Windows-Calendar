@@ -404,8 +404,18 @@ public sealed partial class MainWindow : Window
             .Select(o => o.Kind == ItemKind.Task ? TaskItem(o, _collections[o.CollectionId]) : DisplayEvent.From(o, _collections[o.CollectionId]))
             .ToList();
 
+        // The holiday calendar's all-day events shade their days and name them; with "shading only" they are not
+        // drawn as cards (calendar-shading R4, R5). A hidden holiday calendar has no occurrences here (R6).
+        var holidayId = Store?.GetHolidayCollectionId();
+        var isHoliday = (DisplayEvent e) => e.Collection.Id == holidayId && e.AllDay && !e.IsTask;
+        var holidays = HolidayDays.Build(events.Where(isHoliday).Select(e => (e.FirstDay, e.LastDay, e.Title)));
+        if (Store?.GetHolidayShadingOnly() != false)
+        {
+            events.RemoveAll(e => isHoliday(e));
+        }
+
         var view = (UIElement)CurrentView;
-        CurrentView.SetData(first, days, events);
+        CurrentView.SetData(first, days, events, holidays);
         if (ViewHost.Children.Count != 1 || ViewHost.Children[0] != view)
         {
             ViewHost.Children.Clear();

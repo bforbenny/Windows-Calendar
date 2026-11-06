@@ -12,8 +12,9 @@ namespace WindowsCalendar.Views;
 /// </summary>
 internal interface IScrollingView
 {
-    /// <summary>Replaces the data, keeping the scroll position on the same date.</summary>
-    void SetData(DateOnly first, int days, System.Collections.Generic.IReadOnlyList<DisplayEvent> events);
+    /// <summary>Replaces the data, keeping the scroll position on the same date. Holidays are names by day (calendar-shading R4).</summary>
+    void SetData(DateOnly first, int days, System.Collections.Generic.IReadOnlyList<DisplayEvent> events,
+        System.Collections.Generic.IReadOnlyDictionary<DateOnly, string> holidays);
 
     /// <summary>Scrolls so <paramref name="day"/> is at the start; in Week, <paramref name="toNow"/> also scrolls to the current time.</summary>
     void ScrollTo(DateOnly day, bool toNow);
@@ -76,7 +77,8 @@ internal static class ViewParts
     };
 
     /// <summary>
-    /// A day header: weekday, then the date (in a chip for today), and an optional label such as "Tomorrow".
+    /// A day header: weekday, then the date (in a chip for today), and an optional label such as "Tomorrow" or a
+    /// holiday name (trimmed, full text in a tooltip).
     /// </summary>
     public static StackPanel DayHeader(DateOnly date, bool isToday, string? label = null, string dateFormat = "%d")
     {
@@ -108,13 +110,9 @@ internal static class ViewParts
             : number);
         if (label is not null)
         {
-            stack.Children.Add(new TextBlock
-            {
-                Text = label,
-                Style = Theme.Style("CaptionTextBlockStyle"),
-                Foreground = Theme.Brush("TextSecondaryBrush"),
-                HorizontalAlignment = HorizontalAlignment.Center,
-            });
+            var text = Caption(label);
+            text.HorizontalAlignment = HorizontalAlignment.Center;
+            stack.Children.Add(text);
         }
         AutomationProperties.SetName(stack, label is null ? date.ToString("D") : $"{label}, {date:D}");
         return stack;
@@ -126,12 +124,29 @@ internal static class ViewParts
         Canvas.SetTop(element, top);
     }
 
+    /// <summary>A secondary caption trimmed to its space, with the full text in a tooltip.</summary>
+    public static TextBlock Caption(string text)
+    {
+        var block = new TextBlock
+        {
+            Text = text,
+            Style = Theme.Style("CaptionTextBlockStyle"),
+            Foreground = Theme.Brush("TextSecondaryBrush"),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            TextWrapping = TextWrapping.NoWrap,
+            Padding = new Thickness(4, 0, 4, 0),
+        };
+        ToolTipService.SetToolTip(block, text);
+        return block;
+    }
+
     /// <summary>
-    /// Day background: today a faint blue; Saturday and Sunday the non-working shade (calendar-shading interim,
-    /// until working days are configurable).
+    /// Day background: a holiday, Saturday and Sunday the non-working shade (calendar-shading R4, R8; weekends are
+    /// interim until working days are configurable); otherwise today a faint blue. A holiday wins over today.
     /// </summary>
-    public static Brush? DayShade(DateOnly date, bool isToday) =>
-        isToday ? Theme.Brush("ShadeTodayBrush")
+    public static Brush? DayShade(DateOnly date, bool isToday, bool isHoliday = false) =>
+        isHoliday ? Theme.Brush("ShadeNonWorkingBrush")
+        : isToday ? Theme.Brush("ShadeTodayBrush")
         : date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday ? Theme.Brush("ShadeNonWorkingBrush")
         : null;
 }

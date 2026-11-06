@@ -36,7 +36,35 @@ public sealed partial class MainWindow
             server.Click += (_, _) => ApplyStyle(collection, s => s.UseServerColour(collection.Id), "server colour");
             menu.Items.Add(server);
         }
+        if (collection.Kind == CollectionKind.Calendar)
+        {
+            AddHolidayItems(menu, collection);
+        }
         return menu;
+    }
+
+    /// <summary>
+    /// Public holiday calendar (calendar-shading R3, R5): marking one replaces any other; "Show as shading only"
+    /// shows while it is marked. Read on opening, since another calendar's menu may have moved the role.
+    /// </summary>
+    private void AddHolidayItems(MenuFlyout menu, Collection collection)
+    {
+        var holiday = new ToggleMenuFlyoutItem { Text = "Public holiday calendar" };
+        var shadingOnly = new ToggleMenuFlyoutItem { Text = "Show as shading only" };
+        holiday.Click += (_, _) => ApplyStyle(collection,
+            s => s.SetHolidayCollection(holiday.IsChecked ? collection.Id : null), $"holiday calendar {holiday.IsChecked}");
+        shadingOnly.Click += (_, _) => ApplyStyle(collection,
+            s => s.SetHolidayShadingOnly(shadingOnly.IsChecked), $"holiday shading only {shadingOnly.IsChecked}");
+        menu.Opening += (_, _) =>
+        {
+            var marked = Store?.GetHolidayCollectionId() == collection.Id;
+            holiday.IsChecked = marked;
+            shadingOnly.IsChecked = Store?.GetHolidayShadingOnly() != false;
+            shadingOnly.Visibility = marked ? Visibility.Visible : Visibility.Collapsed;
+        };
+        menu.Items.Add(new MenuFlyoutSeparator());
+        menu.Items.Add(holiday);
+        menu.Items.Add(shadingOnly);
     }
 
     private static void ShowPicker(FrameworkElement target, UIElement content)

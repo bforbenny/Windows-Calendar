@@ -15,18 +15,20 @@ The views shade non-working hours and public holidays and can show week numbers.
 
 - R1. Working hours setting: working days (default Mon–Fri) and start/end time (default 09:00–17:00). Local setting only, applied to all accounts.
 - R2. Day/Week: time outside working hours, and non-working days, have a subtle shaded background. Month: non-working days have a shaded cell.
-- R3. Holiday calendars: in settings, the user marks one or more synced calendars as "public holiday" calendars.
+- R3. Holiday calendar: the user marks one synced calendar as the "public holiday" calendar from its sidebar right-click menu. At most one calendar has the role at a time: marking another moves it there. Task lists cannot be marked.
 - R4. Any all-day event in a holiday calendar marks those dates as holidays:
-  - the whole day column (Day/Week) or cell (Month) gets a distinct holiday shading (stronger than non-working shading);
-  - the holiday name appears in the day header and in the Agenda day header.
-- R5. Holiday calendars get a "Show as shading only" option (default on): their events are not drawn as event blocks, only as shading and header labels. Turning it off shows them as normal all-day events too.
+  - the whole day column (Day/Week) or cell (Month) gets the non-working shading, the same as a weekend;
+  - the holiday name appears in the Week and Agenda day headers and beside the date in a Month cell; a long name is trimmed, with the full name in a tooltip. Several holidays on one day are joined with ", ".
+  - holiday shading replaces the today and non-working shading on that day; the today chip stays.
+- R5. The holiday calendar gets a "Show as shading only" option in the same menu (default on): its all-day events are not drawn as event blocks, only as shading and header labels. Turning it off shows them as normal all-day events too. Its timed events are always drawn normally.
 - R6. Holiday shading follows the calendar's visibility and the active calendar set.
 - R7. Week numbers: toggle in settings (default off). Shown in the Month view's left column, the Day/Week header ("Wk 45") and the mini month. Numbering follows ISO 8601.
-- R8. Shading colours use the tokens in [ui-colour-theme](ui-colour-theme.md) R3: non-working = a light pink (Pink 5 light / Night 100 tinted with Pink 90 dark); holiday = Amber 10 / Amber 90, so holidays differ from non-working time by hue as well as lightness. Primary and secondary text keep WCAG AA contrast on every shading.
+- R8. Shading colours use the tokens in [ui-colour-theme](ui-colour-theme.md) R3: non-working = a light pink (Pink 5 light / Night 100 tinted with Pink 90 dark); holidays use the same non-working shade (the header name tells them apart from a weekend). Primary and secondary text keep WCAG AA contrast on every shading.
 
 ## Interim (current build)
 
-- Working hours are not configurable yet: Saturday and Sunday are the non-working days, shaded with Shade.NonWorking over the whole day in Week, Month and Agenda. Non-working hours on weekdays, holidays (R3-R6) and week numbers (R7) come later.
+- Working hours are not configurable yet: Saturday and Sunday are the non-working days, shaded with Shade.NonWorking over the whole day in Week, Month and Agenda. Holidays (R3-R6) are in. Non-working hours on weekdays and week numbers (R7) come later.
+- The Week day header grows from 52 to 68 epx only when a holiday falls in the loaded range.
 
 ## Out of scope
 

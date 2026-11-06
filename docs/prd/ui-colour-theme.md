@@ -46,7 +46,7 @@ All UI colours come from one palette of 10-step ramps, where a given step has th
   | Surface.Base (grid, cards, flyouts) | FFFFFF | Night 100 |
   | Surface.Raised (dialogs, popups) | FFFFFF + shadow | Night 90 |
   | Shade.NonWorking | FBF6F8 (Pink 5: halfway between white and Pink 10) | 201928 (Night 100 with a quarter of Pink 90) — a light pink, lighter than Grey 10 |
-  | Shade.Holiday | Amber 10 | Amber 90 |
+  | Shade.Holiday | same as Shade.NonWorking | same as Shade.NonWorking |
   | Shade.Today (today's column/cell) | F4F7FE (Navy 5: halfway between white and Navy 10) | 0F1E3C (between Night 100 and Navy 90) — a faint blue, softer than Navy 10 / 90 and distinct from Shade.NonWorking |
   | Divider | Grey 20 | Night 80 |
   | Text.Primary | Grey 100 | Night 10 |

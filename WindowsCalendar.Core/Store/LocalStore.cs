@@ -605,6 +605,62 @@ public sealed class LocalStore : IDisposable
         }
     }
 
+    // ---- Public holiday calendar (calendar-shading R3, R5): one at a time, local only ----
+
+    private const string HolidayKey = "holiday-calendar";
+    private const string HolidayEventsKey = "holiday-show-events";
+
+    /// <summary>The holiday calendar's id; null when none is marked or it no longer exists.</summary>
+    public string? GetHolidayCollectionId()
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
+                "SELECT id FROM collections WHERE id = (SELECT value FROM meta WHERE key = $key);", ("$key", HolidayKey));
+            return cmd.ExecuteScalar() as string;
+        }
+    }
+
+    /// <summary>Marks <paramref name="collectionId"/> as the holiday calendar, replacing any other; null clears it.</summary>
+    public void SetHolidayCollection(string? collectionId)
+    {
+        lock (_gate)
+        {
+            if (collectionId is null)
+            {
+                Execute(_connection, null, "DELETE FROM meta WHERE key = $key;", ("$key", HolidayKey));
+            }
+            else
+            {
+                SetMeta(null, HolidayKey, collectionId);
+            }
+        }
+    }
+
+    /// <summary>"Show as shading only" (R5); on unless turned off.</summary>
+    public bool GetHolidayShadingOnly()
+    {
+        lock (_gate)
+        {
+            return GetMeta(null, HolidayEventsKey) is null;
+        }
+    }
+
+    public void SetHolidayShadingOnly(bool on)
+    {
+        lock (_gate)
+        {
+            if (on)
+            {
+                Execute(_connection, null, "DELETE FROM meta WHERE key = $key;", ("$key", HolidayEventsKey));
+            }
+            else
+            {
+                SetMeta(null, HolidayEventsKey, "1");
+            }
+        }
+    }
+
     // ---- Collection visibility (calendar-views R2; interim until calendar-sets) ----
 
     public IReadOnlySet<string> GetHiddenCollectionIds()

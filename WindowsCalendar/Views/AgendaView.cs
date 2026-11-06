@@ -26,6 +26,7 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
         ZoomMode = ZoomMode.Disabled,
     };
     private readonly Canvas _headerCanvas = new() { Height = 68 };
+    private IReadOnlyDictionary<DateOnly, string> _holidays = new Dictionary<DateOnly, string>();
     private readonly Canvas _bodyCanvas = new();
     private readonly Dictionary<int, (UIElement Header, FrameworkElement Column)> _days = [];
 
@@ -73,9 +74,9 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
 
     public Canvas Overlay { get; }
 
-    public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events)
+    public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events, IReadOnlyDictionary<DateOnly, string> holidays)
     {
-        (_first, _count) = (first, days);
+        (_first, _count, _holidays) = (first, days, holidays);
         // Multi-day events appear on each day they span (R5).
         _byDay = events
             .SelectMany(e => Enumerable.Range(0, e.LastDay.DayNumber - e.FirstDay.DayNumber + 1)
@@ -146,6 +147,10 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
             }
             var date = _first.AddDays(i);
             var label = date == today ? "Today" : date == today.AddDays(1) ? "Tomorrow" : null;
+            if (_holidays.GetValueOrDefault(date) is { } holiday)
+            {
+                label = label is null ? holiday : $"{label} · {holiday}";
+            }
             var header = ViewParts.DayHeader(date, date == today, label, "d MMM");
             header.Width = _columnWidth;
             ViewParts.Place(header, i * _columnWidth, 0);
@@ -223,7 +228,7 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
             Padding = new Thickness(4, 4, 4, 8),
             BorderBrush = Theme.Brush("DividerBrush"),
             BorderThickness = new Thickness(1, 0, 0, 0),
-            Background = ViewParts.DayShade(date, isToday),
+            Background = ViewParts.DayShade(date, isToday, _holidays.ContainsKey(date)),
         };
         var events = _byDay.GetValueOrDefault(date) ?? [];
         foreach (var e in events)

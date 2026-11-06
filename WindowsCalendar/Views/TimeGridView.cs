@@ -31,6 +31,7 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragH
         ZoomMode = ZoomMode.Disabled,
     };
     private readonly Canvas _headerCanvas = new() { Height = 52 };
+    private IReadOnlyDictionary<DateOnly, string> _holidays = new Dictionary<DateOnly, string>();
     private readonly Canvas _laneCanvas = new();
     private readonly Canvas _bodyCanvas = new() { Height = DayColumnPanel.PixelsFor(24 * 60) };
     private readonly Canvas _hourLines = new() { Height = DayColumnPanel.PixelsFor(24 * 60) };
@@ -113,9 +114,11 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragH
 
     public Canvas Overlay { get; }
 
-    public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events)
+    public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events, IReadOnlyDictionary<DateOnly, string> holidays)
     {
-        (_first, _count) = (first, days);
+        (_first, _count, _holidays) = (first, days, holidays);
+        // The header grows a line for holiday names only when there are any (calendar-shading interim).
+        _headerCanvas.Height = holidays.Keys.Any(d => d >= first && d < first.AddDays(days)) ? 68 : 52;
         _timed = events.Where(e => !e.InAllDayLane)
             .SelectMany(e => Days(e).Select(d => (Day: d, Event: e)))
             .GroupBy(x => x.Day)
@@ -221,7 +224,7 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragH
                 continue;
             }
             var date = _first.AddDays(i);
-            var header = ViewParts.DayHeader(date, date == today);
+            var header = ViewParts.DayHeader(date, date == today, _holidays.GetValueOrDefault(date));
             header.Width = _columnWidth;
             ViewParts.Place(header, i * _columnWidth, 0);
             _headerCanvas.Children.Add(header);
@@ -263,7 +266,7 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragH
 
     private Grid BuildColumn(DateOnly date, bool isToday)
     {
-        var shade = ViewParts.DayShade(date, isToday);
+        var shade = ViewParts.DayShade(date, isToday, _holidays.ContainsKey(date));
         var column = new Grid
         {
             Width = _columnWidth,

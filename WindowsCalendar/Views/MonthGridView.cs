@@ -34,6 +34,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
     private DateOnly _first;
     private int _weekCount;
     private IReadOnlyList<DisplayEvent> _events = [];
+    private IReadOnlyDictionary<DateOnly, string> _holidays = new Dictionary<DateOnly, string>();
     private double _rowHeight;
     private double _width;
     private int _capacity;
@@ -81,9 +82,9 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
 
     public Canvas Overlay { get; }
 
-    public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events)
+    public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events, IReadOnlyDictionary<DateOnly, string> holidays)
     {
-        (_first, _weekCount, _events) = (first, days / 7, events);
+        (_first, _weekCount, _events, _holidays) = (first, days / 7, events, holidays);
         _weekdays.Children.Clear();
         for (var c = 0; c < 7; c++)
         {
@@ -193,7 +194,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
         {
             BorderBrush = Theme.Brush("DividerBrush"),
             BorderThickness = new Thickness(column == 0 ? 0 : 1, 1, 0, 0),
-            Background = ViewParts.DayShade(date, isToday) ?? ViewParts.Clickable,
+            Background = ViewParts.DayShade(date, isToday, _holidays.ContainsKey(date)) ?? ViewParts.Clickable,
         };
         // A click on the day creates an all-day event (R5 interim).
         cell.Tapped += (_, _) => CreateRequested?.Invoke(date.ToDateTime(TimeOnly.MinValue), true);
@@ -204,7 +205,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
             Style = Theme.Style(isToday || date.Day == 1 ? "BodyStrongTextBlockStyle" : "BodyTextBlockStyle"),
             Foreground = isToday ? Theme.Brush("TodayChipTextBrush") : Theme.Brush("TextPrimaryBrush"),
         };
-        cell.Child = new Border
+        var chip = new Border
         {
             Background = isToday ? Theme.Brush("TodayChipBrush") : null,
             CornerRadius = new CornerRadius(10),
@@ -214,7 +215,25 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
             VerticalAlignment = VerticalAlignment.Top,
             Child = number,
         };
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(cell, date.ToString("D"));
+        var holiday = _holidays.GetValueOrDefault(date);
+        if (holiday is null)
+        {
+            cell.Child = chip;
+        }
+        else
+        {
+            // The holiday name sits beside the date (calendar-shading R4), trimmed to the cell.
+            var top = new Grid { VerticalAlignment = VerticalAlignment.Top };
+            top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            var name = ViewParts.Caption(holiday);
+            name.Margin = new Thickness(0, 6, 0, 0);
+            Grid.SetColumn(name, 1);
+            top.Children.Add(chip);
+            top.Children.Add(name);
+            cell.Child = top;
+        }
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(cell, holiday is null ? date.ToString("D") : $"{holiday}, {date:D}");
         Grid.SetColumn(cell, column);
         row.Children.Add(cell);
     }
