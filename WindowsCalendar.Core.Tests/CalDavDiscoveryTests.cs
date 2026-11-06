@@ -84,14 +84,15 @@ public sealed class CalDavDiscoveryTests
                 """
                 <resourcetype xmlns:CS="http://calendarserver.org/ns/"><collection/><CS:subscribed/></resourcetype>
                 <displayname>AU holidays</displayname>
+                <I:calendar-color xmlns:I="http://apple.com/ns/ical/">#E54B4B</I:calendar-color>
                 <CS:source xmlns:CS="http://calendarserver.org/ns/"><href>webcal://feeds.example.test/au.ics?token=abc</href></CS:source>
                 """));
 
         var found = await Discover(server);
 
         var sub = Assert.Single(found);
-        Assert.Equal(("AU holidays", CollectionKind.Calendar, true, "webcal://feeds.example.test/au.ics?token=abc"),
-            (sub.Name, sub.Kind, sub.ReadOnly, sub.SourceUrl));
+        Assert.Equal(("AU holidays", CollectionKind.Calendar, true, "webcal://feeds.example.test/au.ics?token=abc", "#E54B4B"),
+            (sub.Name, sub.Kind, sub.ReadOnly, sub.SourceUrl, sub.ServerColour));
     }
 
     [Fact]
@@ -109,6 +110,27 @@ public sealed class CalDavDiscoveryTests
             found);
         Assert.All(server.Requests, r => Assert.Equal("PROPFIND", r.Method.Method));
         Assert.All(server.Requests, r => Assert.Equal("Basic", r.Headers.Authorization?.Scheme));
+    }
+
+    [Fact]
+    public async Task CalendarColor_IsRequested_AndSharedByCalendarAndTaskList()
+    {
+        var server = Radicale();
+        var listing = server.Routes["/ben/"];
+        var asked = false;
+        server.Routes["/ben/"] = r =>
+        {
+            asked |= r.Content!.ReadAsStringAsync().Result.Contains("calendar-color", StringComparison.Ordinal);
+            var response = listing(r);
+            var xml = response.Content.ReadAsStringAsync().Result.Replace("<displayname>Personal</displayname>",
+                """<displayname>Personal</displayname><I:calendar-color xmlns:I="http://apple.com/ns/ical/">#33CC66FF</I:calendar-color>""");
+            return MultiStatus(xml[(xml.IndexOf("<response>", StringComparison.Ordinal))..xml.LastIndexOf("</multistatus>", StringComparison.Ordinal)]);
+        };
+
+        var found = await Discover(server);
+
+        Assert.Equal(["#33CC66FF", "#33CC66FF", null], found.Select(f => f.ServerColour));
+        Assert.True(asked);
     }
 
     [Fact]

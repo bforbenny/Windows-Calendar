@@ -4,6 +4,7 @@ using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Windows.UI;
+using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar;
 
@@ -17,19 +18,6 @@ internal sealed record CalendarBrushes(Brush Swatch, Brush Fill, Brush Text);
 /// </summary>
 internal static class CalendarPalette
 {
-    // Steps 10..90 per hue (ui-colour-theme R1).
-    private static readonly Dictionary<string, string[]> Ramps = new()
-    {
-        ["Navy"] = ["E8EFFD", "C2D5FA", "97B7F7", "6E9BF4", "437CF1", "155CEE", "0E49BF", "0B3892", "08296C"],
-        ["Sea Green"] = ["D1F7EB", "7BE8C7", "25CF9C", "1FB085", "1A936F", "157659", "115E47", "0D4837", "093528"],
-        ["Strawberry Red"] = ["FCEAEA", "F7CACA", "F1A1A1", "EC7A7A", "E54B4B", "CD1E1E", "A31717", "801212", "5E0E0E"],
-        ["Amber"] = ["FFEEBF", "FFCF4E", "EAAA00", "C99200", "A77900", "886300", "6B4E00", "523C00", "3C2B00"],
-        ["Purple"] = ["F0EDF6", "DBCFF4", "C6A9FA", "B484FF", "A259FF", "9026F5", "6F2BB9", "512984", "39225A"],
-        ["Teal"] = ["D0F6F5", "6DE7E6", "2ECACA", "08AEAE", "069090", "187474", "205B5B", "204545", "1C3231"],
-        ["Orange"] = ["F6EDE8", "F5CCB6", "FBA16E", "FA7603", "D06101", "A65114", "7F431D", "5D351D", "412819"],
-        ["Pink"] = ["F6ECF0", "F5C8DC", "FB98C8", "FF61B7", "F402A2", "C31B82", "942665", "6C244B", "4B1E36"],
-    };
-
     // Ramp index (step / 10 - 1) per level 1..3.
     private static readonly int[] LightSwatch = [4, 6, 8];
     private static readonly int[] LightFill = [0, 1, 2];
@@ -54,7 +42,7 @@ internal static class CalendarPalette
         else
         {
             var parts = colour.Split('/');
-            var ramp = Ramps.TryGetValue(parts[0], out var r) ? r : Ramps["Navy"];
+            var ramp = CalendarColours.Ramps.TryGetValue(parts[0], out var r) ? r : CalendarColours.Ramps["Navy"];
             var level = parts.Length > 1 && int.TryParse(parts[1].TrimStart('L'), out var l) ? Math.Clamp(l, 1, 3) - 1 : 0;
             var dark = theme == ElementTheme.Dark;
             brushes = new CalendarBrushes(

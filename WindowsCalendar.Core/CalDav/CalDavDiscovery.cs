@@ -68,7 +68,8 @@ public sealed class CalDavDiscovery(HttpClient http)
                 new XElement(Dav + "displayname"),
                 new XElement(Dav + "current-user-privilege-set"),
                 new XElement(CalDavNs + "supported-calendar-component-set"),
-                new XElement(CalendarServer + "source"))),
+                new XElement(CalendarServer + "source"),
+                new XElement(AppleIcal + "calendar-color"))),
             cancellationToken);
 
         var result = new List<DiscoveredCollection>();
@@ -80,6 +81,9 @@ public sealed class CalDavDiscovery(HttpClient http)
             var name = props.Select(p => p.Element(Dav + "displayname")?.Value.Trim()).FirstOrDefault(n => !string.IsNullOrEmpty(n))
                 ?? Uri.UnescapeDataString(href.AbsolutePath.TrimEnd('/').Split('/')[^1]);
 
+            // The server colour (ui-colour-theme R9), shared by the calendar and task list of one collection.
+            var colour = props.Select(p => p.Element(AppleIcal + "calendar-color")?.Value.Trim()).FirstOrDefault(c => !string.IsNullOrEmpty(c));
+
             // A subscription holds only its feed URL (sync-radicale R1a): a read-only calendar the app fetches itself.
             if (type?.Element(CalendarServer + "subscribed") is not null)
             {
@@ -87,7 +91,7 @@ public sealed class CalDavDiscovery(HttpClient http)
                 var source = (sourceElement?.Element(Dav + "href")?.Value ?? sourceElement?.Value)?.Trim();
                 if (!string.IsNullOrEmpty(source))
                 {
-                    result.Add(new DiscoveredCollection(href.AbsoluteUri, name, CollectionKind.Calendar, true, SourceUrl: source));
+                    result.Add(new DiscoveredCollection(href.AbsoluteUri, name, CollectionKind.Calendar, true, SourceUrl: source, ServerColour: colour));
                 }
                 continue;
             }
@@ -108,11 +112,11 @@ public sealed class CalDavDiscovery(HttpClient http)
 
             if (components.Contains("VEVENT"))
             {
-                result.Add(new DiscoveredCollection(href.AbsoluteUri, name, CollectionKind.Calendar, readOnly));
+                result.Add(new DiscoveredCollection(href.AbsoluteUri, name, CollectionKind.Calendar, readOnly, ServerColour: colour));
             }
             if (components.Contains("VTODO"))
             {
-                result.Add(new DiscoveredCollection(href.AbsoluteUri, name, CollectionKind.TaskList, readOnly));
+                result.Add(new DiscoveredCollection(href.AbsoluteUri, name, CollectionKind.TaskList, readOnly, ServerColour: colour));
             }
         }
 

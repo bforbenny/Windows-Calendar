@@ -82,7 +82,8 @@ public sealed class LocalStore : IDisposable
 
     /// <summary>
     /// Saves a new account and the collections found on its server in one transaction. Each collection gets a
-    /// local id, the next automatic colour and shape (ui-colour-theme R8) and reminders on. If no default calendar
+    /// local id, its snapped server colour or else the next automatic colour, the next automatic shape
+    /// (ui-colour-theme R8, R9) and reminders on. If no default calendar
     /// or task list is set yet, the server's main one (or else the first writable one) becomes the default
     /// (account-management R9).
     /// </summary>
@@ -108,6 +109,7 @@ public sealed class LocalStore : IDisposable
             {
                 var (colour, shape) = CollectionStyle.Next(inUse.Count, inUse);
                 inUse.Add((colour, shape));
+                colour = CalendarColours.Snap(f.ServerColour) ?? colour;
                 var c = new Collection(Guid.NewGuid().ToString("N"), account.Id, f.Kind, f.Name, colour, shape, true, f.ReadOnly, f.RemoteRef, f.SourceUrl);
                 InsertCollection(tx, c);
                 added.Add(c);
@@ -208,7 +210,8 @@ public sealed class LocalStore : IDisposable
 
     /// <summary>
     /// Merges a fresh collection listing into an account (account-management R11), matching by URL and kind. New
-    /// collections get the next automatic colour and shape; names, read-only flags and feed URLs follow the server.
+    /// collections get the next automatic colour and shape; names, read-only flags, feed URLs and server colours
+    /// (snapped, ui-colour-theme R9) follow the server.
     /// A collection no longer listed is removed with its items; its unsent changes are kept in Conflicts first
     /// (conflict-resolution R9). An empty listing removes nothing.
     /// </summary>
@@ -236,15 +239,18 @@ public sealed class LocalStore : IDisposable
                 {
                     var (colour, shape) = CollectionStyle.Next(inUse.Count, inUse);
                     inUse.Add((colour, shape));
+                    colour = CalendarColours.Snap(f.ServerColour) ?? colour;
                     InsertCollection(tx, new Collection(Guid.NewGuid().ToString("N"), accountId, f.Kind, f.Name, colour, shape,
                         true, f.ReadOnly, f.RemoteRef, f.SourceUrl));
                     added++;
                 }
-                else if (match.Name != f.Name || match.ReadOnly != f.ReadOnly || match.SourceUrl != f.SourceUrl)
+                else if (match.Name != f.Name || match.ReadOnly != f.ReadOnly || match.SourceUrl != f.SourceUrl
+                    || (CalendarColours.Snap(f.ServerColour) is { } snapped && snapped != match.Colour))
                 {
                     Execute(_connection, tx,
-                        "UPDATE collections SET name = $name, read_only = $ro, source_url = $source WHERE id = $id;",
-                        ("$name", f.Name), ("$ro", f.ReadOnly), ("$source", f.SourceUrl), ("$id", match.Id));
+                        "UPDATE collections SET name = $name, read_only = $ro, source_url = $source, colour = $colour WHERE id = $id;",
+                        ("$name", f.Name), ("$ro", f.ReadOnly), ("$source", f.SourceUrl),
+                        ("$colour", CalendarColours.Snap(f.ServerColour) ?? match.Colour), ("$id", match.Id));
                     updated++;
                 }
             }

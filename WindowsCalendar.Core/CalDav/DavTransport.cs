@@ -16,6 +16,7 @@ internal sealed class DavTransport
     public static readonly XNamespace Dav = "DAV:";
     public static readonly XNamespace CalDavNs = "urn:ietf:params:xml:ns:caldav";
     public static readonly XNamespace CalendarServer = "http://calendarserver.org/ns/";
+    public static readonly XNamespace AppleIcal = "http://apple.com/ns/ical/";
     public static readonly HttpMethod Propfind = new("PROPFIND");
     public static readonly HttpMethod Report = new("REPORT");
 
@@ -33,7 +34,7 @@ internal sealed class DavTransport
     /// <summary>A request body with the DAV: and CalDAV namespaces declared.</summary>
     public static XElement Body(XName root, params object[] content) =>
         new(root, new XAttribute(XNamespace.Xmlns + "d", Dav), new XAttribute(XNamespace.Xmlns + "c", CalDavNs),
-            new XAttribute(XNamespace.Xmlns + "cs", CalendarServer), content);
+            new XAttribute(XNamespace.Xmlns + "cs", CalendarServer), new XAttribute(XNamespace.Xmlns + "ic", AppleIcal), content);
 
     /// <summary>Returns the multistatus document and the URI that answered (after redirects).</summary>
     public async Task<(XDocument Doc, Uri Uri)> SendAsync(HttpMethod method, Uri uri, int depth, XElement body,

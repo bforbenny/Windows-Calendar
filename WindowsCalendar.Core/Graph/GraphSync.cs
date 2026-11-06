@@ -77,11 +77,27 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
         return results.Aggregate(summary, (a, b) => a + b);
     }
 
-    /// <summary>The account's calendars (R1): <c>canEdit</c> false is read-only, <c>isDefaultCalendar</c> the default.</summary>
+    /// <summary>
+    /// The account's calendars (R1): <c>canEdit</c> false is read-only, <c>isDefaultCalendar</c> the default,
+    /// <c>hexColor</c> the server colour (ui-colour-theme R9). If Graph rejects <c>hexColor</c>, the list is read
+    /// again without it.
+    /// </summary>
     public static async Task<IReadOnlyList<DiscoveredCollection>> DiscoverAsync(GraphClient client, CancellationToken cancellationToken)
     {
+        try
+        {
+            return await DiscoverAsync(client, "/me/calendars?$select=id,name,canEdit,isDefaultCalendar,hexColor", cancellationToken);
+        }
+        catch (GraphException ex) when (ex.Error == GraphError.Http && ex.Status == HttpStatusCode.BadRequest)
+        {
+            return await DiscoverAsync(client, "/me/calendars?$select=id,name,canEdit,isDefaultCalendar", cancellationToken);
+        }
+    }
+
+    private static async Task<IReadOnlyList<DiscoveredCollection>> DiscoverAsync(GraphClient client, string? url,
+        CancellationToken cancellationToken)
+    {
         var found = new List<DiscoveredCollection>();
-        string? url = "/me/calendars?$select=id,name,canEdit,isDefaultCalendar";
         while (url is not null)
         {
             using var doc = await client.GetAsync(url, cancellationToken);
@@ -91,7 +107,8 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
                 {
                     found.Add(new DiscoveredCollection(id, GraphClient.Text(c, "name") ?? "Calendar", CollectionKind.Calendar,
                         ReadOnly: !(c.TryGetProperty("canEdit", out var e) && e.ValueKind == JsonValueKind.True),
-                        IsDefault: c.TryGetProperty("isDefaultCalendar", out var d) && d.ValueKind == JsonValueKind.True));
+                        IsDefault: c.TryGetProperty("isDefaultCalendar", out var d) && d.ValueKind == JsonValueKind.True,
+                        ServerColour: GraphClient.Text(c, "hexColor") is { Length: > 0 } hex ? hex : null));
                 }
             }
             url = GraphClient.Text(doc.RootElement, "@odata.nextLink");

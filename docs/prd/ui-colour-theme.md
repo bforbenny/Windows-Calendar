@@ -2,7 +2,7 @@
 description: Colour palette, colour roles (tokens) for light and dark themes, calendar colours and calendar shape markers
 when-to-use: Before choosing any colour in the UI, styling event cards, status indicators, buttons, shading, or calendar swatches
 tags: [ui, theme, colour, accessibility, dark-mode]
-status: pending
+status: in-progress
 ---
 
 # UI colour theme
@@ -87,6 +87,13 @@ All UI colours come from one palette of 10-step ramps, where a given step has th
 - R9. Server colours (Graph `hexColor`/`color`, CalDAV `calendar-color`) are snapped to the nearest of the 24 calendar colours (smallest CIELAB ΔE). Overrides and snapping are local only; nothing is written back to the server.
 - R10. Past events are drawn the same as future events; the now line and today shading show where the present is. (Dimming past events was rejected: a lighter bar falls below 3:1 for level-1 colours.)
 - R11. High contrast: when a Windows high-contrast theme is active, the palette is not used. All tokens map to system high-contrast colours, and calendars are distinguished by name and shape marker only.
+
+## Interim (server colours)
+
+- R9: Radicale `calendar-color` (`#RRGGBB` or `#RRGGBBAA`, alpha ignored) and Graph `hexColor` are read on every re-discovery ([account-management](account-management.md) R11). The Graph `color` preset is not used: with no `hexColor`, the colour stays automatic. To Do lists have no server colour.
+- Snapping compares the server colour with each calendar colour's light-theme swatch step (50 / 70 / 90) by CIELAB ΔE (CIE76).
+- A collection with a server colour takes the snapped colour on every sync, existing collections included, so a colour change on the server is followed. A collection without one keeps its automatic colour (R8). Two calendars may snap to the same colour; their shapes stay automatic. A CalDAV collection holding events and tasks gives both its calendar and its task list the same colour.
+- Colour and icon overrides, which will win over the server colour, come next.
 
 ## Out of scope
 

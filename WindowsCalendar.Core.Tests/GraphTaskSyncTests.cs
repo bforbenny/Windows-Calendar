@@ -28,6 +28,7 @@ public sealed class GraphTaskSyncTests : IDisposable
         public int Version { get; private set; }
         public bool ListsFail { get; set; }
         public bool GoneOnce { get; set; }
+        public bool RejectHexColor { get; set; }
 
         public void Put(string id, string json, string list = "l1")
         {
@@ -60,7 +61,11 @@ public sealed class GraphTaskSyncTests : IDisposable
             var query = HttpUtility.ParseQueryString(uri.Query);
             if (path == "/v1.0/me/calendars")
             {
-                return Json("""{"value":[{"id":"cal1","name":"Calendar","canEdit":true,"isDefaultCalendar":true}]}""");
+                if (RejectHexColor && uri.Query.Contains("hexColor", StringComparison.Ordinal))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.BadRequest);
+                }
+                return Json("""{"value":[{"id":"cal1","name":"Calendar","canEdit":true,"isDefaultCalendar":true,"hexColor":"#E54B4B"}]}""");
             }
             if (path.EndsWith("/calendarView/delta", StringComparison.Ordinal))
             {
@@ -235,8 +240,23 @@ public sealed class GraphTaskSyncTests : IDisposable
         Assert.False(List("l1").ReadOnly);
         Assert.Equal(CollectionKind.TaskList, List("l1").Kind);
         Assert.True(List("l2").ReadOnly);
-        Assert.Equal(2, summary.CalendarListChanges);
+        // Two lists added, and the calendar takes its server colour.
+        Assert.Equal(3, summary.CalendarListChanges);
         Assert.Equal(List("l1").Id, _store.DefaultTaskListId);
+    }
+
+    [Fact]
+    public async Task CalendarHexColor_IsSnapped_AndRejectedSelectFallsBack()
+    {
+        await SyncAsync();
+        Assert.Equal("Strawberry Red/L1", _store.GetCollections("a1").Single(c => c.RemoteRef == "cal1").Colour);
+
+        _graph.RejectHexColor = true;
+        await SyncAsync();
+
+        Assert.Contains(_graph.Requests, r => r.Path == "/v1.0/me/calendars");
+        Assert.Equal("Strawberry Red/L1", _store.GetCollections("a1").Single(c => c.RemoteRef == "cal1").Colour);
+        Assert.NotNull(List());
     }
 
     [Fact]

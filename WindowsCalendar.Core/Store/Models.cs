@@ -94,10 +94,11 @@ public sealed record OutboxEntry(
 
 /// <summary>
 /// A calendar or task list found on the server, before it gets a local id, colour and shape (account-management R4, R9).
-/// IsDefault marks the server's main calendar (Graph isDefaultCalendar); CalDAV has none.
+/// IsDefault marks the server's main calendar (Graph isDefaultCalendar); CalDAV has none. ServerColour is the server's
+/// colour as #RRGGBB(AA), when it has one (ui-colour-theme R9).
 /// </summary>
 public sealed record DiscoveredCollection(string RemoteRef, string Name, CollectionKind Kind, bool ReadOnly, bool IsDefault = false,
-    string? SourceUrl = null);
+    string? SourceUrl = null, string? ServerColour = null);
 
 /// <summary>What a re-discovery changed (account-management R11).</summary>
 public sealed record CollectionChanges(int Added, int Updated, int Removed)

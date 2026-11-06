@@ -28,7 +28,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [calendar-shading](docs/prd/calendar-shading.md) | Working hours, public holidays, week numbers | in-progress |
 | [app-updates](docs/prd/app-updates.md) | MSIX updates via App Installer, data across versions, new-PC install | pending |
 | [tray-flyout](docs/prd/tray-flyout.md) | Tray pop-up with today's agenda and Join | pending |
-| [ui-colour-theme](docs/prd/ui-colour-theme.md) | Palette, colour roles, calendar colours and shape markers | pending |
+| [ui-colour-theme](docs/prd/ui-colour-theme.md) | Palette, colour roles, calendar colours and shape markers | in-progress |
 | [display-scaling](docs/prd/display-scaling.md) | Layout at 100% / 150% scaling, multi-monitor | pending |
 | [ui-style](docs/prd/ui-style.md) | Font, type ramp, spacing, motion, locale formats | pending |
 | [ui-states](docs/prd/ui-states.md) | Loading, empty, offline, error and first-launch states | pending |
