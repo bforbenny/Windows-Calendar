@@ -118,6 +118,32 @@ internal static class ViewParts
         return stack;
     }
 
+    /// <summary>
+    /// The heading of a new, not yet created event or task: a drop-down to switch to the other kind. It never takes
+    /// focus, so opening it does not save (and so create) what is being typed.
+    /// </summary>
+    public static DropDownButton KindSwitch(string current, string other, Action onSwitch, out MenuFlyoutItem otherItem)
+    {
+        var item = new MenuFlyoutItem { Text = other };
+        item.Click += (_, _) => onSwitch();
+        var menu = new MenuFlyout { Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.BottomEdgeAlignedLeft };
+        menu.Items.Add(item);
+        otherItem = item;
+        var button = new DropDownButton
+        {
+            Content = new TextBlock { Text = current, Style = Theme.Style("SubtitleTextBlockStyle") },
+            Flyout = menu,
+            AllowFocusOnInteraction = false,
+            Background = Clickable,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            Visibility = Visibility.Collapsed,
+        };
+        AutomationProperties.SetName(button, $"{current}; switch to {other}");
+        return button;
+    }
+
     public static void Place(UIElement element, double left, double top)
     {
         Canvas.SetLeft(element, left);

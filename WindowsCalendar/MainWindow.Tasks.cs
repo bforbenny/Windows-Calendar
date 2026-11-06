@@ -24,6 +24,7 @@ public sealed partial class MainWindow
         EventCard.TaskChecked += e => SetTaskCompleted(e.ItemId, true);
         _taskEditor.Changed += RenderView;
         _taskEditor.OpenChanged += PlaceEditor;
+        SetupNewSwitch();
     }
 
     /// <summary>A To Do list the app may write to (sync-ms365 third slice); Radicale task writes come later.</summary>
@@ -101,6 +102,11 @@ public sealed partial class MainWindow
         _taskEditor.Reload(itemId, _collections);
     }
 
+    /// <summary>Where new tasks go: the default task list if it is a writable To Do list, else the first one.</summary>
+    private Collection? NewTaskList() =>
+        Store?.DefaultTaskListId is { } id && _collections.TryGetValue(id, out var d) && IsWritableTaskList(d) ? d
+        : _collections.Values.FirstOrDefault(c => c.Kind == CollectionKind.TaskList && IsWritableTaskList(c));
+
     /// <summary>The "New task" box: a task with that title in the default task list, if it is a To Do list.</summary>
     private void AddTask(string title)
     {
@@ -108,9 +114,7 @@ public sealed partial class MainWindow
         {
             return;
         }
-        var list = store.DefaultTaskListId is { } id && _collections.TryGetValue(id, out var d) && IsWritableTaskList(d) ? d
-            : _collections.Values.FirstOrDefault(c => c.Kind == CollectionKind.TaskList && IsWritableTaskList(c));
-        if (list is null)
+        if (NewTaskList() is not { } list)
         {
             Log.Information("New task not added: no Microsoft To Do list to add it to");
             return;

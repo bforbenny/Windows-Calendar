@@ -93,6 +93,7 @@ public sealed partial class MainWindow : Window
             view.CreateRequested += (start, allDay) =>
             {
                 ShowEventEditor();
+                _editor.CanSwitchToTask = NewTaskList() is not null;
                 _editor.OpenNew(start, allDay, _collections);
             };
             view.EventDropped += OnEventDropped;
@@ -432,6 +433,7 @@ public sealed partial class MainWindow : Window
     {
         if (view == _view)
         {
+            _visibleDay = day;
             PeriodTitle.Text = day.ToString(CultureInfo.CurrentCulture.DateTimeFormat.YearMonthPattern);
         }
     }
@@ -444,6 +446,7 @@ public sealed partial class MainWindow : Window
         if (sender.SelectedItem?.Tag is string tag && Enum.TryParse<ViewKind>(tag, out var view) && view != _view)
         {
             _view = view;
+            NewButtonText.Text = view == ViewKind.Tasks ? "New task" : "New event";
             RenderView();
             if (view == ViewKind.Tasks)
             {

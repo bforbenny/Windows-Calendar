@@ -58,8 +58,12 @@ internal sealed partial class EventEditor : UserControl
     private bool _readOnly;
     private DateTime _shownStart;
 
+    private readonly DropDownButton _switch;
+    private readonly MenuFlyoutItem _switchItem;
+
     public EventEditor()
     {
+        _switch = ViewParts.KindSwitch("New event", "New task", () => SwitchRequested?.Invoke(_title.Text), out _switchItem);
         var close = IconButton("", "Close (Esc)");
         close.Click += (_, _) => Close();
         _delete.Click += async (_, _) => await DeleteAsync();
@@ -69,6 +73,7 @@ internal sealed partial class EventEditor : UserControl
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(_heading);
+        header.Children.Add(_switch);
         Grid.SetColumn(_delete, 1);
         Grid.SetColumn(close, 2);
         header.Children.Add(_delete);
@@ -145,6 +150,12 @@ internal sealed partial class EventEditor : UserControl
 
     public bool IsOpen => Visibility == Visibility.Visible;
 
+    /// <summary>Raised with the typed title when a new event is switched to a new task from its heading.</summary>
+    public event Action<string>? SwitchRequested;
+
+    /// <summary>Whether a new event may switch to a new task (there is a To Do list to put it in).</summary>
+    public bool CanSwitchToTask { set => _switchItem.IsEnabled = value; }
+
     private static LocalStore? Store => ((App)Application.Current).Store;
 
     /// <summary>
@@ -198,7 +209,7 @@ internal sealed partial class EventEditor : UserControl
     }
 
     /// <summary>Opens a new event at a clicked slot (R5 interim); it is created once it has a title.</summary>
-    public async void OpenNew(DateTime start, bool allDay, IReadOnlyDictionary<string, Collection> collections)
+    public async void OpenNew(DateTime start, bool allDay, IReadOnlyDictionary<string, Collection> collections, string title = "")
     {
         if (!await DiscardRuleAsync())
         {
@@ -221,7 +232,7 @@ internal sealed partial class EventEditor : UserControl
         _savedRule = RepeatRule.None;
         _ruleAutosave = true;
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
-        Show("New event", new EventFields("", allDay, start, end, null, null), choices, defaultId);
+        Show("New event", new EventFields(title, allDay, start, end, null, null), choices, defaultId);
         _notice.IsOpen = false;
         _title.Focus(FocusState.Programmatic);
     }
@@ -238,6 +249,13 @@ internal sealed partial class EventEditor : UserControl
         }
         Save();
         Hide();
+    }
+
+    /// <summary>A new event shows the New event / New task drop-down in place of its heading.</summary>
+    private void ShowSwitch(bool isNew)
+    {
+        _switch.Visibility = isNew ? Visibility.Visible : Visibility.Collapsed;
+        _heading.Visibility = isNew ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>Closes without saving, e.g. when the event was deleted.</summary>
@@ -307,6 +325,7 @@ internal sealed partial class EventEditor : UserControl
     {
         _loading = true;
         _heading.Text = heading;
+        ShowSwitch(_itemId is null);
         ShowFields(fields);
 
         _calendar.Items.Clear();
@@ -443,6 +462,7 @@ internal sealed partial class EventEditor : UserControl
                 _recurrence = recurrence;
                 _scope = recurrence is null ? null : EditScope.Series;
                 _heading.Text = "Event";
+                ShowSwitch(false);
                 _delete.Visibility = Visibility.Visible;
                 if (recurrence is not null)
                 {

@@ -34,12 +34,17 @@ internal sealed class TaskEditor : UserControl
     private static readonly string[] Importances = ["low", "normal", "high"];
 
     private string? _itemId;
+    // A new task not yet created: the list it goes to (created once it has a title).
+    private Collection? _newList;
     private bool _writable;
     private bool _completeOnly;
     private bool _loading;
 
+    private readonly DropDownButton _switch;
+
     public TaskEditor()
     {
+        _switch = ViewParts.KindSwitch("New task", "New event", () => SwitchRequested?.Invoke(_title.Text), out _);
         var close = IconButton("", "Close (Esc)");
         close.Click += (_, _) => Close();
         _delete.Click += async (_, _) => await DeleteAsync();
@@ -49,6 +54,7 @@ internal sealed class TaskEditor : UserControl
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(_heading);
+        header.Children.Add(_switch);
         Grid.SetColumn(_delete, 1);
         Grid.SetColumn(close, 2);
         header.Children.Add(_delete);
@@ -119,6 +125,9 @@ internal sealed class TaskEditor : UserControl
 
     public bool IsOpen => Visibility == Visibility.Visible;
 
+    /// <summary>Raised with the typed title when a new task is switched to a new event from its heading.</summary>
+    public event Action<string>? SwitchRequested;
+
     /// <summary>The task that is open.</summary>
     public string? ItemId => _itemId;
 
@@ -135,6 +144,9 @@ internal sealed class TaskEditor : UserControl
         {
             return;
         }
+        _heading.Text = "Task";
+        ShowSwitch(false);
+        _newList = null;
         _itemId = itemId;
         _writable = writable;
         _completeOnly = writable && item.IsRecurring;
@@ -149,6 +161,27 @@ internal sealed class TaskEditor : UserControl
             Visibility = Visibility.Visible;
             OpenChanged?.Invoke();
         }
+    }
+
+    /// <summary>Opens a blank task for <paramref name="list"/> (tasks interim); it is created once it has a title.</summary>
+    public void OpenNew(Collection list, string title = "")
+    {
+        Save();
+        _heading.Text = "New task";
+        ShowSwitch(true);
+        _itemId = null;
+        _newList = list;
+        _writable = true;
+        _completeOnly = false;
+        Show(new TaskFields(title, false, null, "normal", null), list);
+        _delete.Visibility = Visibility.Collapsed;
+        _notice.IsOpen = false;
+        if (!IsOpen)
+        {
+            Visibility = Visibility.Visible;
+            OpenChanged?.Invoke();
+        }
+        _title.Focus(FocusState.Programmatic);
     }
 
     /// <summary>After a change made outside the panel (a tick in the list or calendar, a sync): shows the stored task.</summary>
@@ -167,10 +200,18 @@ internal sealed class TaskEditor : UserControl
         Hide();
     }
 
+    /// <summary>A new task shows the New task / New event drop-down in place of its heading.</summary>
+    private void ShowSwitch(bool isNew)
+    {
+        _switch.Visibility = isNew ? Visibility.Visible : Visibility.Collapsed;
+        _heading.Visibility = isNew ? Visibility.Collapsed : Visibility.Visible;
+    }
+
     /// <summary>Closes without saving, e.g. when the task was deleted.</summary>
     public void Hide()
     {
         _itemId = null;
+        _newList = null;
         if (IsOpen)
         {
             Visibility = Visibility.Collapsed;
@@ -178,10 +219,11 @@ internal sealed class TaskEditor : UserControl
         }
     }
 
-    private void Show(Item item, Collection list)
+    private void Show(Item item, Collection list) => Show(TaskQuery.Fields(item, TimeZoneInfo.Local), list);
+
+    private void Show(TaskFields fields, Collection list)
     {
         _loading = true;
-        var fields = TaskQuery.Fields(item, TimeZoneInfo.Local);
         _title.Text = fields.Title;
         _completed.IsChecked = fields.Completed;
         _due.Date = fields.Due is { } due ? new DateTimeOffset(due.ToDateTime(TimeOnly.MinValue)) : null;
@@ -210,6 +252,11 @@ internal sealed class TaskEditor : UserControl
 
     private void Save()
     {
+        if (!_loading && IsOpen && _newList is { } newList)
+        {
+            Create(newList);
+            return;
+        }
         if (_loading || !_writable || !IsOpen || _itemId is not { } id || Store is not { } store || store.GetItem(id) is not { } item)
         {
             return;
@@ -228,6 +275,31 @@ internal sealed class TaskEditor : UserControl
         catch (Exception ex)
         {
             Log.Error(ex, "Saving task {ItemId} failed", id);
+        }
+    }
+
+    /// <summary>Creates the new task once it has a title; from then on the panel edits it like any other.</summary>
+    private void Create(Collection list)
+    {
+        if (_title.Text.Trim().Length == 0 || Store is not { } store)
+        {
+            return;
+        }
+        try
+        {
+            var task = GraphTasks.Create(list, ReadFields(new TaskFields("", false, null, "normal", null)), TimeZoneInfo.Local);
+            store.CreateItem(task);
+            Log.Information("Task {ItemId} created", task.Id);
+            _newList = null;
+            _itemId = task.Id;
+            _heading.Text = "Task";
+            ShowSwitch(false);
+            _delete.Visibility = Visibility.Visible;
+            Changed?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Creating a task failed");
         }
     }
 

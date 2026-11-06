@@ -67,8 +67,7 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
 
     public event Action<DisplayEvent>? EventOpened;
 
-    // Agenda has no empty slots to click.
-    public event Action<DateTime, bool>? CreateRequested { add { } remove { } }
+    public event Action<DateTime, bool>? CreateRequested;
 
     public event Action<DisplayEvent, DragTarget>? EventDropped;
 
@@ -228,8 +227,10 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
             Padding = new Thickness(4, 4, 4, 8),
             BorderBrush = Theme.Brush("DividerBrush"),
             BorderThickness = new Thickness(1, 0, 0, 0),
-            Background = ViewParts.DayShade(date, isToday, _holidays.ContainsKey(date)),
+            Background = ViewParts.DayShade(date, isToday, _holidays.ContainsKey(date)) ?? ViewParts.Clickable,
         };
+        // A click on the empty part of the day creates an all-day event (calendar-views R5 interim); cards handle their own.
+        list.Tapped += (_, _) => CreateRequested?.Invoke(date.ToDateTime(TimeOnly.MinValue), true);
         var events = _byDay.GetValueOrDefault(date) ?? [];
         foreach (var e in events)
         {
