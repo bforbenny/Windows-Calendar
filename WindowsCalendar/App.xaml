@@ -22,6 +22,10 @@
                     <SolidColorBrush x:Key="TodayChipBrush" Color="#155CEE" />
                     <SolidColorBrush x:Key="TodayChipTextBrush" Color="#FFFFFF" />
                     <SolidColorBrush x:Key="NowLineBrush" Color="#CD1E1E" />
+                    <SolidColorBrush x:Key="DestructiveBrush" Color="#CD1E1E" />
+                    <SolidColorBrush x:Key="DestructiveHoverBrush" Color="#A31717" />
+                    <SolidColorBrush x:Key="DestructivePressedBrush" Color="#801212" />
+                    <SolidColorBrush x:Key="TextOnDestructiveBrush" Color="#FFFFFF" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="SurfaceBaseBrush" Color="#121824" />
@@ -33,6 +37,10 @@
                     <SolidColorBrush x:Key="TodayChipBrush" Color="#6E9BF4" />
                     <SolidColorBrush x:Key="TodayChipTextBrush" Color="#121824" />
                     <SolidColorBrush x:Key="NowLineBrush" Color="#EC7A7A" />
+                    <SolidColorBrush x:Key="DestructiveBrush" Color="#EC7A7A" />
+                    <SolidColorBrush x:Key="DestructiveHoverBrush" Color="#F1A1A1" />
+                    <SolidColorBrush x:Key="DestructivePressedBrush" Color="#E54B4B" />
+                    <SolidColorBrush x:Key="TextOnDestructiveBrush" Color="#121824" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="HighContrast">
                     <SolidColorBrush x:Key="SurfaceBaseBrush" Color="{ThemeResource SystemColorWindowColor}" />
@@ -44,6 +52,10 @@
                     <SolidColorBrush x:Key="TodayChipBrush" Color="{ThemeResource SystemColorHighlightColor}" />
                     <SolidColorBrush x:Key="TodayChipTextBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
                     <SolidColorBrush x:Key="NowLineBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+                    <SolidColorBrush x:Key="DestructiveBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+                    <SolidColorBrush x:Key="DestructiveHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+                    <SolidColorBrush x:Key="DestructivePressedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
+                    <SolidColorBrush x:Key="TextOnDestructiveBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
             <!-- Other app resources here -->

@@ -17,9 +17,11 @@ internal static class ScopeDialog
     /// <summary>
     /// The chosen scope, or null when cancelled. <paramref name="allowFollowing"/> false leaves out "This and following"
     /// (meetings you organise, recurring-events R6); <paramref name="allowOccurrence"/> false leaves out "This event"
-    /// (a rule change, R3).
+    /// (a rule change, R3). A <paramref name="delete"/> asks with a red Delete button instead of OK (ui-colour-theme R3), and
+    /// Cancel is the default.
     /// </summary>
-    public static async Task<EditScope?> AskAsync(XamlRoot root, string title, bool allowFollowing, bool allowOccurrence = true)
+    public static async Task<EditScope?> AskAsync(XamlRoot root, string title, bool allowFollowing, bool allowOccurrence = true,
+        bool delete = false)
     {
         var options = new RadioButtons();
         if (allowOccurrence)
@@ -38,10 +40,14 @@ internal static class ScopeDialog
             XamlRoot = root,
             Title = title,
             Content = options,
-            PrimaryButtonText = "OK",
+            PrimaryButtonText = delete ? "Delete" : "OK",
             CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
+            DefaultButton = delete ? ContentDialogButton.Close : ContentDialogButton.Primary,
         };
+        if (delete)
+        {
+            Destructive.Apply(dialog);
+        }
         return await dialog.ShowAsync() == ContentDialogResult.Primary && options.SelectedItem is RadioButton { Tag: EditScope scope }
             ? scope
             : null;

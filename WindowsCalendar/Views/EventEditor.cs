@@ -805,7 +805,7 @@ internal sealed partial class EventEditor : UserControl
             }
             if (change.Lost > 0)
             {
-                var confirm = new ContentDialog
+                var confirm = Destructive.Apply(new ContentDialog
                 {
                     XamlRoot = XamlRoot,
                     Title = "Change the repeat pattern?",
@@ -813,7 +813,7 @@ internal sealed partial class EventEditor : UserControl
                     PrimaryButtonText = "Change",
                     CloseButtonText = "Cancel",
                     DefaultButton = ContentDialogButton.Close,
-                };
+                });
                 if (await confirm.ShowAsync() != ContentDialogResult.Primary || _itemId != id)
                 {
                     return;
@@ -879,7 +879,7 @@ internal sealed partial class EventEditor : UserControl
         _asking = true;
         try
         {
-            var dialog = new ContentDialog
+            var dialog = Destructive.Apply(new ContentDialog
             {
                 XamlRoot = XamlRoot,
                 Title = "Discard repeat changes?",
@@ -887,7 +887,7 @@ internal sealed partial class EventEditor : UserControl
                 PrimaryButtonText = "Discard",
                 CloseButtonText = "Keep editing",
                 DefaultButton = ContentDialogButton.Close,
-            };
+            });
             if (await dialog.ShowAsync() != ContentDialogResult.Primary)
             {
                 return false;
@@ -913,7 +913,7 @@ internal sealed partial class EventEditor : UserControl
         }
         if (_recurrence is { } recurrence)
         {
-            var scope = await ScopeDialog.AskAsync(XamlRoot, "Delete a repeating event", _allowFollowing);
+            var scope = await ScopeDialog.AskAsync(XamlRoot, "Delete a repeating event", _allowFollowing, delete: true);
             if (scope is null)
             {
                 return;
@@ -959,7 +959,7 @@ internal sealed partial class EventEditor : UserControl
                 return;
             }
         }
-        var dialog = new ContentDialog
+        var dialog = Destructive.Apply(new ContentDialog
         {
             XamlRoot = XamlRoot,
             Title = _recurrence is null ? "Delete this event?" : "Delete the entire series?",
@@ -967,7 +967,7 @@ internal sealed partial class EventEditor : UserControl
             PrimaryButtonText = "Delete",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
-        };
+        });
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
         {
             return;

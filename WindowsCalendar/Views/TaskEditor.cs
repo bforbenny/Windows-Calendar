@@ -312,7 +312,7 @@ internal sealed class TaskEditor : UserControl
         {
             return;
         }
-        var dialog = new ContentDialog
+        var dialog = Destructive.Apply(new ContentDialog
         {
             XamlRoot = XamlRoot,
             Title = "Delete this task?",
@@ -320,7 +320,7 @@ internal sealed class TaskEditor : UserControl
             PrimaryButtonText = "Delete",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
-        };
+        });
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
         {
             return;

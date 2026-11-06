@@ -17,7 +17,7 @@ internal static class LostDialog
         {
             return true;
         }
-        var dialog = new ContentDialog
+        var dialog = Destructive.Apply(new ContentDialog
         {
             XamlRoot = root,
             Title = title,
@@ -25,7 +25,7 @@ internal static class LostDialog
             PrimaryButtonText = action,
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
-        };
+        });
         return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
 }

@@ -872,7 +872,7 @@ public sealed partial class MainWindow : Window
     /// <summary>Destructive: asks first, then deletes cached data and the saved password (account-management R8).</summary>
     private async System.Threading.Tasks.Task RemoveAccountAsync(Account account)
     {
-        var confirm = new ContentDialog
+        var confirm = Destructive.Apply(new ContentDialog
         {
             XamlRoot = Content.XamlRoot,
             Title = $"Remove {account.DisplayName}?",
@@ -882,7 +882,7 @@ public sealed partial class MainWindow : Window
             PrimaryButtonText = "Remove",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
-        };
+        });
         if (await confirm.ShowAsync() != ContentDialogResult.Primary)
         {
             return;
