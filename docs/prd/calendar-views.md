@@ -50,7 +50,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
   - Ctrl+Z while a text box has focus undoes typing in that box; otherwise it is the app undo ([undo](undo.md) R3);
   - meetings with attendees follow [attendees-invitations](attendees-invitations.md) R7–R8.
 - R6a. Events can be duplicated ([duplicate-event](duplicate-event.md)). Non-working hours, public holidays and week numbers are shown per [calendar-shading](calendar-shading.md).
-- R7. Drag to move and drag the edge to resize in Day/Week. Drag to move between days in Month. For recurring events, a drag always asks for the scope (this / this and following / all), even while the editor panel has one. "This and following" on the first occurrence acts as "all". Dragging from the all-day lane into the grid makes a 1-hour timed event at the drop slot; dragging into the all-day lane makes an all-day event on that date. Moving an occurrence onto or past the previous or next occurrence is refused before saving, with a message.
+- R7. Drag to move and drag the top or bottom edge to resize in Day/Week, snapping to 15 minutes (minimum length 15 minutes). Drag to move between days in Month and Agenda, keeping the time and length. A preview shows where the event will land; Esc cancels the drag; holding near the edge of the view scrolls it. For recurring events, a drag always asks for the scope (this / this and following / all), even while the editor panel has one. "This and following" on the first occurrence acts as "all". Dragging from the all-day lane into the grid makes a 1-hour timed event at the drop slot; dragging into the all-day lane makes an all-day event on that date. Moving an occurrence onto or past the previous or next occurrence is refused before saving, with a message.
 - R8. Moving an event to a different calendar within the **same** account is supported. Moving across accounts is a copy + delete with confirmation, queued as one linked outbox group (the delete is not sent if the copy fails).
 - R9. Read-only calendars and meetings where you are an attendee cannot be dragged or edited; this is shown visually. Your own reminder on an attendee meeting stays editable ([attendees-invitations](attendees-invitations.md) R7).
 - R10. Delete: single events/occurrences are deleted immediately with an undo banner; whole-series deletes ask for confirmation; recurring deletes ask for the scope (see [undo](undo.md) R7). Meetings with attendees ask first ([attendees-invitations](attendees-invitations.md) R7–R8).
@@ -72,7 +72,13 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 - Recurring events and read-only calendars open view-only with a notice; recurrence editing comes with [recurring-events](recurring-events.md).
 - R5 interim: clicking an empty Week slot opens the editor on a new 1-hour event at that half hour; the all-day lane or a Month day gives an all-day event. The quick-create popup comes with [quick-add](quick-add.md).
 - R8 within an account: the move is queued as a create in the new calendar then a delete of the old one, one linked outbox group. An unsent new event is re-targeted instead.
-- R10 interim: Delete asks for confirmation until [undo](undo.md) exists. No drag, keyboard selection or undo yet.
+- R10 interim: Delete asks for confirmation until [undo](undo.md) exists. No keyboard selection yet.
+
+## Interim (third slice: drag)
+
+- R7 with mouse and pen. On touch, a swipe keeps scrolling; press-and-hold to drag comes later.
+- Recurring events, read-only calendars and subscriptions cannot be dragged (they are view-only until [recurring-events](recurring-events.md)), so the scope question does not arise yet.
+- A drop is saved like an editor change and gets the "Event moved · Undo" banner ([undo](undo.md) interim).
 
 ## Out of scope
 

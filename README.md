@@ -22,7 +22,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [online-meeting-join](docs/prd/online-meeting-join.md) | Join button for Teams/Zoom/Meet/Webex links | pending |
 | [quick-add](docs/prd/quick-add.md) | Typed quick add, offline rule-based parser | pending |
 | [duplicate-event](docs/prd/duplicate-event.md) | Duplicate an event | pending |
-| [undo](docs/prd/undo.md) | Undo recent changes | pending |
+| [undo](docs/prd/undo.md) | Undo recent changes | in-progress |
 | [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | pending |
 | [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | pending |
 | [calendar-shading](docs/prd/calendar-shading.md) | Working hours, public holidays, week numbers | in-progress |
@@ -32,6 +32,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [display-scaling](docs/prd/display-scaling.md) | Layout at 100% / 150% scaling, multi-monitor | pending |
 | [ui-style](docs/prd/ui-style.md) | Font, type ramp, spacing, motion, locale formats | pending |
 | [ui-states](docs/prd/ui-states.md) | Loading, empty, offline, error and first-launch states | pending |
+| [floating-banners](docs/prd/floating-banners.md) | Banners float over the calendar and never push the layout | closed |
 | [settings-page](docs/prd/settings-page.md) | Settings page layout and contents | pending |
 | [tasks](docs/prd/tasks.md) | VTODO and Microsoft To Do tasks | pending |
 | [event-location](docs/prd/event-location.md) | Plain-text location/address on events | pending |

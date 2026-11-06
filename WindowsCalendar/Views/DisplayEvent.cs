@@ -12,9 +12,11 @@ namespace WindowsCalendar.Views;
 
 /// <summary>
 /// An occurrence in local wall-clock time, ready to draw (calendar-views). End is exclusive.
-/// All-day and 24-hour-or-longer events go in the all-day lane (R3).
+/// All-day and 24-hour-or-longer events go in the all-day lane (R3). Editable events can be dragged (R7); recurring
+/// events, read-only calendars and subscriptions cannot, for now.
 /// </summary>
-internal sealed record DisplayEvent(string ItemId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay, Collection Collection)
+internal sealed record DisplayEvent(string ItemId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay,
+    Collection Collection, bool Editable)
 {
     public bool InAllDayLane => AllDay || End - Start >= TimeSpan.FromHours(24);
 
@@ -30,7 +32,8 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
         TimeZoneInfo.ConvertTime(o.StartUtc, TimeZoneInfo.Local).DateTime,
         TimeZoneInfo.ConvertTime(o.EndUtc, TimeZoneInfo.Local).DateTime,
         o.AllDay,
-        collection);
+        collection,
+        !o.IsRecurring && !collection.ReadOnly && collection.SourceUrl is null);
 
     /// <summary>Times in the Windows region format (ui-style R7).</summary>
     public string TimeText()

@@ -184,6 +184,27 @@ internal sealed partial class EventEditor : UserControl
         }
     }
 
+    /// <summary>
+    /// After a drag or undo changed the open event's times: shows them, leaving text being typed alone.
+    /// </summary>
+    public void Reload(string itemId)
+    {
+        if (!IsOpen || _itemId != itemId || Store?.GetItem(itemId) is not { } item)
+        {
+            return;
+        }
+        var fields = CalDavEvents.Read(item, TimeZoneInfo.Local);
+        _loading = true;
+        _allDay.IsChecked = fields.AllDay;
+        _startDate.Date = fields.Start.Date;
+        _startTime.Time = fields.Start.TimeOfDay;
+        _endDate.Date = fields.AllDay ? fields.End.Date.AddDays(-1) : fields.End.Date;
+        _endTime.Time = fields.End.TimeOfDay;
+        _shownStart = fields.Start;
+        ShowTimePickers();
+        _loading = false;
+    }
+
     /// <summary>The event that is open, if it exists in the store.</summary>
     public string? ItemId => _itemId;
 

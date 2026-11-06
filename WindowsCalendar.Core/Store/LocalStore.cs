@@ -438,7 +438,7 @@ public sealed class LocalStore : IDisposable
         {
             using var cmd = Command(_connection, null,
                 """
-                SELECT o.item_id, i.collection_id, i.kind, i.summary, i.location, o.start_utc, o.end_utc, i.all_day
+                SELECT o.item_id, i.collection_id, i.kind, i.summary, i.location, o.start_utc, o.end_utc, i.all_day, i.is_recurring
                 FROM occurrences o JOIN items i ON i.id = o.item_id
                 WHERE i.deleted = 0 AND o.start_utc < $to AND o.end_utc >= $from
                   AND NOT EXISTS (SELECT 1 FROM meta WHERE key = 'hidden:' || i.collection_id)
@@ -450,7 +450,7 @@ public sealed class LocalStore : IDisposable
             while (r.Read())
             {
                 list.Add(new OccurrenceView(r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)),
-                    NullableString(r, 3), NullableString(r, 4), Time(r, 5), Time(r, 6), r.GetBoolean(7)));
+                    NullableString(r, 3), NullableString(r, 4), Time(r, 5), Time(r, 6), r.GetBoolean(7), r.GetBoolean(8)));
             }
             return list;
         }

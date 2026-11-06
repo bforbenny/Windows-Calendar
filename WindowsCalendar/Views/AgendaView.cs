@@ -12,7 +12,7 @@ namespace WindowsCalendar.Views;
 /// time), seven columns filling the width. Scrolls horizontally through days and vertically through the lists;
 /// day headers stay at the top. Only days near the viewport are built.
 /// </summary>
-internal sealed partial class AgendaView : UserControl, IScrollingView
+internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHost
 {
     private const int VisibleDays = 7;
     private const int Buffer = 7;
@@ -34,6 +34,8 @@ internal sealed partial class AgendaView : UserControl, IScrollingView
     private Dictionary<DateOnly, List<DisplayEvent>> _byDay = [];
     private double _columnWidth;
     private DateOnly? _anchor;
+    private int _grabIndex;
+    private bool _dragging;
 
     public AgendaView()
     {
@@ -45,6 +47,7 @@ internal sealed partial class AgendaView : UserControl, IScrollingView
         Grid.SetRow(_bodyScroll, 1);
         root.Children.Add(_headerScroll);
         root.Children.Add(_bodyScroll);
+        Overlay = ViewParts.Overlay(root, 2, 1);
         Content = root;
 
         _bodyScroll.ViewChanging += (_, e) => _headerScroll.ChangeView(e.NextView.HorizontalOffset, null, null, true);
@@ -65,6 +68,10 @@ internal sealed partial class AgendaView : UserControl, IScrollingView
 
     // Agenda has no empty slots to click.
     public event Action<DateTime, bool>? CreateRequested { add { } remove { } }
+
+    public event Action<DisplayEvent, DragTarget>? EventDropped;
+
+    public Canvas Overlay { get; }
 
     public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events)
     {
@@ -123,7 +130,7 @@ internal sealed partial class AgendaView : UserControl, IScrollingView
             return;
         }
         var (a, b) = ViewPeriod.Realized(_bodyScroll.HorizontalOffset, _bodyScroll.ViewportWidth, _columnWidth, _count, Buffer);
-        foreach (var index in _days.Keys.Where(i => i < a || i > b).ToList())
+        foreach (var index in _days.Keys.Where(i => !_dragging && (i < a || i > b)).ToList())
         {
             _headerCanvas.Children.Remove(_days[index].Header);
             _bodyCanvas.Children.Remove(_days[index].Column);
@@ -163,6 +170,50 @@ internal sealed partial class AgendaView : UserControl, IScrollingView
         VisibleDayChanged?.Invoke(middle);
     }
 
+    // ---- Drag (R8, calendar-views R7): to another day column, keeping the time and length. ----
+
+    private int DayIndexAt(Windows.Foundation.Point canvas) => Math.Clamp((int)Math.Floor(canvas.X / _columnWidth), 0, _count - 1);
+
+    public void BeginDrag(DisplayEvent e, DragMode mode, Windows.Foundation.Point window)
+    {
+        _dragging = true;
+        _grabIndex = DayIndexAt(ViewParts.To(_bodyCanvas, window));
+    }
+
+    public DragTarget? Target(DisplayEvent e, DragMode mode, Windows.Foundation.Point window)
+    {
+        if (_columnWidth <= 0)
+        {
+            return null;
+        }
+        var canvas = ViewParts.To(_bodyCanvas, window);
+        var index = DayIndexAt(canvas);
+        var (s, en) = DragMath.MoveDays(e.Start, e.End, index - _grabIndex);
+        var rect = new Windows.Foundation.Rect(index * _columnWidth + 4, canvas.Y - 16, _columnWidth - 8, 32);
+        return new DragTarget(s, en, e.AllDay, ViewParts.InOverlay(_bodyCanvas, Overlay, rect));
+    }
+
+    public void AutoScroll(Windows.Foundation.Point window)
+    {
+        var v = ViewParts.To(_bodyScroll, window);
+        var dx = ViewParts.EdgeStep(v.X, _bodyScroll.ActualWidth);
+        var dy = ViewParts.EdgeStep(v.Y, _bodyScroll.ActualHeight);
+        if (dx != 0 || dy != 0)
+        {
+            _bodyScroll.ChangeView(_bodyScroll.HorizontalOffset + dx, _bodyScroll.VerticalOffset + dy, null, true);
+        }
+    }
+
+    public void EndDrag()
+    {
+        _dragging = false;
+        Realize();
+    }
+
+    public void CompleteDrag(DisplayEvent e, DragTarget target) => EventDropped?.Invoke(e, target);
+
+    public void OpenEvent(DisplayEvent e) => EventOpened?.Invoke(e.ItemId);
+
     private StackPanel BuildList(DateOnly date, bool isToday)
     {
         var list = new StackPanel
@@ -180,7 +231,7 @@ internal sealed partial class AgendaView : UserControl, IScrollingView
             var total = e.LastDay.DayNumber - e.FirstDay.DayNumber + 1;
             var details = total > 1 ? $"Day {date.DayNumber - e.FirstDay.DayNumber + 1} of {total}" : null;
             var card = EventCard.Create(e, Theme.Calendar(e.Collection.Colour), double.NaN, details: details);
-            ViewParts.OnOpen(card, e, () => EventOpened);
+            EventDrag.Attach(card, e, this);
             list.Children.Add(card);
         }
         if (events.Count == 0)

@@ -44,7 +44,6 @@
             <Grid x:Name="ContentArea" Grid.Column="1" Background="{ThemeResource SurfaceBaseBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
@@ -70,11 +69,7 @@
                     </Button>
                 </Grid>
 
-                <!-- Conflicts (conflict-resolution R5, interim: banner only). -->
-                <InfoBar x:Name="ConflictBar" Grid.Row="1" Margin="12,0,12,8" Severity="Warning" IsClosable="True"
-                         Closed="OnConflictBarClosed" />
-
-                <Grid x:Name="Body" Grid.Row="2">
+                <Grid x:Name="Body" Grid.Row="1">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -99,6 +94,28 @@
                     <Border x:Name="EditorHost" Grid.Column="1" Visibility="Collapsed"
                             Background="{ThemeResource SurfaceBaseBrush}" BorderBrush="{ThemeResource DividerBrush}"
                             BorderThickness="1,0,0,0" />
+
+                    <!-- Banners float over the views and editor, bottom centre, so nothing moves (floating-banners R1-R4).
+                         Lasting conditions above, passing ones (undo) below. Only the cards take clicks. -->
+                    <StackPanel x:Name="BannerStack" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                                Margin="24" Spacing="8" MinWidth="320" MaxWidth="520">
+                        <!-- Conflicts (conflict-resolution R5, interim: banner only). -->
+                        <InfoBar x:Name="ConflictBar" Severity="Warning" IsClosable="True" Closed="OnConflictBarClosed"
+                                 Background="{ThemeResource SurfaceBaseBrush}">
+                            <InfoBar.Shadow>
+                                <ThemeShadow />
+                            </InfoBar.Shadow>
+                        </InfoBar>
+                        <!-- "Event moved · Undo" for 8 seconds (undo R3). -->
+                        <InfoBar x:Name="UndoBar" IsClosable="True" Background="{ThemeResource SurfaceBaseBrush}">
+                            <InfoBar.Shadow>
+                                <ThemeShadow />
+                            </InfoBar.Shadow>
+                            <InfoBar.ActionButton>
+                                <Button x:Name="UndoButton" Content="Undo" Click="OnUndo" />
+                            </InfoBar.ActionButton>
+                        </InfoBar>
+                    </StackPanel>
                 </Grid>
             </Grid>
         </Grid>

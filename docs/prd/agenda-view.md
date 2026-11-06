@@ -21,7 +21,7 @@ A view alongside Week and Month that shows one column per day, each a plain list
 - R5. Multi-day events appear on each day they span, labelled "Day n of m".
 - R6. Tasks with a due date appear under their day, with a checkbox, when the tasks-on-calendar setting is on ([tasks](tasks.md) R6).
 - R7. Respects calendar visibility and the active calendar set ([calendar-sets](calendar-sets.md)).
-- R8. Same item actions as other views: open, edit, delete, duplicate, undo, keyboard navigation (Up/Down between rows, Enter to open).
+- R8. Same item actions as other views: open, edit, delete, duplicate, undo, keyboard navigation (Up/Down between rows, Enter to open), and drag to another day keeping the time ([calendar-views](calendar-views.md) R7).
 - R9. Performance: initial render < 200 ms; scrolling loads further days without visible stalls.
 
 ## Out of scope

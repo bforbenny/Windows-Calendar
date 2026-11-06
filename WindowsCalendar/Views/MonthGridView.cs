@@ -12,7 +12,7 @@ namespace WindowsCalendar.Views;
 /// height, scrolling vertically. Events are chips or multi-day bars in rows per week, as many as fit, then
 /// "+n more", which opens that day in Agenda. Only weeks near the viewport are built.
 /// </summary>
-internal sealed partial class MonthGridView : UserControl, IScrollingView
+internal sealed partial class MonthGridView : UserControl, IScrollingView, IDragHost
 {
     private const int VisibleWeeks = 5;
     private const int Buffer = 2;
@@ -38,6 +38,8 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView
     private double _width;
     private int _capacity;
     private DateOnly? _anchor;
+    private int _grabIndex;
+    private bool _dragging;
 
     public MonthGridView()
     {
@@ -52,6 +54,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView
         Grid.SetRow(_scroll, 1);
         root.Children.Add(_weekdays);
         root.Children.Add(_scroll);
+        Overlay = ViewParts.Overlay(root, 2, 1);
         Content = root;
 
         _scroll.ViewChanged += (_, _) =>
@@ -73,6 +76,10 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView
     public event Action<string>? EventOpened;
 
     public event Action<DateTime, bool>? CreateRequested;
+
+    public event Action<DisplayEvent, DragTarget>? EventDropped;
+
+    public Canvas Overlay { get; }
 
     public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events)
     {
@@ -143,7 +150,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView
             return;
         }
         var (a, b) = ViewPeriod.Realized(_scroll.VerticalOffset, _scroll.ViewportHeight, _rowHeight, _weekCount, Buffer);
-        foreach (var index in _weeks.Keys.Where(i => i < a || i > b).ToList())
+        foreach (var index in _weeks.Keys.Where(i => !_dragging && (i < a || i > b)).ToList())
         {
             _canvas.Children.Remove(_weeks[index]);
             _weeks.Remove(index);
@@ -212,6 +219,56 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView
         row.Children.Add(cell);
     }
 
+    // ---- Drag (R7): to another day, keeping the time and length. ----
+
+    private int DayIndexAt(Windows.Foundation.Point canvas)
+    {
+        var row = Math.Clamp((int)Math.Floor(canvas.Y / _rowHeight), 0, _weekCount - 1);
+        var column = Math.Clamp((int)Math.Floor(canvas.X / (_width / 7)), 0, 6);
+        return row * 7 + column;
+    }
+
+    public void BeginDrag(DisplayEvent e, DragMode mode, Windows.Foundation.Point window)
+    {
+        _dragging = true;
+        _grabIndex = DayIndexAt(ViewParts.To(_canvas, window));
+    }
+
+    public DragTarget? Target(DisplayEvent e, DragMode mode, Windows.Foundation.Point window)
+    {
+        if (_rowHeight <= 0)
+        {
+            return null;
+        }
+        var (s, en) = DragMath.MoveDays(e.Start, e.End, DayIndexAt(ViewParts.To(_canvas, window)) - _grabIndex);
+        var moved = e with { Start = s, End = en };
+        var index = moved.FirstDay.DayNumber - _first.DayNumber;
+        var (row, column) = (index / 7, index % 7);
+        var span = Math.Min(moved.LastDay.DayNumber - moved.FirstDay.DayNumber + 1, 7 - column);
+        var cell = _width / 7;
+        var rect = new Windows.Foundation.Rect(column * cell + 1, row * _rowHeight + DayNumberHeight, span * cell - 2, ChipHeight);
+        return new DragTarget(s, en, e.AllDay, ViewParts.InOverlay(_canvas, Overlay, rect));
+    }
+
+    public void AutoScroll(Windows.Foundation.Point window)
+    {
+        var dy = ViewParts.EdgeStep(ViewParts.To(_scroll, window).Y, _scroll.ActualHeight);
+        if (dy != 0)
+        {
+            _scroll.ChangeView(null, _scroll.VerticalOffset + dy, null, true);
+        }
+    }
+
+    public void EndDrag()
+    {
+        _dragging = false;
+        Realize();
+    }
+
+    public void CompleteDrag(DisplayEvent e, DragTarget target) => EventDropped?.Invoke(e, target);
+
+    public void OpenEvent(DisplayEvent e) => EventOpened?.Invoke(e.ItemId);
+
     private void AddWeekEvents(Grid row, DateOnly weekStart)
     {
         var weekEnd = weekStart.AddDays(6);
@@ -258,7 +315,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView
             var e = inWeek[i];
             var card = EventCard.Create(e, Theme.Calendar(e.Collection.Colour), ChipHeight, chip: true,
                 prefix: e.InAllDayLane ? null : e.Start.ToString("t"));
-            ViewParts.OnOpen(card, e, () => EventOpened);
+            EventDrag.Attach(card, e, this);
             Grid.SetRow(card, lanes[i]);
             Grid.SetColumn(card, spans[i].Item1);
             Grid.SetColumnSpan(card, spans[i].Item2 - spans[i].Item1 + 1);

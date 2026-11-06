@@ -29,6 +29,9 @@ internal interface IScrollingView
 
     /// <summary>Raised when an empty slot is clicked: its start, and whether it is all-day (R5 interim).</summary>
     event Action<DateTime, bool>? CreateRequested;
+
+    /// <summary>Raised when a dragged event is dropped somewhere new (R7).</summary>
+    event Action<DisplayEvent, DragTarget>? EventDropped;
 }
 
 /// <summary>Building blocks shared by the views.</summary>
@@ -37,13 +40,27 @@ internal static class ViewParts
     /// <summary>A background that receives clicks without drawing anything.</summary>
     public static readonly Brush Clickable = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 
-    /// <summary>A click on the card opens its event, and does not reach the slot behind it.</summary>
-    public static void OnOpen(UIElement card, DisplayEvent e, Func<Action<string>?> handler) =>
-        card.Tapped += (_, args) =>
-        {
-            args.Handled = true;
-            handler()?.Invoke(e.ItemId);
-        };
+    /// <summary>A window point in an element's coordinates (scrolling included).</summary>
+    public static Windows.Foundation.Point To(UIElement element, Windows.Foundation.Point window) =>
+        element.TransformToVisual(null).Inverse.TransformPoint(window);
+
+    /// <summary>A rectangle in <paramref name="from"/>'s coordinates, in the overlay's.</summary>
+    public static Windows.Foundation.Rect InOverlay(UIElement from, Canvas overlay, Windows.Foundation.Rect r) =>
+        from.TransformToVisual(overlay).TransformBounds(r);
+
+    /// <summary>Auto-scroll step for a drag: towards an edge when the pointer is within 32 epx of it.</summary>
+    public static double EdgeStep(double position, double length) =>
+        position < 32 ? -24 : position > length - 32 ? 24 : 0;
+
+    /// <summary>A canvas over a whole view for drag previews; it never takes clicks.</summary>
+    public static Canvas Overlay(Grid root, int rows, int columns)
+    {
+        var overlay = new Canvas { IsHitTestVisible = false };
+        Grid.SetRowSpan(overlay, rows);
+        Grid.SetColumnSpan(overlay, columns);
+        root.Children.Add(overlay);
+        return overlay;
+    }
 
     /// <summary>
     /// A strip that follows another ScrollViewer (day headers, all-day lane, hour labels): no scroll bars, no user

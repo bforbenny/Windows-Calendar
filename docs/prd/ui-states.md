@@ -15,7 +15,7 @@ Views render instantly from the local store, so the UI has no loading spinners f
 
 - R1. Loading: views never show a spinner for calendar data; they render from the local store ([local-store-offline](local-store-offline.md)). Sync progress shows only as the toolbar sync status (icon + text, e.g. "Syncing…", "Synced 10:42").
 - R1a. First sync: until an account's first sync completes, views show "Syncing <account> for the first time…" in place of the empty-state text (R4), so an empty grid is never presented as "Nothing scheduled".
-- R2. Notice bars (WinUI `InfoBar`) appear under the toolbar, one per condition, each with an icon, a message and an action where one applies:
+- R2. Notice bars (WinUI `InfoBar`) float over the calendar ([floating-banners](floating-banners.md)), one per condition, each with an icon, a message and an action where one applies:
 
   | Condition | Severity / colour | Message (example) | Action |
   | --- | --- | --- | --- |

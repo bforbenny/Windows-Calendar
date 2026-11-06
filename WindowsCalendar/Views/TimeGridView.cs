@@ -13,7 +13,7 @@ namespace WindowsCalendar.Views;
 /// scrolls horizontally through days and vertically through hours. Day headers and the all-day lane follow the
 /// horizontal scroll; hour labels follow the vertical scroll. Only days near the viewport are built.
 /// </summary>
-internal sealed partial class TimeGridView : UserControl, IScrollingView
+internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragHost
 {
     private const double GutterWidth = 56;
     private const double LaneHeight = 22;
@@ -49,6 +49,9 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
     private bool _anchorToNow;
     private Rectangle? _nowLine;
     private DateOnly _nowDay;
+    private DateTime _grabTime;
+    private int _grabDay;
+    private bool _dragging;
 
     public TimeGridView()
     {
@@ -68,6 +71,7 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
         Add(root, _laneScroll, 1, 1);
         Add(root, _gutterScroll, 2, 0);
         Add(root, _bodyScroll, 2, 1);
+        Overlay = ViewParts.Overlay(root, 3, 2);
         Content = root;
 
         _bodyScroll.ViewChanging += (_, e) =>
@@ -104,6 +108,10 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
     public event Action<string>? EventOpened;
 
     public event Action<DateTime, bool>? CreateRequested;
+
+    public event Action<DisplayEvent, DragTarget>? EventDropped;
+
+    public Canvas Overlay { get; }
 
     public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events)
     {
@@ -199,7 +207,7 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
         }
         var (a, b) = ViewPeriod.Realized(_bodyScroll.HorizontalOffset, _bodyScroll.ViewportWidth, _columnWidth, _count, Buffer);
 
-        foreach (var index in _days.Keys.Where(i => i < a || i > b).ToList())
+        foreach (var index in _days.Keys.Where(i => !_dragging && (i < a || i > b)).ToList())
         {
             _headerCanvas.Children.Remove(_days[index].Header);
             _bodyCanvas.Children.Remove(_days[index].Column);
@@ -232,13 +240,13 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
             if (inRange && !_laneCards.ContainsKey(j))
             {
                 var card = EventCard.Create(_laneEvents[j], Theme.Calendar(_laneEvents[j].Collection.Colour), LaneHeight, chip: true);
-                ViewParts.OnOpen(card, _laneEvents[j], () => EventOpened);
+                EventDrag.Attach(card, _laneEvents[j], this);
                 card.Width = (last - first + 1) * _columnWidth - 2;
                 ViewParts.Place(card, first * _columnWidth, 2 + _laneRows[j] * (LaneHeight + 2));
                 _laneCanvas.Children.Add(card);
                 _laneCards[j] = card;
             }
-            else if (!inRange && _laneCards.Remove(j, out var old))
+            else if (!inRange && !_dragging && _laneCards.Remove(j, out var old))
             {
                 _laneCanvas.Children.Remove(old);
             }
@@ -285,7 +293,8 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
             var (s, en) = intervals[i];
             var height = DayColumnPanel.PixelsFor(en) - DayColumnPanel.PixelsFor(s) - 1;
             var card = EventCard.Create(events[i], Theme.Calendar(events[i].Collection.Colour), height);
-            ViewParts.OnOpen(card, events[i], () => EventOpened);
+            AddResizeHandles(card, events[i], dayStart, height);
+            EventDrag.Attach(card, events[i], this);
             DayColumnPanel.Place(card, s, en, columns[i].Column, columns[i].Columns);
             panel.Children.Add(card);
         }
@@ -300,6 +309,121 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView
         }
         return column;
     }
+
+    /// <summary>The top edge of the piece with the start and the bottom edge of the piece with the end resize it (R7).</summary>
+    private static void AddResizeHandles(Border card, DisplayEvent e, DateTime dayStart, double height)
+    {
+        if (!e.Editable || height < 16)
+        {
+            return;
+        }
+        var content = card.Child;
+        card.Child = null;
+        var layers = new Grid();
+        if (content is not null)
+        {
+            layers.Children.Add(content);
+        }
+        if (e.Start >= dayStart)
+        {
+            layers.Children.Add(new ResizeHandle(DragMode.ResizeStart) { Margin = new Thickness(0, -1, 0, 0) });
+        }
+        if (e.End <= dayStart.AddDays(1))
+        {
+            layers.Children.Add(new ResizeHandle(DragMode.ResizeEnd) { Margin = new Thickness(0, 0, 0, -1) });
+        }
+        card.Child = layers;
+    }
+
+    // ---- Drag (R7): body canvas coordinates give the day (x) and time (y); above the body is the all-day lane. ----
+
+    private int DayIndexAt(Windows.Foundation.Point canvas) => Math.Clamp((int)Math.Floor(canvas.X / _columnWidth), 0, _count - 1);
+
+    private DateTime TimeAt(Windows.Foundation.Point canvas) =>
+        _first.AddDays(DayIndexAt(canvas)).ToDateTime(TimeOnly.MinValue)
+            .AddMinutes(Math.Clamp(canvas.Y / DayColumnPanel.HourHeight * 60, 0, 24 * 60));
+
+    public void BeginDrag(DisplayEvent e, DragMode mode, Windows.Foundation.Point window)
+    {
+        _dragging = true;
+        var canvas = ViewParts.To(_bodyCanvas, window);
+        _grabTime = TimeAt(canvas);
+        _grabDay = DayIndexAt(canvas);
+    }
+
+    public DragTarget? Target(DisplayEvent e, DragMode mode, Windows.Foundation.Point window)
+    {
+        if (_columnWidth <= 0)
+        {
+            return null;
+        }
+        var canvas = ViewParts.To(_bodyCanvas, window);
+        var inLane = ViewParts.To(_bodyScroll, window).Y < 0;
+        if (e.InAllDayLane)
+        {
+            if (inLane)
+            {
+                var (s, en) = DragMath.MoveDays(e.Start, e.End, DayIndexAt(canvas) - _grabDay);
+                return new DragTarget(s, en, e.AllDay, LaneGhost(s, en));
+            }
+            var (ts, te) = DragMath.ToTimed(TimeAt(canvas));
+            return new DragTarget(ts, te, false, GridGhost(ts, te, ts));
+        }
+        if (inLane && mode == DragMode.Move)
+        {
+            var (s, en) = DragMath.ToAllDay(DateOnly.FromDateTime(TimeAt(canvas)));
+            return new DragTarget(s, en, true, LaneGhost(s, en));
+        }
+        var (a, b) = mode switch
+        {
+            DragMode.ResizeStart => DragMath.ResizeStart(e.Start, e.End, TimeAt(canvas)),
+            DragMode.ResizeEnd => DragMath.ResizeEnd(e.Start, e.End, TimeAt(canvas)),
+            _ => DragMath.Move(e.Start, e.End, _grabTime, TimeAt(canvas)),
+        };
+        return new DragTarget(a, b, false, GridGhost(a, b, mode == DragMode.ResizeEnd ? b.AddTicks(-1) : a));
+    }
+
+    /// <summary>The part of [start, end) on the anchor's day, in the overlay.</summary>
+    private Windows.Foundation.Rect GridGhost(DateTime start, DateTime end, DateTime anchor)
+    {
+        var dayStart = anchor.Date;
+        var top = start > dayStart ? start : dayStart;
+        var bottom = end < dayStart.AddDays(1) ? end : dayStart.AddDays(1);
+        var index = DateOnly.FromDateTime(dayStart).DayNumber - _first.DayNumber;
+        var y = DayColumnPanel.PixelsFor((top - dayStart).TotalMinutes);
+        var rect = new Windows.Foundation.Rect(index * _columnWidth + 2, y, _columnWidth - 4,
+            Math.Max(12, DayColumnPanel.PixelsFor((bottom - top).TotalMinutes)));
+        return ViewParts.InOverlay(_bodyCanvas, Overlay, rect);
+    }
+
+    private Windows.Foundation.Rect LaneGhost(DateTime start, DateTime end)
+    {
+        var first = DateOnly.FromDateTime(start).DayNumber - _first.DayNumber;
+        var last = DateOnly.FromDateTime(end > start ? end.AddTicks(-1) : start).DayNumber - _first.DayNumber;
+        var rect = new Windows.Foundation.Rect(first * _columnWidth, 2, (last - first + 1) * _columnWidth - 2, LaneHeight);
+        return ViewParts.InOverlay(_laneCanvas, Overlay, rect);
+    }
+
+    public void AutoScroll(Windows.Foundation.Point window)
+    {
+        var v = ViewParts.To(_bodyScroll, window);
+        var dx = ViewParts.EdgeStep(v.X, _bodyScroll.ActualWidth);
+        var dy = v.Y < 0 ? 0 : ViewParts.EdgeStep(v.Y, _bodyScroll.ActualHeight);
+        if (dx != 0 || dy != 0)
+        {
+            _bodyScroll.ChangeView(_bodyScroll.HorizontalOffset + dx, _bodyScroll.VerticalOffset + dy, null, true);
+        }
+    }
+
+    public void EndDrag()
+    {
+        _dragging = false;
+        Realize();
+    }
+
+    public void CompleteDrag(DisplayEvent e, DragTarget target) => EventDropped?.Invoke(e, target);
+
+    public void OpenEvent(DisplayEvent e) => EventOpened?.Invoke(e.ItemId);
 
     private static Grid BuildGutter()
     {

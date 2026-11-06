@@ -2,7 +2,7 @@
 description: Undo (Ctrl+Z) for create, edit, move/resize, delete, duplicate and task completion, built on the outbox
 when-to-use: Before working on undo, delete flows, or any user action that changes an item
 tags: [ui, undo, outbox, offline]
-status: pending
+status: in-progress
 ---
 
 # Undo
@@ -23,6 +23,13 @@ The user can undo recent changes with Ctrl+Z or from the "Undo" banner that appe
 - R6. If the server version changed after the action (ETag differs on the next sync), undo is refused with "This item changed on the server; can't undo". Nothing is overwritten.
 - R7. Delete confirmation: deleting a single event or occurrence uses the undo banner instead of a confirmation dialog. Deleting a whole recurring series still asks for confirmation. Meetings with attendees always ask and get no banner ([attendees-invitations](attendees-invitations.md) R7–R8).
 - R8. Undo for a Graph item deleted on the server and re-created gets a new id. Re-created events lose attendee/meeting data that the app cannot write. The banner text warns when this applies.
+
+## Interim (first slice: drag moves)
+
+- Only drag moves and resizes ([calendar-views](calendar-views.md) R7) are undoable so far, one level deep: the banner "Event moved · Undo" for 8 seconds, and Ctrl+Z for the latest move while no text box has focus.
+- The banner (R3) floats per [floating-banners](floating-banners.md).
+- R4 and R6 apply: undo writes the previous times back (coalescing with an unsent change, otherwise queuing an update), and is refused if the item changed on the server since the move.
+- The 20-step stack (R2) and the other actions in R1 come later.
 
 ## Out of scope
 

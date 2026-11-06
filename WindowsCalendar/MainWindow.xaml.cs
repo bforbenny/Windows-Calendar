@@ -8,9 +8,11 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Serilog;
 using Windows.System.UserProfile;
+using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Core.Views;
 using WindowsCalendar.Views;
@@ -34,6 +36,9 @@ public sealed partial class MainWindow : Window
     private DateOnly? _pendingDay;
     private bool _quitting;
     private int _conflictsDismissed;
+    private readonly DispatcherQueueTimer _undoTimer;
+    private (string ItemId, EventFields Before, string PayloadAfter)? _lastMove;
+    private bool _renderPending;
 
     public MainWindow()
     {
@@ -72,7 +77,36 @@ public sealed partial class MainWindow : Window
         {
             view.EventOpened += id => _editor.OpenExisting(id, _collections);
             view.CreateRequested += (start, allDay) => _editor.OpenNew(start, allDay, _collections);
+            view.EventDropped += OnEventDropped;
         }
+
+        // Esc cancels a drag; Ctrl+Z undoes the latest move unless a text box is being typed in (undo R3).
+        ((UIElement)Content).PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key == Windows.System.VirtualKey.Escape && EventDrag.CancelActive())
+            {
+                e.Handled = true;
+            }
+            else if (e.Key == Windows.System.VirtualKey.Z && IsControlDown()
+                && FocusManager.GetFocusedElement(Content.XamlRoot) is not TextBox && _lastMove is not null)
+            {
+                e.Handled = true;
+                UndoMove();
+            }
+        };
+        _undoTimer = DispatcherQueue.CreateTimer();
+        _undoTimer.Interval = TimeSpan.FromSeconds(8);
+        _undoTimer.IsRepeating = false;
+        _undoTimer.Tick += (_, _) => UndoBar.IsOpen = false;
+        // Lifted so the shadows show (floating-banners R3).
+        ConflictBar.Translation = UndoBar.Translation = new System.Numerics.Vector3(0, 0, 32);
+        EventDrag.Ended += () =>
+        {
+            if (_renderPending)
+            {
+                RenderView();
+            }
+        };
         EditorHost.Child = _editor;
         _editor.Changed += RenderView;
         _editor.OpenChanged += PlaceEditor;
@@ -150,12 +184,97 @@ public sealed partial class MainWindow : Window
     private void OnConflictBarClosed(InfoBar sender, InfoBarClosedEventArgs args) =>
         _conflictsDismissed = Store?.GetConflictCount() ?? 0;
 
+    /// <summary>A drop saves the new times like an editor change and offers Undo (calendar-views R7, undo interim).</summary>
+    private void OnEventDropped(DisplayEvent e, DragTarget target)
+    {
+        try
+        {
+            if (Store?.GetItem(e.ItemId) is not { } item)
+            {
+                return;
+            }
+            var zone = TimeZoneInfo.Local;
+            var before = CalDavEvents.Read(item, zone);
+            if (CalDavEvents.Edit(item, before with { AllDay = target.AllDay, Start = target.Start, End = target.End }, zone,
+                DateTimeOffset.UtcNow) is not { } edited)
+            {
+                return;
+            }
+            Store.UpdateItem(edited);
+            _lastMove = (item.Id, before, edited.RawPayload);
+            ShowUndo("Event moved", canUndo: true);
+            Log.Information("Event {ItemId} moved by drag", item.Id);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Moving event {ItemId} failed", e.ItemId);
+        }
+        RenderView();
+        _editor.Reload(e.ItemId);
+    }
+
+    /// <summary>
+    /// Puts the previous times back (undo R4). Refused if the server changed the event since (R6): its payload is no
+    /// longer the one the move wrote.
+    /// </summary>
+    private void UndoMove()
+    {
+        if (_lastMove is not { } move || Store is not { } store)
+        {
+            return;
+        }
+        _lastMove = null;
+        try
+        {
+            if (store.GetItem(move.ItemId) is not { } item || item.RawPayload != move.PayloadAfter)
+            {
+                ShowUndo("This item changed on the server; can't undo", canUndo: false);
+                return;
+            }
+            if (CalDavEvents.Edit(item, move.Before, TimeZoneInfo.Local, DateTimeOffset.UtcNow) is { } restored)
+            {
+                store.UpdateItem(restored);
+            }
+            UndoBar.IsOpen = false;
+            Log.Information("Move of event {ItemId} undone", move.ItemId);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Undoing move of event {ItemId} failed", move.ItemId);
+        }
+        RenderView();
+        _editor.Reload(move.ItemId);
+    }
+
+    private void OnUndo(object sender, RoutedEventArgs e) => UndoMove();
+
+    private void ShowUndo(string title, bool canUndo)
+    {
+        UndoBar.Title = title;
+        UndoBar.Severity = canUndo ? InfoBarSeverity.Informational : InfoBarSeverity.Warning;
+        UndoButton.Visibility = canUndo ? Visibility.Visible : Visibility.Collapsed;
+        UndoBar.IsOpen = true;
+        _undoTimer.Stop();
+        _undoTimer.Start();
+    }
+
+    private static bool IsControlDown() =>
+        Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(Windows.System.VirtualKey.Control)
+            .HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
     /// <summary>
     /// Loads the whole occurrence window into the current view; the view keeps its scroll position and builds only
     /// what is near the viewport (R1a). The load time is logged (R12).
     /// </summary>
     private void RenderView()
     {
+        // Rebuilding would drop the card being dragged; redraw once it is dropped.
+        if (EventDrag.Active is not null)
+        {
+            _renderPending = true;
+            return;
+        }
+        _renderPending = false;
         Theme.Current = ((FrameworkElement)Content).ActualTheme;
         var (first, days) = ViewPeriod.Window(_today, WeekStart);
 
