@@ -39,7 +39,8 @@ public sealed partial class MainWindow : Window
     private bool _quitting;
     private int _conflictsDismissed;
     private readonly DispatcherQueueTimer _undoTimer;
-    private (string ItemId, string PayloadBefore, string PayloadAfter, Item? Following)? _lastChange;
+    // PayloadBefore is null for a created copy, which undo deletes.
+    private (string ItemId, string? PayloadBefore, string PayloadAfter, Item? Following)? _lastChange;
     private bool _renderPending;
     // Sidebar names of the collections being pulled now, for the hue wave (ui-states R1).
     private readonly HashSet<string> _syncing = [];
@@ -94,6 +95,7 @@ public sealed partial class MainWindow : Window
             };
             view.EventDropped += OnEventDropped;
         }
+        EventDrag.DuplicateRequested += e => Duplicate(e, null);
 
         // Esc cancels a drag; Ctrl+Z undoes the latest move unless a text box is being typed in (undo R3).
         ((UIElement)Content).PreviewKeyDown += (_, e) =>
@@ -252,6 +254,11 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private async void OnEventDropped(DisplayEvent e, DragTarget target)
     {
+        if (target.Copy)
+        {
+            Duplicate(e, target);
+            return;
+        }
         if (IsGraph(e.Collection))
         {
             await DropGraphAsync(e, target);
@@ -346,6 +353,11 @@ public sealed partial class MainWindow : Window
             return;
         }
         _lastChange = null;
+        if (change.PayloadBefore is null)
+        {
+            UndoDuplicate(store, change.ItemId);
+            return;
+        }
         try
         {
             if (store.GetItem(change.ItemId) is not { } item || item.RawPayload != change.PayloadAfter

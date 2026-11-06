@@ -338,7 +338,7 @@ public static partial class CalDavRecurrence
 
     private static Calendar Load(Item item) => Calendar.Load(item.RawPayload)!;
 
-    private static CalendarEvent? Override(Calendar calendar, DateTimeOffset recurrence, TimeZoneInfo zone) =>
+    internal static CalendarEvent? Override(Calendar calendar, DateTimeOffset recurrence, TimeZoneInfo zone) =>
         calendar.Events.FirstOrDefault(e => e.RecurrenceIdentifier is { } id && OccurrenceExpander.ToUtc(id.StartTime, zone) == recurrence);
 
     /// <summary>The series' own instance at the original start, whether or not it is overridden.</summary>

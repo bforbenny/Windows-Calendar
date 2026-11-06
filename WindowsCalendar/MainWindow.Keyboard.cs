@@ -14,7 +14,7 @@ namespace WindowsCalendar;
 
 /// <summary>
 /// Keyboard shortcuts and the keyboard selection (keyboard-navigation interim): F1-F4 views, T today, F5 sync,
-/// Ctrl+G go to date, PgUp / PgDn, ? cheat sheet; Arrows select, Enter opens, Del deletes, Esc clears, and
+/// Ctrl+G go to date, PgUp / PgDn, ? cheat sheet; Arrows select, Enter opens, Del deletes, Ctrl+D duplicates, Esc clears, and
 /// Alt(+Shift)+Arrows move or resize the selected event through the drag path (R3).
 /// </summary>
 public sealed partial class MainWindow
@@ -31,12 +31,14 @@ public sealed partial class MainWindow
         ("Arrows", "Select an event: Up/Down within the day, Left/Right across days"),
         ("Enter", "Open the selected event or task"),
         ("Del", "Delete the selected event"),
+        ("Ctrl+D", "Duplicate the selected event"),
+        ("Ctrl+drag", "Copy an event to where it is dropped"),
         ("Alt+Up / Alt+Down", "Move the selected event 15 minutes"),
         ("Alt+Left / Alt+Right", "Move the selected event one day"),
         ("Alt+Shift+Up / Down", "Shorten / lengthen the selected event by 15 minutes"),
         ("Esc", "Close the panel or Settings, or clear the selection"),
         ("Ctrl+N", "New event (New task in the Tasks view)"),
-        ("Ctrl+Z", "Undo the last move"),
+        ("Ctrl+Z", "Undo the last move or duplicate"),
         ("F5", "Sync now"),
         ("Ctrl+,", "Settings"),
         ("Ctrl+B", "Hide or show the sidebar"),
@@ -103,6 +105,9 @@ public sealed partial class MainWindow
             case VirtualKey.Enter when plain && FocusManager.GetFocusedElement(Content.XamlRoot) is not ButtonBase
                 && Selected() is { } open:
                 OpenItem(open);
+                return true;
+            case VirtualKey.D when ctrl && !shift && !alt && calendar && Selected() is { CanDuplicate: true } original:
+                Duplicate(original, null);
                 return true;
             case VirtualKey.Delete when plain && Selected() is { IsTask: false } doomed:
                 ShowEventEditor();

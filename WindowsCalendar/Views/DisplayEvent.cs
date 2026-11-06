@@ -21,6 +21,9 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
 {
     public bool InAllDayLane => AllDay || End - Start >= TimeSpan.FromHours(24);
 
+    /// <summary>An event in a calendar the app can write to may be copied, meetings too (duplicate-event R1, R4).</summary>
+    public bool CanDuplicate => !IsTask && !Collection.ReadOnly && Collection.SourceUrl is null;
+
     /// <summary>Identifies the item and occurrence, for the keyboard selection.</summary>
     public string Key => $"{ItemId}|{Recurrence?.UtcTicks}";
 

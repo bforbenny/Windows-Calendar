@@ -2,7 +2,7 @@
 description: Duplicate an event (menu, Ctrl+D or Ctrl+drag) into the same or another writable calendar
 when-to-use: Before working on duplicate/copy of events
 tags: [events, duplicate, ui]
-status: pending
+status: in-progress
 ---
 
 # Duplicate event
@@ -20,6 +20,15 @@ The user can copy an existing event into a new, independent event and then adjus
 - R5. Duplicating an occurrence of a recurring event creates a single non-recurring event. Duplicating from the series editor copies the recurrence rule too.
 - R6. Target calendar can be any writable calendar, including one in another account. In that case, unsupported fields are dropped (e.g. show-as values per [event-show-as](event-show-as.md) R2).
 - R7. Duplicate works offline (outbox create) and is undoable ([undo](undo.md)).
+
+## Interim (first slice)
+
+- Built: R1, R2, R3, R4, R5 for occurrences, and R7. The card's right-click menu has Duplicate (Ctrl+D shown). Ctrl+D duplicates the selected event. Ctrl+drag in Week, Month and Agenda copies to the drop, without opening the editor. The copy is selected.
+- Any event in a writable calendar can be duplicated, including meetings and invitations that cannot be edited. Tasks, read-only and subscribed calendars cannot.
+- R3/R4 on CalDAV: the VEVENT is copied with a new UID and href, and SEQUENCE 0. ATTENDEE, ORGANIZER and CONFERENCE are dropped. Alarms, TRANSP, GEO and other properties stay. The TZID form stays. An occurrence copies its override when it has one.
+- R3/R4 on MS365: only the fields a create may write are copied (subject, body, times, all-day, location incl. coordinates, show-as, sensitivity, importance, categories, reminder). Times are written in the event's own timezone. A stub occurrence takes its master's fields. A repeating event still syncing is refused with a message.
+- Undo (R7) deletes the copy: an unsent create is dropped from the outbox, a sent one is deleted on the server. Edits made to the copy since are deleted with it, and no server-change check is made.
+- Later: R5 "from the series editor" (the editor has no Duplicate yet) and R6 into another calendar (the copy goes into the same calendar; it can then be moved within the account from the editor's Calendar field).
 
 ## Out of scope
 

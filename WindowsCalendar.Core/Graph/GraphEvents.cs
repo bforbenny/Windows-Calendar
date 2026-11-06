@@ -90,6 +90,40 @@ public static class GraphEvents
     }
 
     /// <summary>
+    /// A new, independent copy of an event in <paramref name="target"/> (duplicate-event R3-R5): only the fields a create
+    /// may write, so no attendees or online meeting. An occurrence (<paramref name="master"/> set) becomes a single event
+    /// with the occurrence's own fields over its master's. Times are written in the event's own timezone;
+    /// <paramref name="at"/> moves the copy (a Ctrl+drag drop).
+    /// </summary>
+    public static Item Duplicate(Item item, Item? master, Collection target, TimeZoneInfo zone,
+        (bool AllDay, DateTime Start, DateTime End)? at = null)
+    {
+        var ev = Parse(item.RawPayload);
+        var copy = new JsonObject();
+        foreach (var source in master is null ? [ev] : new[] { Parse(master.RawPayload), ev })
+        {
+            foreach (var name in Writable)
+            {
+                if (source[name] is { } value)
+                {
+                    copy[name] = value.DeepClone();
+                }
+            }
+        }
+        if (master is not null)
+        {
+            copy.Remove("recurrence");
+        }
+        var fields = GraphEventMapper.Read(item, master, zone);
+        if (at is { } t)
+        {
+            fields = fields with { AllDay = t.AllDay, Start = t.Start, End = t.End };
+        }
+        SetTimes(copy, fields, zone, OwnZone(master is null ? ev : Parse(master.RawPayload), zone));
+        return GraphEventMapper.Rebuild(new Item(Guid.NewGuid().ToString("N"), target.Id, ItemKind.Event, null, "{}"), copy.ToJsonString(), zone);
+    }
+
+    /// <summary>
     /// Undo (undo R4): the fields the change wrote are set back from <paramref name="payloadBefore"/> and sent again.
     /// </summary>
     public static Item Restore(Item item, string payloadBefore, TimeZoneInfo zone)

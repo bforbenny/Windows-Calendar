@@ -76,6 +76,54 @@ public static class CalDavEvents
         return item with { Id = Guid.NewGuid().ToString("N"), CollectionId = target.Id, RemoteId = Href(target, uid), Etag = null };
     }
 
+    /// <summary>
+    /// A new, independent copy of an event in <paramref name="target"/> (duplicate-event R3-R5): new UID and href, no
+    /// attendees, organiser or conference link. An occurrence (<paramref name="recurrence"/>) becomes a single event
+    /// with that occurrence's fields; otherwise the whole event is copied, repeat rule and overrides included.
+    /// <paramref name="at"/> moves the copy (a Ctrl+drag drop).
+    /// </summary>
+    public static Item Duplicate(Item item, DateTimeOffset? recurrence, Collection target, TimeZoneInfo zone, DateTimeOffset now,
+        (bool AllDay, DateTime Start, DateTime End)? at = null)
+    {
+        var calendar = Calendar.Load(item.RawPayload)!;
+        var events = calendar.Events.ToList();
+        var times = at;
+        if (recurrence is { } occurrence)
+        {
+            var fields = CalDavRecurrence.ReadOccurrence(item, occurrence, zone);
+            times ??= (fields.AllDay, fields.Start, fields.End);
+            var copy = (CalDavRecurrence.Override(calendar, occurrence, zone) ?? Master(calendar)).Copy<CalendarEvent>()!;
+            copy.RecurrenceIdentifier = null;
+            copy.RecurrenceRule = null;
+            copy.RecurrenceDates.Clear();
+            copy.ExceptionDates.Clear();
+            foreach (var e in events)
+            {
+                calendar.Children.Remove(e);
+            }
+            calendar.Events.Add(copy);
+            events = [copy];
+        }
+        var uid = Guid.NewGuid().ToString();
+        foreach (var ev in events)
+        {
+            ev.Uid = uid;
+            foreach (var name in new[] { "ATTENDEE", "ORGANIZER", "CONFERENCE", "LAST-MODIFIED" })
+            {
+                ev.Properties.Remove(name);
+            }
+            ev.Created = Utc(now);
+            ev.DtStamp = Utc(now);
+            ev.Sequence = 0;
+        }
+        if (times is { } t)
+        {
+            var master = Master(calendar);
+            SetTimes(calendar, master, Read(master, zone) with { AllDay = t.AllDay, Start = t.Start, End = t.End }, zone);
+        }
+        return ToItem(Guid.NewGuid().ToString("N"), target.Id, Href(target, uid), null, calendar, zone);
+    }
+
     /// <summary>The resource URL for a UID in a collection: <c>&lt;collection&gt;/&lt;uid&gt;.ics</c> (sync-radicale R7).</summary>
     public static string Href(Collection collection, string uid) =>
         new Uri(new Uri(collection.RemoteRef.TrimEnd('/') + "/"), Uri.EscapeDataString(uid) + ".ics").AbsoluteUri;

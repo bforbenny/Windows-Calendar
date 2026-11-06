@@ -12,8 +12,11 @@ namespace WindowsCalendar.Views;
 /// <summary>What a drag does: move the event, or move its start or end edge (calendar-views R7).</summary>
 internal enum DragMode { Move, ResizeStart, ResizeEnd }
 
-/// <summary>Where the event would land, and the preview rectangle in the view's overlay.</summary>
-internal sealed record DragTarget(DateTime Start, DateTime End, bool AllDay, Rect Ghost);
+/// <summary>
+/// Where the event would land, and the preview rectangle in the view's overlay. <paramref name="Copy"/> marks a Ctrl+drag,
+/// which copies the event there instead of moving it (duplicate-event R1).
+/// </summary>
+internal sealed record DragTarget(DateTime Start, DateTime End, bool AllDay, Rect Ghost, bool Copy = false);
 
 /// <summary>The view side of a drag: hit-testing in its own layout, auto-scroll and the result.</summary>
 internal interface IDragHost
@@ -55,7 +58,7 @@ internal sealed partial class ResizeHandle : Grid
 /// <summary>
 /// Click-or-drag on an event card (calendar-views R6b, R7). Mouse and pen: under 4 epx of travel it opens the event;
 /// more starts a drag with a snapped preview, Esc cancels. Touch keeps scrolling and opens on tap. Cards that are not
-/// editable only open.
+/// editable only open. Ctrl+drag copies the event, editable or not, and right-click offers Duplicate (duplicate-event R1).
 /// </summary>
 internal sealed class EventDrag
 {
@@ -71,6 +74,7 @@ internal sealed class EventDrag
     private bool _pressed;
     private bool _dragging;
     private bool _openedOnRelease;
+    private bool _copy;
     private Border? _ghost;
 
     private EventDrag(FrameworkElement card, DisplayEvent e, IDragHost host)
@@ -88,6 +92,14 @@ internal sealed class EventDrag
         card.PointerMoved += OnMoved;
         card.PointerReleased += OnReleased;
         card.PointerCaptureLost += (_, _) => Cancel();
+        if (e.CanDuplicate)
+        {
+            var duplicate = new MenuFlyoutItem { Text = "Duplicate", Icon = new FontIcon { Glyph = "" }, KeyboardAcceleratorTextOverride = "Ctrl+D" };
+            duplicate.Click += (_, _) => DuplicateRequested?.Invoke(_event);
+            var menu = new MenuFlyout();
+            menu.Items.Add(duplicate);
+            card.ContextFlyout = menu;
+        }
         card.Tapped += (_, args) =>
         {
             // Touch, or a card that cannot be dragged: a tap opens it. A click already opened it on release.
@@ -99,6 +111,9 @@ internal sealed class EventDrag
             _openedOnRelease = false;
         };
     }
+
+    /// <summary>Raised by a card's Duplicate menu item.</summary>
+    public static event Action<DisplayEvent>? DuplicateRequested;
 
     /// <summary>Raised when a drag ends, dropped or cancelled.</summary>
     public static event Action? Ended;
@@ -124,11 +139,12 @@ internal sealed class EventDrag
     {
         _openedOnRelease = false;
         var point = args.GetCurrentPoint(null);
-        if (!_event.Editable || args.Pointer.PointerDeviceType == PointerDeviceType.Touch || !point.Properties.IsLeftButtonPressed)
+        _copy = _event.CanDuplicate && args.KeyModifiers.HasFlag(Windows.System.VirtualKeyModifiers.Control);
+        if (!(_event.Editable || _copy) || args.Pointer.PointerDeviceType == PointerDeviceType.Touch || !point.Properties.IsLeftButtonPressed)
         {
             return;
         }
-        _mode = args.OriginalSource is ResizeHandle handle ? handle.Mode : DragMode.Move;
+        _mode = !_copy && args.OriginalSource is ResizeHandle handle ? handle.Mode : DragMode.Move;
         _press = _last = point.Position;
         _pressed = _card.CapturePointer(args.Pointer);
         args.Handled = true;
@@ -171,7 +187,7 @@ internal sealed class EventDrag
         Finish();
         if (target is not null && (target.Start != _event.Start || target.End != _event.End || target.AllDay != _event.AllDay))
         {
-            _host.CompleteDrag(_event, target);
+            _host.CompleteDrag(_event, target with { Copy = _copy });
         }
     }
 
@@ -197,7 +213,7 @@ internal sealed class EventDrag
             },
         };
         _host.Overlay.Children.Add(_ghost);
-        _card.Opacity = 0.4;
+        _card.Opacity = _copy ? 1 : 0.4;
         _scrollTimer.Start();
         UpdateGhost();
     }

@@ -21,7 +21,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [event-show-as](docs/prd/event-show-as.md) | Busy / Free / Tentative / Out of office | pending |
 | [online-meeting-join](docs/prd/online-meeting-join.md) | Join button for Teams/Zoom/Meet/Webex links | pending |
 | [quick-add](docs/prd/quick-add.md) | Typed quick add, offline rule-based parser | pending |
-| [duplicate-event](docs/prd/duplicate-event.md) | Duplicate an event | pending |
+| [duplicate-event](docs/prd/duplicate-event.md) | Duplicate an event | in-progress |
 | [undo](docs/prd/undo.md) | Undo recent changes | in-progress |
 | [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | in-progress |
 | [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | pending |
