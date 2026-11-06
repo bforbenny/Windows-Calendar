@@ -49,7 +49,13 @@ public static class GraphEvents
         }
         if (Normalise(fields.Location) != Normalise(old.Location))
         {
-            ev["location"] = new JsonObject { ["displayName"] = fields.Location ?? "" };
+            // Replace the whole location so a structured address or coordinates that no longer match are cleared (R3).
+            ev["location"] = new JsonObject
+            {
+                ["displayName"] = fields.Location ?? "",
+                ["address"] = new JsonObject(),
+                ["coordinates"] = new JsonObject(),
+            };
             changed.Add("location");
             any = true;
         }

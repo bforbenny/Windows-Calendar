@@ -35,7 +35,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [floating-banners](docs/prd/floating-banners.md) | Banners float over the calendar and never push the layout | closed |
 | [settings-page](docs/prd/settings-page.md) | Settings page layout and contents | in-progress |
 | [tasks](docs/prd/tasks.md) | VTODO and Microsoft To Do tasks | closed |
-| [event-location](docs/prd/event-location.md) | Plain-text location/address on events | pending |
+| [event-location](docs/prd/event-location.md) | Plain-text location/address on events | in-progress |
 | [reminders-notifications](docs/prd/reminders-notifications.md) | Windows toast reminders | pending |
 | [search](docs/prd/search.md) | Full-text search over cached items | pending |
 | [timezone-handling](docs/prd/timezone-handling.md) | Correct TZ handling, per-event TZ, secondary TZ column | pending |

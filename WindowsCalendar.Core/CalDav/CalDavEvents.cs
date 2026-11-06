@@ -61,7 +61,7 @@ public static class CalDavEvents
         }
         if (textChanged)
         {
-            SetText(ev, fields);
+            SetText(ev, fields, old);
         }
         ev.Sequence += 1;
         ev.DtStamp = Utc(now);
@@ -138,11 +138,32 @@ public static class CalDavEvents
         }
     }
 
-    internal static void SetText(CalendarEvent ev, EventFields fields)
+    /// <summary>
+    /// Writes the text fields that differ from <paramref name="old"/> (all of them when null), so untouched properties
+    /// keep their parameters. A changed location is written fresh, without its old parameters, GEO or
+    /// X-APPLE-STRUCTURED-LOCATION (event-location R3).
+    /// </summary>
+    internal static void SetText(CalendarEvent ev, EventFields fields, EventFields? old = null)
     {
-        ev.Summary = fields.Title;
-        ev.Location = Blank(fields.Location);
-        ev.Description = Blank(fields.Description);
+        if (old is null || old.Title != fields.Title)
+        {
+            ev.Summary = fields.Title;
+        }
+        if (old is null || Blank(old.Location) != Blank(fields.Location))
+        {
+            // Remove first, then add: in Ical.Net 5.2.4 setting ev.Location around a Properties.Remove can lose it.
+            ev.Properties.Remove("LOCATION");
+            ev.Properties.Remove("GEO");
+            ev.Properties.Remove("X-APPLE-STRUCTURED-LOCATION");
+            if (Blank(fields.Location) is { } location)
+            {
+                ev.Properties.Add(new CalendarProperty("LOCATION", location));
+            }
+        }
+        if (old is null || Blank(old.Description) != Blank(fields.Description))
+        {
+            ev.Description = Blank(fields.Description);
+        }
     }
 
     internal static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
@@ -168,7 +189,31 @@ public static class CalDavEvents
 
     internal static Item ToItem(string id, string collectionId, string href, string? etag, Calendar calendar, TimeZoneInfo zone)
     {
+        KeepUriValues(calendar);
         var data = new CalendarSerializer().SerializeToString(calendar)!;
         return CalDavItemMapper.Map(href, etag ?? "", data, zone)! with { Id = id, CollectionId = collectionId, Etag = etag };
+    }
+
+    /// <summary>
+    /// Ical.Net reads unknown properties marked VALUE=URI (e.g. X-APPLE-STRUCTURED-LOCATION) as text and would write
+    /// them back with commas escaped; as Uri values they are written unchanged (event-location R4, sync-radicale R8).
+    /// </summary>
+    private static void KeepUriValues(ICalendarObject parent)
+    {
+        if (parent is ICalendarComponent component)
+        {
+            foreach (var p in component.Properties)
+            {
+                if (p.Value is string text && "URI".Equals(p.Parameters.Get("VALUE"), StringComparison.OrdinalIgnoreCase)
+                    && Uri.TryCreate(text, UriKind.Absolute, out var uri))
+                {
+                    p.Value = uri;
+                }
+            }
+        }
+        foreach (var child in parent.Children)
+        {
+            KeepUriValues(child);
+        }
     }
 }

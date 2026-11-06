@@ -55,7 +55,7 @@ public static partial class CalDavRecurrence
         }
         if (textChanged)
         {
-            CalDavEvents.SetText(ov, fields);
+            CalDavEvents.SetText(ov, fields, old);
         }
         Stamp(ov, now);
         return CalDavEvents.ToItem(item.Id, item.CollectionId, item.RemoteId!, item.Etag, calendar, zone);
@@ -78,18 +78,7 @@ public static partial class CalDavRecurrence
         }
         if (textChanged)
         {
-            if (old.Title != fields.Title)
-            {
-                master.Summary = fields.Title;
-            }
-            if (CalDavEvents.Blank(old.Location) != CalDavEvents.Blank(fields.Location))
-            {
-                master.Location = CalDavEvents.Blank(fields.Location);
-            }
-            if (CalDavEvents.Blank(old.Description) != CalDavEvents.Blank(fields.Description))
-            {
-                master.Description = CalDavEvents.Blank(fields.Description);
-            }
+            CalDavEvents.SetText(master, fields, old);
         }
         if (timesChanged)
         {

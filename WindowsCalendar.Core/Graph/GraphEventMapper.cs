@@ -37,7 +37,7 @@ public static class GraphEventMapper
     {
         var times = Times(ev, zone);
         var type = GraphClient.Text(ev, "type");
-        var location = ev.TryGetProperty("location", out var l) ? GraphClient.Text(l, "displayName") : null;
+        var location = Location(ev);
         var modified = GraphClient.Text(ev, "lastModifiedDateTime") is { } m
             && DateTimeOffset.TryParse(m, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var lm) ? lm : (DateTimeOffset?)null;
         return new Item(
@@ -51,7 +51,7 @@ public static class GraphEventMapper
             EndUtc: times?.End,
             AllDay: times?.AllDay ?? false,
             TimeZone: GraphClient.Text(ev, "originalStartTimeZone") ?? (ev.TryGetProperty("start", out var s) ? GraphClient.Text(s, "timeZone") : null),
-            Location: string.IsNullOrWhiteSpace(location) ? null : location,
+            Location: location,
             Status: GraphClient.Text(ev, "showAs"),
             IsRecurring: type is "occurrence" or "exception" or "seriesMaster" || ev.TryGetProperty("recurrence", out var r) && r.ValueKind == JsonValueKind.Object,
             LastModifiedUtc: modified,
@@ -102,10 +102,34 @@ public static class GraphEventMapper
         var startWall = TimeZoneInfo.ConvertTime(start, zone).DateTime;
         var endWall = TimeZoneInfo.ConvertTime(end, zone).DateTime;
         var source = ev.TryGetProperty("subject", out _) || masterDoc is null ? ev : masterDoc.RootElement;
-        var location = source.TryGetProperty("location", out var l) ? GraphClient.Text(l, "displayName") : null;
         return new CalDav.EventFields(GraphClient.Text(source, "subject") ?? "", allDay,
-            allDay ? startWall.Date : startWall, allDay ? endWall.Date : endWall,
-            string.IsNullOrWhiteSpace(location) ? null : location, Description(source));
+            allDay ? startWall.Date : startWall, allDay ? endWall.Date : endWall, Location(source), Description(source));
+    }
+
+    /// <summary>
+    /// The location text: displayName, else the structured address as "street, city state postal code, country"
+    /// (event-location R5).
+    /// </summary>
+    internal static string? Location(JsonElement ev)
+    {
+        if (!ev.TryGetProperty("location", out var l) || l.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+        if (GraphClient.Text(l, "displayName") is { } name && !string.IsNullOrWhiteSpace(name))
+        {
+            return name;
+        }
+        if (!l.TryGetProperty("address", out var a) || a.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+        static string Join(string separator, params string?[] parts) =>
+            string.Join(separator, parts.Where(p => !string.IsNullOrWhiteSpace(p)).Select(p => p!.Trim()));
+        var text = Join(", ", GraphClient.Text(a, "street"),
+            Join(" ", GraphClient.Text(a, "city"), GraphClient.Text(a, "state"), GraphClient.Text(a, "postalCode")),
+            GraphClient.Text(a, "countryOrRegion"));
+        return text.Length == 0 ? null : text;
     }
 
     /// <summary>The body as plain text (reads ask for text); an HTML body stored earlier falls back to its preview.</summary>
