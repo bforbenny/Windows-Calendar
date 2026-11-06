@@ -25,7 +25,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [undo](docs/prd/undo.md) | Undo recent changes | in-progress |
 | [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | pending |
 | [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | pending |
-| [calendar-shading](docs/prd/calendar-shading.md) | Working hours, public holidays, week numbers | in-progress |
+| [calendar-shading](docs/prd/calendar-shading.md) | Working hours, public holidays, week numbers | closed |
 | [app-updates](docs/prd/app-updates.md) | MSIX updates via App Installer, data across versions, new-PC install | pending |
 | [tray-flyout](docs/prd/tray-flyout.md) | Tray pop-up with today's agenda and Join | pending |
 | [ui-colour-theme](docs/prd/ui-colour-theme.md) | Palette, colour roles, calendar colours and shape markers | in-progress |
@@ -33,7 +33,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [ui-style](docs/prd/ui-style.md) | Font, type ramp, spacing, motion, locale formats | pending |
 | [ui-states](docs/prd/ui-states.md) | Loading, empty, offline, error and first-launch states | pending |
 | [floating-banners](docs/prd/floating-banners.md) | Banners float over the calendar and never push the layout | closed |
-| [settings-page](docs/prd/settings-page.md) | Settings page layout and contents | pending |
+| [settings-page](docs/prd/settings-page.md) | Settings page layout and contents | in-progress |
 | [tasks](docs/prd/tasks.md) | VTODO and Microsoft To Do tasks | closed |
 | [event-location](docs/prd/event-location.md) | Plain-text location/address on events | pending |
 | [reminders-notifications](docs/prd/reminders-notifications.md) | Windows toast reminders | pending |

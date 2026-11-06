@@ -41,6 +41,10 @@
                                  Visibility="Collapsed" Click="OnAddAccount" />
             </Grid>
 
+            <!-- Settings page: replaces the toolbar and views while open (settings-page R1). -->
+            <Border x:Name="SettingsHost" Grid.Column="1" Canvas.ZIndex="1" Visibility="Collapsed"
+                    Background="{ThemeResource SurfaceBaseBrush}" />
+
             <Grid x:Name="ContentArea" Grid.Column="1" Background="{ThemeResource SurfaceBaseBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -86,10 +90,17 @@
                         <SelectorBarItem Text="Agenda" Tag="Agenda" />
                         <SelectorBarItem Text="Tasks" Tag="Tasks" />
                     </SelectorBar>
-                    <Button Grid.Column="4" Click="OnSyncNow" VerticalAlignment="Center"
-                            ToolTipService.ToolTip="Sync now" AutomationProperties.Name="Sync now">
-                        <FontIcon Glyph="&#xE895;" />
-                    </Button>
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4">
+                        <Button Click="OnSyncNow" VerticalAlignment="Center"
+                                ToolTipService.ToolTip="Sync now" AutomationProperties.Name="Sync now">
+                            <FontIcon Glyph="&#xE895;" />
+                        </Button>
+                        <!-- Settings page (settings-page R1 interim), also Ctrl+,. -->
+                        <Button Click="OnOpenSettings" VerticalAlignment="Center"
+                                ToolTipService.ToolTip="Settings (Ctrl+,)" AutomationProperties.Name="Settings">
+                            <FontIcon Glyph="&#xE713;" />
+                        </Button>
+                    </StackPanel>
                 </Grid>
 
                 <Grid x:Name="Body" Grid.Row="1">

@@ -106,6 +106,17 @@ public sealed partial class MainWindow : Window
             {
                 e.Handled = true;
             }
+            else if (e.Key == Windows.System.VirtualKey.Escape && SettingsHost.Visibility == Visibility.Visible)
+            {
+                e.Handled = true;
+                CloseSettings();
+            }
+            else if (e.Key == (Windows.System.VirtualKey)188 && IsControlDown())
+            {
+                // Ctrl+, (VK_OEM_COMMA) opens Settings (settings-page R1).
+                e.Handled = true;
+                OpenSettings();
+            }
             else if (e.Key == Windows.System.VirtualKey.B && IsControlDown())
             {
                 e.Handled = true;
@@ -390,6 +401,8 @@ public sealed partial class MainWindow : Window
         }
         _renderPending = false;
         Theme.Current = ((FrameworkElement)Content).ActualTheme;
+        ViewParts.Working = Store?.GetWorkingHours() ?? WorkingHours.Default;
+        ViewParts.ShowWeekNumbers = SettingsPage.WeekNumbersOn(Store);
         if (_view == ViewKind.Tasks)
         {
             RenderTasks();

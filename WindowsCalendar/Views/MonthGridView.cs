@@ -29,6 +29,11 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
         ZoomMode = ZoomMode.Disabled,
     };
     private readonly Canvas _canvas = new();
+    // Week numbers left of the rows, scrolled with them (calendar-shading R7 interim).
+    private const double WeekColumnWidth = 36;
+    private readonly ScrollViewer _weekStrip = ViewParts.FollowerStrip(horizontal: false);
+    private readonly Canvas _weekCanvas = new() { Width = WeekColumnWidth };
+    private readonly ColumnDefinition _weekColumn = new() { Width = new GridLength(0) };
     private readonly Dictionary<int, UIElement> _weeks = [];
 
     private DateOnly _first;
@@ -51,11 +56,19 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        root.ColumnDefinitions.Add(_weekColumn);
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         _scroll.Content = _canvas;
+        _weekStrip.Content = _weekCanvas;
         Grid.SetRow(_scroll, 1);
+        Grid.SetColumn(_scroll, 1);
+        Grid.SetColumn(_weekdays, 1);
+        Grid.SetRow(_weekStrip, 1);
         root.Children.Add(_weekdays);
+        root.Children.Add(_weekStrip);
         root.Children.Add(_scroll);
-        Overlay = ViewParts.Overlay(root, 2, 1);
+        Overlay = ViewParts.Overlay(root, 2, 2);
+        _scroll.ViewChanging += (_, e) => _weekStrip.ChangeView(null, e.NextView.VerticalOffset, null, true);
         Content = root;
 
         _scroll.ViewChanged += (_, _) =>
@@ -85,6 +98,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
     public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events, IReadOnlyDictionary<DateOnly, string> holidays)
     {
         (_first, _weekCount, _events, _holidays) = (first, days / 7, events, holidays);
+        _weekColumn.Width = new GridLength(ViewParts.ShowWeekNumbers ? WeekColumnWidth : 0);
         _weekdays.Children.Clear();
         for (var c = 0; c < 7; c++)
         {
@@ -129,7 +143,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
         }
         _weeks.Clear();
         _canvas.Width = _width;
-        _canvas.Height = _weekCount * _rowHeight;
+        _canvas.Height = _weekCanvas.Height = _weekCount * _rowHeight;
         Realize();
         ApplyAnchor();
     }
@@ -164,6 +178,25 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
                 ViewParts.Place(week, 0, w * _rowHeight);
                 _canvas.Children.Add(week);
                 _weeks[w] = week;
+            }
+        }
+
+        _weekCanvas.Children.Clear();
+        if (ViewParts.ShowWeekNumbers)
+        {
+            for (var w = a; w <= b; w++)
+            {
+                var number = new TextBlock
+                {
+                    Text = ViewPeriod.WeekNumber(_first.AddDays(w * 7), _first.DayOfWeek).ToString(),
+                    Style = Theme.Style("CaptionTextBlockStyle"),
+                    Foreground = Theme.Brush("TextSecondaryBrush"),
+                    Width = WeekColumnWidth,
+                    TextAlignment = TextAlignment.Center,
+                };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(number, ViewParts.WeekLabel(_first.AddDays(w * 7), _first.DayOfWeek));
+                ViewParts.Place(number, 0, w * _rowHeight + 8);
+                _weekCanvas.Children.Add(number);
             }
         }
 

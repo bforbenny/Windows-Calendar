@@ -38,6 +38,16 @@ internal interface IScrollingView
 /// <summary>Building blocks shared by the views.</summary>
 internal static class ViewParts
 {
+    /// <summary>Working days and hours (calendar-shading R1), set from the store before each render.</summary>
+    public static WindowsCalendar.Core.Store.WorkingHours Working { get; set; } = WindowsCalendar.Core.Store.WorkingHours.Default;
+
+    /// <summary>"Show week numbers" (calendar-shading R7), set from the store before each render.</summary>
+    public static bool ShowWeekNumbers { get; set; }
+
+    /// <summary>"Wk 45" for the week holding <paramref name="date"/>.</summary>
+    public static string WeekLabel(DateOnly date, DayOfWeek weekStart) =>
+        $"Wk {WindowsCalendar.Core.Views.ViewPeriod.WeekNumber(date, weekStart)}";
+
     /// <summary>A background that receives clicks without drawing anything.</summary>
     public static readonly Brush Clickable = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
 
@@ -167,12 +177,12 @@ internal static class ViewParts
     }
 
     /// <summary>
-    /// Day background: a holiday, Saturday and Sunday the non-working shade (calendar-shading R4, R8; weekends are
-    /// interim until working days are configurable); otherwise today a faint blue. A holiday wins over today.
+    /// Day background: a holiday or a day that is not a working day the non-working shade (calendar-shading R2,
+    /// R4, R8); otherwise today a faint blue. A holiday wins over today.
     /// </summary>
     public static Brush? DayShade(DateOnly date, bool isToday, bool isHoliday = false) =>
         isHoliday ? Theme.Brush("ShadeNonWorkingBrush")
         : isToday ? Theme.Brush("ShadeTodayBrush")
-        : date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday ? Theme.Brush("ShadeNonWorkingBrush")
+        : !Working.IsWorkingDay(date) ? Theme.Brush("ShadeNonWorkingBrush")
         : null;
 }

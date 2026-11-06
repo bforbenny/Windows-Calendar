@@ -2,7 +2,7 @@
 description: Layout and contents of the Settings page, which gathers every user setting in one place
 when-to-use: Before adding or moving any user-facing setting, or working on the Settings UI
 tags: [ui, settings]
-status: pending
+status: in-progress
 ---
 
 # Settings page
@@ -32,6 +32,13 @@ All user settings live on one Settings page inside the main window, laid out lik
 - R5. Settings are stored locally only (LocalSettings and the local store, not roamed); nothing on this page is written to the servers except account sign-in.
 - R6. At window width below 1200 epx the section list collapses to a drop-down or icon rail ([display-scaling](display-scaling.md) R4).
 - R7. About states plainly: uninstalling deletes unsynced changes, conflict copies, colours, shapes, calendar sets and settings; only what is on the servers is kept. Reminders keep firing for up to 48 hours after Quit ([reminders-notifications](reminders-notifications.md) R2).
+
+## Interim (first slice)
+
+- R1: a gear button beside Sync now in the toolbar, or Ctrl+,, opens the page in place of the toolbar and views; the sidebar stays. Back or Esc returns.
+- R2: only the Working hours and Appearance (week numbers) sections exist; the others come with their features. The colour, shape and holiday calendar settings stay in the sidebar right-click menu for now.
+- R5: stored in the local store's meta table.
+- R6 comes with [display-scaling](display-scaling.md).
 
 ## Out of scope
 

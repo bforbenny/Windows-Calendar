@@ -31,6 +31,14 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragH
         ZoomMode = ZoomMode.Disabled,
     };
     private readonly Canvas _headerCanvas = new() { Height = 52 };
+    // "Wk 45" above the hour labels, for the week in the middle of the view (calendar-shading R7 interim).
+    private readonly TextBlock _weekLabel = new()
+    {
+        Style = Theme.Style("CaptionTextBlockStyle"),
+        Foreground = Theme.Brush("TextSecondaryBrush"),
+        HorizontalAlignment = HorizontalAlignment.Center,
+        VerticalAlignment = VerticalAlignment.Center,
+    };
     private IReadOnlyDictionary<DateOnly, string> _holidays = new Dictionary<DateOnly, string>();
     private readonly Canvas _laneCanvas = new();
     private readonly Canvas _bodyCanvas = new() { Height = DayColumnPanel.PixelsFor(24 * 60) };
@@ -71,6 +79,7 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragH
         Add(root, _headerScroll, 0, 1);
         Add(root, _laneScroll, 1, 1);
         Add(root, _gutterScroll, 2, 0);
+        Add(root, _weekLabel, 0, 0);
         Add(root, _bodyScroll, 2, 1);
         Overlay = ViewParts.Overlay(root, 3, 2);
         Content = root;
@@ -261,6 +270,7 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragH
         _laneCanvas.Height = rows == 0 ? 12 : rows * (LaneHeight + 2) + 2;
 
         var middle = _first.AddDays((int)((_bodyScroll.HorizontalOffset + _bodyScroll.ViewportWidth / 2) / _columnWidth));
+        _weekLabel.Text = ViewParts.ShowWeekNumbers ? ViewParts.WeekLabel(middle, _first.DayOfWeek) : "";
         VisibleDayChanged?.Invoke(middle);
     }
 
@@ -275,7 +285,24 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragH
             BorderThickness = new Thickness(1, 0, 0, 0),
             Background = shade ?? ViewParts.Clickable,
         };
-        if (shade is not null)
+        // A working day: the time before Start and after End is shaded (calendar-shading R2), under the hour lines.
+        var hours = ViewParts.Working;
+        var offHours = hours.IsWorkingDay(date) && !_holidays.ContainsKey(date);
+        if (offHours)
+        {
+            var before = DayColumnPanel.PixelsFor(hours.Start.Hour * 60 + hours.Start.Minute);
+            var after = DayColumnPanel.PixelsFor(hours.End.Hour * 60 + hours.End.Minute);
+            var blocks = new Canvas { IsHitTestVisible = false };
+            var brush = Theme.Brush("ShadeNonWorkingBrush");
+            var top = new Rectangle { Width = _columnWidth, Height = before, Fill = brush };
+            var bottom = new Rectangle { Width = _columnWidth, Height = Math.Max(0, _bodyCanvas.Height - after), Fill = brush };
+            ViewParts.Place(top, 0, 0);
+            ViewParts.Place(bottom, 0, after);
+            blocks.Children.Add(top);
+            blocks.Children.Add(bottom);
+            column.Children.Add(blocks);
+        }
+        if (shade is not null || offHours)
         {
             // A shaded background hides the shared hour lines below it, so the column draws its own under the events.
             var lines = new Canvas { IsHitTestVisible = false };

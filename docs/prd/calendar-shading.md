@@ -2,7 +2,7 @@
 description: Working-hours shading, public-holiday shading from designated holiday calendars, and week numbers
 when-to-use: Before working on background shading of time grids/day cells, holiday display, or week numbers
 tags: [ui, views, working-hours, holidays, week-numbers]
-status: in-progress
+status: closed
 ---
 
 # Working hours, public holidays and week numbers
@@ -27,7 +27,9 @@ The views shade non-working hours and public holidays and can show week numbers.
 
 ## Interim (current build)
 
-- Working hours are not configurable yet: Saturday and Sunday are the non-working days, shaded with Shade.NonWorking over the whole day in Week, Month and Agenda. Holidays (R3-R6) are in. Non-working hours on weekdays and week numbers (R7) come later.
+- R1 is set on the Settings page, Working hours section ([settings-page](settings-page.md) interim): seven day checkboxes in the Windows week order and Start / End time pickers in 30-minute steps. An End not after Start shows a message and is not saved.
+- R2: in Week, a working day's time before Start and after End is shaded with Shade.NonWorking, drawn under the hour lines; days not ticked are shaded all day in Week, Month and Agenda. Month and Agenda do not shade hours. Holidays (R3-R6) are in.
+- R7 is the "Show week numbers" toggle in Appearance. There is no Day view or mini month yet, so numbers show in: Month, a narrow column left of each week row; Week, "Wk 45" in the top-left corner above the hour labels, for the week in the middle of the view; Agenda, "Wk 45" in the header label of each week's first day. A week that starts on Sunday shows the ISO number of its Monday.
 - The Week day header grows from 52 to 68 epx only when a holiday falls in the loaded range.
 
 ## Out of scope

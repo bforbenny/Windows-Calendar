@@ -605,6 +605,30 @@ public sealed class LocalStore : IDisposable
         }
     }
 
+    // ---- Working hours (calendar-shading R1; settings-page R5): local only ----
+
+    private const string WorkingHoursKey = "setting:working-hours";
+
+    public WorkingHours GetWorkingHours()
+    {
+        lock (_gate)
+        {
+            return WorkingHours.Parse(GetMeta(null, WorkingHoursKey));
+        }
+    }
+
+    public void SetWorkingHours(WorkingHours hours)
+    {
+        if (hours.End <= hours.Start)
+        {
+            throw new ArgumentException("Working hours must end after they start.", nameof(hours));
+        }
+        lock (_gate)
+        {
+            SetMeta(null, WorkingHoursKey, hours.Serialize());
+        }
+    }
+
     // ---- Public holiday calendar (calendar-shading R3, R5): one at a time, local only ----
 
     private const string HolidayKey = "holiday-calendar";

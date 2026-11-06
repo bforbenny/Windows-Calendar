@@ -150,6 +150,12 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
             {
                 label = label is null ? holiday : $"{label} · {holiday}";
             }
+            // The first day of each week carries its number (calendar-shading R7 interim).
+            if (ViewParts.ShowWeekNumbers && date.DayOfWeek == _first.DayOfWeek)
+            {
+                var week = ViewParts.WeekLabel(date, _first.DayOfWeek);
+                label = label is null ? week : $"{week} · {label}";
+            }
             var header = ViewParts.DayHeader(date, date == today, label, "d MMM");
             header.Width = _columnWidth;
             ViewParts.Place(header, i * _columnWidth, 0);

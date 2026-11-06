@@ -21,6 +21,17 @@ public static class ViewPeriod
         date.AddDays(-(((int)date.DayOfWeek - (int)weekStart + 7) % 7));
 
     /// <summary>
+    /// The ISO 8601 week number of the week holding <paramref name="date"/> (calendar-shading R7): that of the
+    /// week's Monday, so a week starting on Sunday takes the number of its working days.
+    /// </summary>
+    public static int WeekNumber(DateOnly date, DayOfWeek weekStart)
+    {
+        var start = StartOfWeek(date, weekStart);
+        var monday = start.AddDays(((int)DayOfWeek.Monday - (int)start.DayOfWeek + 7) % 7);
+        return System.Globalization.ISOWeek.GetWeekOfYear(monday.ToDateTime(TimeOnly.MinValue));
+    }
+
+    /// <summary>
     /// Indices of the items (days or weeks) to build: those in the viewport plus <paramref name="buffer"/> on each
     /// side, clamped to [0, count). Empty (First > Last) when there is nothing to show.
     /// </summary>
