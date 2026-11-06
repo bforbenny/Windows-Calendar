@@ -57,7 +57,8 @@ public static class GraphEventMapper
             LastModifiedUtc: modified,
             SeriesId: type is "occurrence" or "exception" ? GraphClient.Text(ev, "seriesMasterId") : null,
             ReadOnly: IsMeeting(ev),
-            Unaccepted: IsUnaccepted(ev));
+            Unaccepted: IsUnaccepted(ev),
+            JoinUrl: JoinLink.FromGraph(ev)?.Url);
     }
 
     /// <summary>A meeting: it has attendees, or someone else organised it. The app does not change meetings.</summary>

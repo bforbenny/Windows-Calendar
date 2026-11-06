@@ -19,7 +19,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [agenda-view](docs/prd/agenda-view.md) | Agenda: day columns of lists, free scrolling | in-progress |
 | [attendees-invitations](docs/prd/attendees-invitations.md) | Read-only attendees, needs-response marker, Open in Outlook, organiser guards | in-progress |
 | [event-show-as](docs/prd/event-show-as.md) | Busy / Free / Tentative / Out of office | in-progress |
-| [online-meeting-join](docs/prd/online-meeting-join.md) | Join button for Teams/Zoom/Meet/Webex links | pending |
+| [online-meeting-join](docs/prd/online-meeting-join.md) | Join button for Teams/Zoom/Meet/Webex links | in-progress |
 | [quick-add](docs/prd/quick-add.md) | Typed quick add, offline rule-based parser | pending |
 | [duplicate-event](docs/prd/duplicate-event.md) | Duplicate an event | in-progress |
 | [undo](docs/prd/undo.md) | Undo recent changes | in-progress |

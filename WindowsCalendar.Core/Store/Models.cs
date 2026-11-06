@@ -79,7 +79,8 @@ public sealed record Item(
     DateTimeOffset? LastModifiedUtc = null,
     string? SeriesId = null,
     bool ReadOnly = false,
-    bool Unaccepted = false);
+    bool Unaccepted = false,
+    string? JoinUrl = null);
 
 /// <summary>A queued local change (local-store-offline R4). Id order is replay order.</summary>
 public sealed record OutboxEntry(
@@ -125,7 +126,8 @@ public sealed record OccurrenceView(
     bool ReadOnly = false,
     bool Unaccepted = false,
     bool Completed = false,
-    ShowAs ShowAs = ShowAs.Busy);
+    ShowAs ShowAs = ShowAs.Busy,
+    string? JoinUrl = null);
 
 /// <summary>One expanded instance of an item in the occurrence index (local-store-offline R3).</summary>
 public sealed record ItemOccurrence(string ItemId, DateTimeOffset StartUtc, DateTimeOffset EndUtc);

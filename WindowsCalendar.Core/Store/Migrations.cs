@@ -166,6 +166,13 @@ internal static class Migrations
         """
         INSERT INTO meta (key, value) VALUES ('remap-show-as', '1');
         """,
+
+        // v12: each event's online-meeting join link (online-meeting-join R3); existing events are read again once on
+        // open (LocalStore.Remap).
+        """
+        ALTER TABLE items ADD COLUMN join_url TEXT;
+        INSERT INTO meta (key, value) VALUES ('remap-join-url', '1');
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

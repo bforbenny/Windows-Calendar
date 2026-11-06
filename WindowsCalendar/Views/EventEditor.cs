@@ -84,6 +84,7 @@ internal sealed partial class EventEditor : UserControl
 
         var form = new StackPanel { Spacing = 12, Padding = new Thickness(16, 0, 16, 16) };
         form.Children.Add(_notice);
+        form.Children.Add(_join);
         form.Children.Add(_title);
         form.Children.Add(_allDay);
         form.Children.Add(DateTimeRow(_startDate, _startTime));
@@ -107,10 +108,16 @@ internal sealed partial class EventEditor : UserControl
         Visibility = Visibility.Collapsed;
 
         // Text saves when it loses focus; Enter in the title saves too (R6d).
+        // A link typed into the location or description may make the event joinable (online-meeting-join R1).
         foreach (var box in new[] { _title, _location, _description })
         {
-            box.LostFocus += (_, _) => Save();
+            box.LostFocus += (_, _) =>
+            {
+                Save();
+                RefreshJoin();
+            };
         }
+        _join.Click += (_, _) => Join();
         _title.KeyDown += (_, e) =>
         {
             if (e.Key == VirtualKey.Enter)
@@ -391,6 +398,7 @@ internal sealed partial class EventEditor : UserControl
         _repeat.Show(_savedRule ?? RepeatRule.None, DateOnly.FromDateTime(fields.Start));
         _repeat.SetEnabled(!_readOnly);
         ShowTimePickers();
+        RefreshJoin();
         _loading = false;
 
         if (!IsOpen)

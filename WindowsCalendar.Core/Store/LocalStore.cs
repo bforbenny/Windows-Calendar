@@ -18,7 +18,8 @@ public sealed class LocalStore : IDisposable
     private const string ItemColumns =
         """
         i.id, i.collection_id, i.kind, i.remote_id, i.raw_payload, i.summary, i.start_utc, i.end_utc, i.all_day, i.time_zone,
-        i.location, i.status, i.due_utc, i.completed_utc, i.is_recurring, i.etag, i.last_modified, i.series_id, i.read_only, i.unaccepted
+        i.location, i.status, i.due_utc, i.completed_utc, i.is_recurring, i.etag, i.last_modified, i.series_id, i.read_only, i.unaccepted,
+        i.join_url
         """;
 
     private const string OutboxColumns =
@@ -48,7 +49,10 @@ public sealed class LocalStore : IDisposable
         {
             connection.Open();
             Migrations.Apply(connection);
-            RemapShowAs(connection);
+            // After v11 and v12: columns that older versions did not fill are read from the stored events once.
+            Remap(connection, "remap-show-as", "status", "raw_payload NOT LIKE '{%'",
+                payload => ShowAsValues.ToGraph(CalDav.CalDavEvents.ReadShowAs(CalDav.CalDavEvents.Master(Ical.Net.Calendar.Load(payload)!))));
+            Remap(connection, "remap-join-url", "join_url", "1 = 1", payload => JoinLink.FromPayload(payload)?.Url);
             Execute(connection, null, "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
             // Entries left in flight by a crash are sent again (R4).
             Execute(connection, null, "UPDATE outbox SET in_flight = 0 WHERE in_flight = 1;");
@@ -64,11 +68,12 @@ public sealed class LocalStore : IDisposable
     public void Dispose() => _connection.Dispose();
 
     /// <summary>
-    /// After migration v11: the status column of stored CalDAV events is set to their show-as (event-show-as), once.
+    /// When the meta flag <paramref name="key"/> is set (by a migration): sets <paramref name="column"/> of the stored
+    /// events matching <paramref name="filter"/> from their payload, then clears the flag. Both names are constants.
     /// </summary>
-    private static void RemapShowAs(SqliteConnection connection)
+    private static void Remap(SqliteConnection connection, string key, string column, string filter, Func<string, string?> derive)
     {
-        using (var check = Command(connection, null, "SELECT 1 FROM meta WHERE key = 'remap-show-as';"))
+        using (var check = Command(connection, null, "SELECT 1 FROM meta WHERE key = $key;", ("$key", key)))
         {
             if (check.ExecuteScalar() is null)
             {
@@ -77,7 +82,7 @@ public sealed class LocalStore : IDisposable
         }
         using var tx = connection.BeginTransaction();
         var rows = new List<(string Id, string Payload)>();
-        using (var cmd = Command(connection, tx, "SELECT id, raw_payload FROM items WHERE kind = 'Event' AND raw_payload NOT LIKE '{%';"))
+        using (var cmd = Command(connection, tx, $"SELECT id, raw_payload FROM items WHERE kind = 'Event' AND {filter};"))
         using (var r = cmd.ExecuteReader())
         {
             while (r.Read())
@@ -87,18 +92,18 @@ public sealed class LocalStore : IDisposable
         }
         foreach (var (id, payload) in rows)
         {
-            string status;
+            string? value;
             try
             {
-                status = ShowAsValues.ToGraph(CalDav.CalDavEvents.ReadShowAs(CalDav.CalDavEvents.Master(Ical.Net.Calendar.Load(payload)!)));
+                value = derive(payload);
             }
             catch (Exception)
             {
                 continue;
             }
-            Execute(connection, tx, "UPDATE items SET status = $status WHERE id = $id;", ("$status", status), ("$id", id));
+            Execute(connection, tx, $"UPDATE items SET {column} = $value WHERE id = $id;", ("$value", value), ("$id", id));
         }
-        Execute(connection, tx, "DELETE FROM meta WHERE key = 'remap-show-as';");
+        Execute(connection, tx, "DELETE FROM meta WHERE key = $key;", ("$key", key));
         tx.Commit();
     }
 
@@ -574,7 +579,8 @@ public sealed class LocalStore : IDisposable
                        o.start_utc, o.end_utc, i.all_day, i.is_recurring, o.recurrence_utc, i.read_only OR COALESCE(m.read_only, 0),
                        CASE WHEN i.series_id IS NOT NULL AND i.summary IS NULL THEN COALESCE(m.unaccepted, 0) ELSE i.unaccepted END,
                        i.completed_utc IS NOT NULL OR lower(COALESCE(i.status, '')) = 'completed',
-                       CASE WHEN i.kind = 'Event' THEN COALESCE(i.status, m.status) END
+                       CASE WHEN i.kind = 'Event' THEN COALESCE(i.status, m.status) END,
+                       COALESCE(i.join_url, m.join_url)
                 FROM occurrences o JOIN items i ON i.id = o.item_id
                 LEFT JOIN items m ON i.series_id IS NOT NULL AND m.collection_id = i.collection_id AND m.remote_id = i.series_id AND m.deleted = 0
                 WHERE i.deleted = 0 AND o.start_utc < $to AND o.end_utc >= $from
@@ -589,7 +595,7 @@ public sealed class LocalStore : IDisposable
                 list.Add(new OccurrenceView(r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)),
                     NullableString(r, 3), NullableString(r, 4), Time(r, 5), Time(r, 6), r.GetBoolean(7), r.GetBoolean(8),
                     r.IsDBNull(9) ? null : Time(r, 9), r.GetBoolean(10), r.GetBoolean(11), r.GetBoolean(12),
-                    ShowAsValues.FromGraph(NullableString(r, 13))));
+                    ShowAsValues.FromGraph(NullableString(r, 13)), NullableString(r, 14)));
             }
             return list;
         }
@@ -1127,9 +1133,9 @@ public sealed class LocalStore : IDisposable
     private const string InsertItemSql =
         """
         INSERT INTO items (id, collection_id, kind, remote_id, raw_payload, summary, start_utc, end_utc, all_day,
-            time_zone, location, status, due_utc, completed_utc, is_recurring, etag, last_modified, series_id, read_only, unaccepted)
+            time_zone, location, status, due_utc, completed_utc, is_recurring, etag, last_modified, series_id, read_only, unaccepted, join_url)
         VALUES ($id, $collection, $kind, $remote, $raw, $summary, $start, $end, $allDay,
-            $tz, $location, $status, $due, $completed, $recurring, $etag, $modified, $series, $readOnly, $unaccepted);
+            $tz, $location, $status, $due, $completed, $recurring, $etag, $modified, $series, $readOnly, $unaccepted, $join);
         """;
 
     private const string UpdateItemSql =
@@ -1137,7 +1143,8 @@ public sealed class LocalStore : IDisposable
         UPDATE items SET collection_id = $collection, kind = $kind, remote_id = $remote, raw_payload = $raw,
             summary = $summary, start_utc = $start, end_utc = $end, all_day = $allDay, time_zone = $tz,
             location = $location, status = $status, due_utc = $due, completed_utc = $completed,
-            is_recurring = $recurring, etag = $etag, last_modified = $modified, series_id = $series, read_only = $readOnly, unaccepted = $unaccepted
+            is_recurring = $recurring, etag = $etag, last_modified = $modified, series_id = $series, read_only = $readOnly, unaccepted = $unaccepted,
+            join_url = $join
         WHERE id = $id;
         """;
 
@@ -1352,7 +1359,7 @@ public sealed class LocalStore : IDisposable
         {
             r.Read();
             item = ReadItem(r);
-            accountType = Enum.Parse<AccountType>(r.GetString(20));
+            accountType = Enum.Parse<AccountType>(r.GetString(21));
         }
 
         Execute(_connection, tx, "DELETE FROM occurrences WHERE item_id = $id;", ("$id", itemId));
@@ -1384,7 +1391,7 @@ public sealed class LocalStore : IDisposable
         r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)), NullableString(r, 3), r.GetString(4),
         NullableString(r, 5), NullableTime(r, 6), NullableTime(r, 7), r.GetBoolean(8), NullableString(r, 9),
         NullableString(r, 10), NullableString(r, 11), NullableTime(r, 12), NullableTime(r, 13), r.GetBoolean(14),
-        NullableString(r, 15), NullableTime(r, 16), NullableString(r, 17), r.GetBoolean(18), r.GetBoolean(19));
+        NullableString(r, 15), NullableTime(r, 16), NullableString(r, 17), r.GetBoolean(18), r.GetBoolean(19), NullableString(r, 20));
 
     private static (string, object?)[] ItemParameters(Item i) =>
     [
@@ -1394,6 +1401,7 @@ public sealed class LocalStore : IDisposable
         ("$location", i.Location), ("$status", i.Status), ("$due", i.DueUtc?.ToUnixTimeMilliseconds()),
         ("$completed", i.CompletedUtc?.ToUnixTimeMilliseconds()), ("$recurring", i.IsRecurring), ("$etag", i.Etag),
         ("$modified", i.LastModifiedUtc?.ToUnixTimeMilliseconds()), ("$series", i.SeriesId), ("$readOnly", i.ReadOnly), ("$unaccepted", i.Unaccepted),
+        ("$join", i.JoinUrl),
     ];
 
     private static SqliteCommand Command(SqliteConnection connection, SqliteTransaction? tx, string sql, params (string Name, object? Value)[] parameters)

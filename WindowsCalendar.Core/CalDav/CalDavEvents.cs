@@ -79,7 +79,7 @@ public static class CalDavEvents
 
     /// <summary>
     /// A new, independent copy of an event in <paramref name="target"/> (duplicate-event R3-R5): new UID and href, no
-    /// attendees, organiser or conference link. An occurrence (<paramref name="recurrence"/>) becomes a single event
+    /// attendees, organiser, conference or join link. An occurrence (<paramref name="recurrence"/>) becomes a single event
     /// with that occurrence's fields; otherwise the whole event is copied, repeat rule and overrides included.
     /// <paramref name="at"/> moves the copy (a Ctrl+drag drop).
     /// </summary>
@@ -112,6 +112,14 @@ public static class CalDavEvents
             foreach (var name in new[] { "ATTENDEE", "ORGANIZER", "CONFERENCE", "LAST-MODIFIED" })
             {
                 ev.Properties.Remove(name);
+            }
+            // The meeting's join link stays with the meeting (online-meeting-join R7); other URLs are kept.
+            foreach (var name in JoinLink.PropertyNames.Append("URL"))
+            {
+                if (JoinLink.Recognise(ev.Properties.Get<object>(name)?.ToString()) is not null)
+                {
+                    ev.Properties.Remove(name);
+                }
             }
             ev.Created = Utc(now);
             ev.DtStamp = Utc(now);

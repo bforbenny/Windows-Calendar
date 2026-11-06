@@ -38,7 +38,8 @@ internal static class CalDavItemMapper
             return new Item("", "", ItemKind.Event, href, data,
                 Summary: ev.Summary, StartUtc: start, EndUtc: Utc(ev.DtEnd ?? ev.DtStart?.Add(ev.EffectiveDuration), zone) ?? start,
                 AllDay: ev.DtStart is { HasTime: false }, TimeZone: ev.DtStart?.TzId, Location: ev.Location,
-                Status: ShowAsValues.ToGraph(CalDavEvents.ReadShowAs(ev)), IsRecurring: IsRecurring(ev), Etag: etag, LastModifiedUtc: Utc(ev.LastModified, zone));
+                Status: ShowAsValues.ToGraph(CalDavEvents.ReadShowAs(ev)), IsRecurring: IsRecurring(ev), Etag: etag, LastModifiedUtc: Utc(ev.LastModified, zone),
+                JoinUrl: JoinLink.FromCalDav(ev)?.Url);
         }
 
         var todo = calendar.Todos.FirstOrDefault(t => t.RecurrenceIdentifier is null) ?? calendar.Todos.FirstOrDefault();

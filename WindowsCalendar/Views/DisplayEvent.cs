@@ -17,11 +17,19 @@ namespace WindowsCalendar.Views;
 /// All-day and 24-hour-or-longer events go in the all-day lane (R3). Editable events can be dragged (R7); read-only
 /// calendars, subscriptions and MS365 meetings (sync-ms365 second slice) cannot. <paramref name="Recurrence"/> names the occurrence of a repeating event.
 /// A task (tasks R6 interim) is never dragged; <paramref name="Checkable"/> lets its checkbox complete it.
-/// <paramref name="ShowAs"/> sets the card's style (event-show-as R5).
+/// <paramref name="ShowAs"/> sets the card's style (event-show-as R5). <paramref name="Join"/> is its online-meeting link
+/// (online-meeting-join R2).
 /// </summary>
 internal sealed record DisplayEvent(string ItemId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay,
-    Collection Collection, bool Editable, DateTimeOffset? Recurrence, ShowAs ShowAs = ShowAs.Busy, bool IsTask = false, bool Checkable = false)
+    Collection Collection, bool Editable, DateTimeOffset? Recurrence, ShowAs ShowAs = ShowAs.Busy, bool IsTask = false, bool Checkable = false,
+    JoinLink? Join = null)
 {
+    /// <summary>Join shows on cards from this many minutes before the start until the end (online-meeting-join R4).</summary>
+    public const int JoinLeadMinutes = 10;
+
+    /// <summary>Whether the event is in progress or starts within <see cref="JoinLeadMinutes"/>, and has a join link.</summary>
+    public bool JoinNow(DateTime now) => Join is not null && !IsTask && now >= Start.AddMinutes(-JoinLeadMinutes) && now < End;
+
     public bool InAllDayLane => AllDay || End - Start >= TimeSpan.FromHours(24);
 
     /// <summary>An event in a calendar the app can write to may be copied, meetings too (duplicate-event R1, R4).</summary>
@@ -45,7 +53,8 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
         collection,
         !o.ReadOnly && !collection.ReadOnly && collection.SourceUrl is null,
         o.RecurrenceUtc,
-        o.ShowAs);
+        o.ShowAs,
+        Join: o.Kind == ItemKind.Event ? JoinLink.Recognise(o.JoinUrl) : null);
 
     /// <summary>Times in the Windows region format (ui-style R7).</summary>
     public string TimeText()
@@ -170,6 +179,14 @@ internal static class EventCard
         row.Children.Add(marker);
         Grid.SetColumn(line, 1);
         row.Children.Add(line);
+        // Day, Week and Agenda cards offer Join around the meeting's time (online-meeting-join R4).
+        if (!chip && (fit || height >= TimeThreshold) && e.JoinNow(DateTime.Now))
+        {
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            var join = JoinButton(e);
+            Grid.SetColumn(join, 2);
+            row.Children.Add(join);
+        }
 
         if (!twoLines)
         {
@@ -236,6 +253,28 @@ internal static class EventCard
         brush.GradientStops.Add(new GradientStop { Color = Colors.Transparent, Offset = 0.5 });
         brush.GradientStops.Add(new GradientStop { Color = Colors.Transparent, Offset = 1 });
         return brush;
+    }
+
+    /// <summary>A small Join button; pressing it neither opens nor drags the card.</summary>
+    private static Button JoinButton(DisplayEvent e)
+    {
+        var link = e.Join!;
+        var button = new Button
+        {
+            Content = "Join",
+            FontSize = 12,
+            Padding = new Thickness(6, 0, 6, 1),
+            MinHeight = 0,
+            MinWidth = 0,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
+        ToolTipService.SetToolTip(button, $"Join {link.Provider} meeting (Ctrl+J when selected)");
+        AutomationProperties.SetName(button, $"Join {link.Provider} meeting: {e.Title}");
+        button.PointerPressed += (_, args) => args.Handled = true;
+        button.Tapped += (_, args) => args.Handled = true;
+        button.DoubleTapped += (_, args) => args.Handled = true;
+        button.Click += (_, _) => MeetingJoin.Launch(link);
+        return button;
     }
 
     /// <summary>An empty checkbox in the list colour before a task's title; ticking it completes the task.</summary>

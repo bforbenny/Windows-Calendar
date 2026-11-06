@@ -14,7 +14,7 @@ namespace WindowsCalendar;
 
 /// <summary>
 /// Keyboard shortcuts and the keyboard selection (keyboard-navigation interim): F1-F4 views, T today, F5 sync,
-/// Ctrl+G go to date, PgUp / PgDn, ? cheat sheet; Arrows select, Enter opens, Del deletes, Ctrl+D duplicates, Esc clears, and
+/// Ctrl+G go to date, PgUp / PgDn, ? cheat sheet; Arrows select, Enter opens, Del deletes, Ctrl+D duplicates, Ctrl+J joins, Esc clears, and
 /// Alt(+Shift)+Arrows move or resize the selected event through the drag path (R3).
 /// </summary>
 public sealed partial class MainWindow
@@ -33,6 +33,8 @@ public sealed partial class MainWindow
         ("Del", "Delete the selected event"),
         ("Ctrl+D", "Duplicate the selected event"),
         ("Ctrl+drag", "Copy an event to where it is dropped"),
+        ("Ctrl+J", "Join the selected event's online meeting"),
+        ("Ctrl+Shift+J", "Join the meeting on now or starting within 10 minutes"),
         ("Alt+Up / Alt+Down", "Move the selected event 15 minutes"),
         ("Alt+Left / Alt+Right", "Move the selected event one day"),
         ("Alt+Shift+Up / Down", "Shorten / lengthen the selected event by 15 minutes"),
@@ -73,6 +75,11 @@ public sealed partial class MainWindow
             ShowGoToDate();
             return true;
         }
+        if (ctrl && shift && !alt && key == VirtualKey.J)
+        {
+            JoinNext();
+            return true;
+        }
         if (!SingleKeysAllowed())
         {
             return false;
@@ -108,6 +115,9 @@ public sealed partial class MainWindow
                 return true;
             case VirtualKey.D when ctrl && !shift && !alt && calendar && Selected() is { CanDuplicate: true } original:
                 Duplicate(original, null);
+                return true;
+            case VirtualKey.J when ctrl && !shift && !alt && calendar && Selected() is { Join: not null }:
+                JoinSelected();
                 return true;
             case VirtualKey.Delete when plain && Selected() is { IsTask: false } doomed:
                 ShowEventEditor();

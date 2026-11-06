@@ -170,7 +170,7 @@ public sealed partial class MainWindow : Window
         _minuteTimer.Interval = TimeSpan.FromMinutes(1);
         _minuteTimer.Tick += (_, _) =>
         {
-            if (DateOnly.FromDateTime(DateTime.Now) != _today || !CurrentView.UpdateNowLine())
+            if (DateOnly.FromDateTime(DateTime.Now) != _today || JoinChanged() || !CurrentView.UpdateNowLine())
             {
                 _today = DateOnly.FromDateTime(DateTime.Now);
                 RenderView();
@@ -448,6 +448,7 @@ public sealed partial class MainWindow : Window
         }
 
         _shownEvents = events;
+        RememberJoinShown();
         var view = (UIElement)CurrentView;
         CurrentView.SetData(first, days, events, holidays);
         if (ViewHost.Children.Count != 1 || ViewHost.Children[0] != view)
