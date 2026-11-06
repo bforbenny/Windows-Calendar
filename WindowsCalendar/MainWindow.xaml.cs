@@ -697,6 +697,8 @@ public sealed partial class MainWindow : Window
             label.Children.Add(icon);
         }
         var check = new CheckBox { Content = label, IsChecked = visible, MinWidth = 0 };
+        // Right-click: colour and icon (ui-colour-theme interim).
+        check.ContextFlyout = StyleMenu(collection, check);
         if (status is not null)
         {
             Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(check, $"{collection.Name}, {status}");

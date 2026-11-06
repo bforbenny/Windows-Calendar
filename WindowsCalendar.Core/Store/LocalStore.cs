@@ -109,8 +109,9 @@ public sealed class LocalStore : IDisposable
             {
                 var (colour, shape) = CollectionStyle.Next(inUse.Count, inUse);
                 inUse.Add((colour, shape));
-                colour = CalendarColours.Snap(f.ServerColour) ?? colour;
-                var c = new Collection(Guid.NewGuid().ToString("N"), account.Id, f.Kind, f.Name, colour, shape, true, f.ReadOnly, f.RemoteRef, f.SourceUrl);
+                var server = CalendarColours.Snap(f.ServerColour);
+                var c = new Collection(Guid.NewGuid().ToString("N"), account.Id, f.Kind, f.Name, server ?? colour, shape, true, f.ReadOnly,
+                    f.RemoteRef, f.SourceUrl, ServerColour: server);
                 InsertCollection(tx, c);
                 added.Add(c);
             }
@@ -157,7 +158,7 @@ public sealed class LocalStore : IDisposable
         {
             using var cmd = Command(_connection, null,
                 """
-                SELECT id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref, source_url
+                SELECT id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref, source_url, colour_override, server_colour
                 FROM collections WHERE account_id = $a ORDER BY rowid;
                 """,
                 ("$a", accountId));
@@ -166,7 +167,8 @@ public sealed class LocalStore : IDisposable
             while (r.Read())
             {
                 list.Add(new Collection(r.GetString(0), r.GetString(1), Enum.Parse<CollectionKind>(r.GetString(2)), r.GetString(3),
-                    r.GetString(4), r.GetString(5), r.GetBoolean(6), r.GetBoolean(7), r.GetString(8), NullableString(r, 9)));
+                    r.GetString(4), r.GetString(5), r.GetBoolean(6), r.GetBoolean(7), r.GetString(8), NullableString(r, 9),
+                    r.GetBoolean(10), NullableString(r, 11)));
             }
             return list;
         }
@@ -239,19 +241,28 @@ public sealed class LocalStore : IDisposable
                 {
                     var (colour, shape) = CollectionStyle.Next(inUse.Count, inUse);
                     inUse.Add((colour, shape));
-                    colour = CalendarColours.Snap(f.ServerColour) ?? colour;
-                    InsertCollection(tx, new Collection(Guid.NewGuid().ToString("N"), accountId, f.Kind, f.Name, colour, shape,
-                        true, f.ReadOnly, f.RemoteRef, f.SourceUrl));
+                    var server = CalendarColours.Snap(f.ServerColour);
+                    InsertCollection(tx, new Collection(Guid.NewGuid().ToString("N"), accountId, f.Kind, f.Name, server ?? colour, shape,
+                        true, f.ReadOnly, f.RemoteRef, f.SourceUrl, ServerColour: server));
                     added++;
                 }
-                else if (match.Name != f.Name || match.ReadOnly != f.ReadOnly || match.SourceUrl != f.SourceUrl
-                    || (CalendarColours.Snap(f.ServerColour) is { } snapped && snapped != match.Colour))
+                else
                 {
-                    Execute(_connection, tx,
-                        "UPDATE collections SET name = $name, read_only = $ro, source_url = $source, colour = $colour WHERE id = $id;",
-                        ("$name", f.Name), ("$ro", f.ReadOnly), ("$source", f.SourceUrl),
-                        ("$colour", CalendarColours.Snap(f.ServerColour) ?? match.Colour), ("$id", match.Id));
-                    updated++;
+                    // A server colour is remembered; it sets the colour unless the user chose one (ui-colour-theme interim).
+                    var server = CalendarColours.Snap(f.ServerColour) ?? match.ServerColour;
+                    var colour = match.ColourOverride ? match.Colour : server ?? match.Colour;
+                    if (match.Name != f.Name || match.ReadOnly != f.ReadOnly || match.SourceUrl != f.SourceUrl
+                        || colour != match.Colour || server != match.ServerColour)
+                    {
+                        Execute(_connection, tx,
+                            """
+                            UPDATE collections SET name = $name, read_only = $ro, source_url = $source, colour = $colour,
+                                server_colour = $server WHERE id = $id;
+                            """,
+                            ("$name", f.Name), ("$ro", f.ReadOnly), ("$source", f.SourceUrl), ("$colour", colour),
+                            ("$server", server), ("$id", match.Id));
+                        updated++;
+                    }
                 }
             }
 
@@ -559,6 +570,38 @@ public sealed class LocalStore : IDisposable
                 items.Add(ReadItem(r));
             }
             return items;
+        }
+    }
+
+    // ---- Collection colour and marker overrides (ui-colour-theme interim); local only ----
+
+    /// <summary>A colour the user chose: later server colours no longer change it.</summary>
+    public void SetCollectionColour(string collectionId, string colour)
+    {
+        lock (_gate)
+        {
+            Execute(_connection, null, "UPDATE collections SET colour = $colour, colour_override = 1 WHERE id = $id;",
+                ("$colour", colour), ("$id", collectionId));
+        }
+    }
+
+    /// <summary>Back to the server colour, which sync follows again; nothing changes without one.</summary>
+    public void UseServerColour(string collectionId)
+    {
+        lock (_gate)
+        {
+            Execute(_connection, null,
+                "UPDATE collections SET colour = server_colour, colour_override = 0 WHERE id = $id AND server_colour IS NOT NULL;",
+                ("$id", collectionId));
+        }
+    }
+
+    /// <summary>A shape name or "Glyph:XXXX" for a Fluent icon (ui-colour-theme R7).</summary>
+    public void SetCollectionShape(string collectionId, string shape)
+    {
+        lock (_gate)
+        {
+            Execute(_connection, null, "UPDATE collections SET shape = $shape WHERE id = $id;", ("$shape", shape), ("$id", collectionId));
         }
     }
 
@@ -1083,12 +1126,13 @@ public sealed class LocalStore : IDisposable
     private void InsertCollection(SqliteTransaction? tx, Collection c) =>
         Execute(_connection, tx,
             """
-            INSERT INTO collections (id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref, source_url)
-            VALUES ($id, $account, $kind, $name, $colour, $shape, $reminders, $readOnly, $remote, $source);
+            INSERT INTO collections (id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref, source_url,
+                colour_override, server_colour)
+            VALUES ($id, $account, $kind, $name, $colour, $shape, $reminders, $readOnly, $remote, $source, $override, $server);
             """,
             ("$id", c.Id), ("$account", c.AccountId), ("$kind", c.Kind.ToString()), ("$name", c.Name),
             ("$colour", c.Colour), ("$shape", c.Shape), ("$reminders", c.RemindersOn), ("$readOnly", c.ReadOnly),
-            ("$remote", c.RemoteRef), ("$source", c.SourceUrl));
+            ("$remote", c.RemoteRef), ("$source", c.SourceUrl), ("$override", c.ColourOverride), ("$server", c.ServerColour));
 
     private string? GetMeta(SqliteTransaction? tx, string key)
     {

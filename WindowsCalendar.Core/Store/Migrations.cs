@@ -154,6 +154,12 @@ internal static class Migrations
         """
         DELETE FROM meta WHERE key = 'occurrences_built';
         """,
+
+        // v10: colour overrides and the snapped server colour (ui-colour-theme interim).
+        """
+        ALTER TABLE collections ADD COLUMN colour_override INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE collections ADD COLUMN server_colour TEXT;
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

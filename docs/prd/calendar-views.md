@@ -33,7 +33,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 - R2a. Calendar colours and shapes, per [ui-colour-theme](ui-colour-theme.md) R6–R9:
   - each calendar or task list has one of 24 colours (8 hues × 3 levels) and a shape marker (up triangle, down triangle, square, circle, pentagon), shown by default;
   - the initial colour is the server colour (Graph `hexColor` / `color`; CalDAV `calendar-color`) snapped to the nearest of the 24, or else an automatic assignment;
-  - the user can override the colour and the shape per calendar or task list;
+  - the user can override the colour and the shape (or a Fluent icon, [ui-colour-theme](ui-colour-theme.md) R7) per calendar or task list;
   - overrides are stored locally and not written back to the server;
   - event cards use the fill, bar and text steps defined in [ui-colour-theme](ui-colour-theme.md), which meet WCAG AA in both themes.
 - R3. All-day / multi-day events are shown in an all-day lane in Day/Week, and as bars in Month.

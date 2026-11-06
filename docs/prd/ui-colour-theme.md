@@ -79,10 +79,10 @@ All UI colours come from one palette of 10-step ramps, where a given step has th
     | Event text | Grey 100 | Night 10 |
 
   - All combinations meet WCAG AA for text (≥ 4.5:1) and 3:1 for swatches/markers against the surface.
-- R7. Calendar shape markers: up triangle, down triangle, square, circle, pentagon.
+- R7. Calendar markers: a shape (up triangle, down triangle, square, circle, pentagon) or a Fluent icon from a fixed set (Segoe Fluent Icons), drawn in the swatch colour.
   - On by default; a setting "Show calendar shapes" turns them off.
   - The marker is drawn filled in the calendar's swatch colour: as the sidebar swatch, before the title on event cards (Day/Week/Month), in Agenda rows, tray flyout rows, search results and the quick-add preview. Size 10 epx, vector-drawn.
-  - The user can change a calendar's shape; the choice is stored locally, never sent to the server.
+  - The user can change a calendar's marker to another shape or an icon; the choice is stored locally, never sent to the server.
 - R8. Automatic assignment for a new calendar (when no override exists): calendar number i (0-based, in order added) gets hue `[Navy, Orange, Teal, Pink, Sea Green, Purple, Amber, Strawberry Red][i mod 8]`, level `L((i mod 3) + 1)`, and shape `[circle, square, up triangle, down triangle, pentagon][i mod 5]`, skipping combinations already in use. Adjacent calendars therefore differ in hue, lightness and shape.
 - R9. Server colours (Graph `hexColor`/`color`, CalDAV `calendar-color`) are snapped to the nearest of the 24 calendar colours (smallest CIELAB ΔE). Overrides and snapping are local only; nothing is written back to the server.
 - R10. Past events are drawn the same as future events; the now line and today shading show where the present is. (Dimming past events was rejected: a lighter bar falls below 3:1 for level-1 colours.)
@@ -93,7 +93,10 @@ All UI colours come from one palette of 10-step ramps, where a given step has th
 - R9: Radicale `calendar-color` (`#RRGGBB` or `#RRGGBBAA`, alpha ignored) and Graph `hexColor` are read on every re-discovery ([account-management](account-management.md) R11). The Graph `color` preset is not used: with no `hexColor`, the colour stays automatic. To Do lists have no server colour.
 - Snapping compares the server colour with each calendar colour's light-theme swatch step (50 / 70 / 90) by CIELAB ΔE (CIE76).
 - A collection with a server colour takes the snapped colour on every sync, existing collections included, so a colour change on the server is followed. A collection without one keeps its automatic colour (R8). Two calendars may snap to the same colour; their shapes stay automatic. A CalDAV collection holding events and tasks gives both its calendar and its task list the same colour.
-- Colour and icon overrides, which will win over the server colour, come next.
+- Overrides: right-clicking a calendar or task list in the sidebar offers **Colour** (the 24 colours as a 3 x 8 grid, the current one marked), **Icon** (the 5 shapes, then about 40 Fluent icons) and, when the colour was overridden and the server has a colour, **Use server colour**. The settings page takes these over later ([settings-page](settings-page.md)).
+- A chosen colour is an override: later server colours no longer change it, until **Use server colour** returns to the (snapped) server colour. Icons and shapes never come from the server.
+- Icons are drawn at the marker size, in the swatch colour (system colours in high contrast), wherever shapes are drawn.
+- Markers on event cards sit on the card fill, which R6 does not check: dark level 3 (swatch 60 on fill 70) is only 1.4:1. On cards, a dark level 3 marker (shape, icon or task checkbox) uses step 20 of its hue instead (at least 5.2:1 on that fill). All other combinations are at least 3.3:1 and keep the swatch step; markers elsewhere sit on the surface and are unchanged.
 
 ## Out of scope
 

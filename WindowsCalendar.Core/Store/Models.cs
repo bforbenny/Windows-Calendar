@@ -35,7 +35,9 @@ public sealed record Account(
 
 /// <summary>
 /// A calendar or task list (account-management R1). RemoteRef is the CalDAV URL or Graph id. SourceUrl is set for a
-/// subscribed calendar: the feed the app downloads (sync-radicale R1a).
+/// subscribed calendar: the feed the app downloads (sync-radicale R1a). Shape is a shape name or "Glyph:XXXX" for a
+/// Fluent icon (ui-colour-theme R7). ServerColour is the server's colour snapped to the 24; ColourOverride marks a
+/// colour the user chose, which sync no longer changes.
 /// </summary>
 public sealed record Collection(
     string Id,
@@ -47,7 +49,9 @@ public sealed record Collection(
     bool RemindersOn,
     bool ReadOnly,
     string RemoteRef,
-    string? SourceUrl = null);
+    string? SourceUrl = null,
+    bool ColourOverride = false,
+    string? ServerColour = null);
 
 /// <summary>
 /// A cached event or task (local-store-offline R2): the raw server payload plus normalised columns.

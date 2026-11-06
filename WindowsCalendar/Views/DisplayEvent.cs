@@ -130,7 +130,9 @@ internal static class EventCard
         var row = new Grid { ColumnSpacing = 4 };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        FrameworkElement marker = e.IsTask ? TaskBox(e, brushes) : ShapeMarker.Create(e.Collection.Shape, brushes.Swatch);
+        // On a muted (outline) card the marker sits on the surface, not the fill.
+        var markerBrush = e.Muted ? brushes.Swatch : brushes.CardMarker;
+        FrameworkElement marker = e.IsTask ? TaskBox(e, markerBrush) : ShapeMarker.Create(e.Collection.Shape, markerBrush);
         if (fit)
         {
             // Beside the first line of a wrapped title.
@@ -159,9 +161,9 @@ internal static class EventCard
     }
 
     /// <summary>An empty checkbox in the list colour before a task's title; ticking it completes the task.</summary>
-    private static FrameworkElement TaskBox(DisplayEvent e, CalendarBrushes brushes)
+    private static FrameworkElement TaskBox(DisplayEvent e, Brush colour)
     {
-        var box = new FontIcon { Glyph = "", FontSize = 12, Foreground = brushes.Swatch, VerticalAlignment = VerticalAlignment.Center };
+        var box = new FontIcon { Glyph = "", FontSize = 12, Foreground = colour, VerticalAlignment = VerticalAlignment.Center };
         if (e.Checkable)
         {
             // A larger hit area than the glyph, so a click near it completes rather than opens.

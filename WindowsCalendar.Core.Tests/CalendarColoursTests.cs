@@ -64,4 +64,34 @@ public sealed class CalendarColoursTests : IDisposable
         Assert.Equal("Strawberry Red/L1", _store.GetCollections("a1").Single(c => c.RemoteRef == "u1").Colour);
         Assert.Equal(home, _store.GetCollections("a1").Single(c => c.RemoteRef == "u2").Colour);
     }
+
+    [Fact]
+    public void Override_SurvivesServerColours_UntilUseServerColour()
+    {
+        _store.AddDiscoveredAccount(new Account("a1", AccountType.CalDAV, "Home"),
+            [new DiscoveredCollection("u1", "Work", CollectionKind.Calendar, false, ServerColour: "#437CF1")]);
+        var id = _store.GetCollections("a1").Single().Id;
+
+        _store.SetCollectionColour(id, "Teal/L2");
+        _store.SyncCollections("a1", [new DiscoveredCollection("u1", "Work", CollectionKind.Calendar, false, ServerColour: "#E54B4B")]);
+        var c = _store.GetCollections("a1").Single();
+        Assert.Equal(("Teal/L2", true, "Strawberry Red/L1"), (c.Colour, c.ColourOverride, c.ServerColour));
+
+        _store.UseServerColour(id);
+        c = _store.GetCollections("a1").Single();
+        Assert.Equal(("Strawberry Red/L1", false), (c.Colour, c.ColourOverride));
+    }
+
+    [Fact]
+    public void Shape_CanBeAnIcon_AndSyncLeavesIt()
+    {
+        _store.AddDiscoveredAccount(new Account("a1", AccountType.CalDAV, "Home"),
+            [new DiscoveredCollection("u1", "Work", CollectionKind.Calendar, false)]);
+        var id = _store.GetCollections("a1").Single().Id;
+
+        _store.SetCollectionShape(id, "Glyph:E80F");
+        _store.SyncCollections("a1", [new DiscoveredCollection("u1", "Work", CollectionKind.Calendar, false, ServerColour: "#437CF1")]);
+
+        Assert.Equal("Glyph:E80F", _store.GetCollections("a1").Single().Shape);
+    }
 }
