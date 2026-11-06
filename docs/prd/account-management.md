@@ -42,6 +42,7 @@ The user can connect any number of Microsoft 365 work accounts and any number of
 - The sidebar lists accounts and their collections.
 - Account status (R10) and account editing (R12) come with [sync-radicale](sync-radicale.md) and [settings-page](settings-page.md).
 - MS365 (with [sync-ms365](sync-ms365.md) slice 1): R2 sign-in through MSAL with the WAM broker, from the first-launch panel and the sidebar's add-account menu. The client ID and tenant ID (R3) are read from `ms365.json` shipped with the app; the user fills them in before building. The account stores its display name and email (`/me` `mail`, else `userPrincipalName`) and the sign-in name in `username`, used to find the account in the broker for silent sign-in. Tokens stay in WAM (R6). Removing an MS365 account also signs it out of the app (MSAL `RemoveAsync`).
+- MS365 after a restart: the broker lists the accounts Windows knows (`ListOperatingSystemAccounts`), so silent sign-in finds the account without the app storing tokens. If an account still needs to sign in, Add account with the same account signs it in again and resumes its sync instead of adding a duplicate.
 - R11 is in place for Radicale: the collection list is re-read at the start of every sync (Sync now included), matched by URL and kind. A listing with no collections at all removes nothing, so a server hiccup cannot wipe the account.
 
 ## Out of scope
