@@ -34,9 +34,9 @@ The user can copy an existing event into a new, independent event and then adjus
 
 Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or merged:
 
-- [ ] Ctrl+D on a Teams meeting: the copy has no attendees or Join link and appears in Outlook after sync.
-- [ ] Right-click Duplicate opens the copy in the editor; the Undo banner removes it.
-- [ ] Ctrl+drag to another day creates a copy there and leaves the original unchanged.
+- [x] Ctrl+D on a Teams meeting: the copy has no attendees or Join link and appears in Outlook after sync.
+- [x] Right-click Duplicate opens the copy in the editor; the Undo banner removes it.
+- [x] Ctrl+drag to another day creates a copy there and leaves the original unchanged.
 
 ## Out of scope
 

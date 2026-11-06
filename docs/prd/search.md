@@ -39,9 +39,9 @@ A search box finds events and tasks across all accounts using a local SQLite FTS
 
 ## Acceptance criteria
 
-- [ ] Searching a word from an event's location, description or title finds it, offline.
-- [ ] Results include both MS365 and Radicale items.
-- [ ] An item edited in the app is searchable by its new text immediately.
+- [x] Searching a word from an event's location, description or title finds it, offline.
+- [x] Results include both MS365 and Radicale items.
+- [x] An item edited in the app is searchable by its new text immediately.
 
 ## Dependencies
 

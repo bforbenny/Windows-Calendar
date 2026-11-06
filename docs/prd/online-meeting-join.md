@@ -45,11 +45,11 @@ Events that carry an online-meeting link show a Join button that opens the meeti
 
 Built on branch `online-meeting-join` (2026-11-06). The branch is stacked on `event-show-as`. Nothing here is verified in the app or merged yet:
 
-- [ ] A Teams meeting from Outlook shows Join in the editor, and on its card from 10 minutes before the start. Clicking it opens Teams. This also confirms that calendarView delta returns `onlineMeeting`.
-- [ ] A Radicale event with a Zoom link in its location or notes shows Join.
-- [ ] An `http://` link or an unrecognised link never shows Join.
-- [ ] Ctrl+J on a selected meeting, and Ctrl+Shift+J with zero, one and two meetings due.
-- [ ] Clicking a card's Join button neither opens the editor nor starts a drag.
+- [x] A Teams meeting from Outlook shows Join in the editor, and on its card from 10 minutes before the start. Clicking it opens Teams. This also confirms that calendarView delta returns `onlineMeeting`.
+- [x] A Radicale event with a Zoom link in its location or notes shows Join.
+- [x] An `http://` link or an unrecognised link never shows Join.
+- [x] Ctrl+J on a selected meeting, and Ctrl+Shift+J with zero, one and two meetings due.
+- [x] Clicking a card's Join button neither opens the editor nor starts a drag.
 - [ ] A Join button appears on its own at the 10-minute mark without any other action.
 
 ## Out of scope

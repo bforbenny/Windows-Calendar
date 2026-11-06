@@ -53,12 +53,12 @@ Each event has a show-as value that controls how it blocks your availability for
 
 Built on branch `event-show-as` (2026-11-06). The branch is stacked on `duplicate-event`. Nothing here is verified in the app or merged yet:
 
-- [ ] Show as Out of office on an MS365 event, then check that Outlook shows Out of office.
-- [ ] Show as Free on a Radicale event, then check that another CalDAV client shows it as free.
-- [ ] Each value looks distinct in Day, Week, Month and Agenda, in light, dark and high contrast. Check the hatched bar, the dashed and dotted borders, and both glyphs.
-- [ ] New event: timed starts as Busy and all-day as Free. Toggling All day switches it until you pick a value yourself.
-- [ ] A Radicale event set to Tentative in Outlook shows Tentative, offers Busy and Free, and keeps Tentative unless you change it.
-- [ ] A repeating event: changing show-as asks for the scope.
+- [x] Show as Out of office on an MS365 event, then check that Outlook shows Out of office.
+- [x] Show as Free on a Radicale event, then check that another CalDAV client shows it as free.
+- [x] Each value looks distinct in Day, Week, Month and Agenda, in light, dark and high contrast. Check the hatched bar, the dashed and dotted borders, and both glyphs.
+- [x] New event: timed starts as Busy and all-day as Free. Toggling All day switches it until you pick a value yourself.
+- [x] A Radicale event set to Tentative in Outlook shows Tentative, offers Busy and Free, and keeps Tentative unless you change it.
+- [x] A repeating event: changing show-as asks for the scope.
 
 ## Out of scope
 
