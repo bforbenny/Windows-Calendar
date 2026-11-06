@@ -16,12 +16,16 @@ internal static class ScopeDialog
 {
     /// <summary>
     /// The chosen scope, or null when cancelled. <paramref name="allowFollowing"/> false leaves out "This and following"
-    /// (meetings you organise, recurring-events R6).
+    /// (meetings you organise, recurring-events R6); <paramref name="allowOccurrence"/> false leaves out "This event"
+    /// (a rule change, R3).
     /// </summary>
-    public static async Task<EditScope?> AskAsync(XamlRoot root, string title, bool allowFollowing)
+    public static async Task<EditScope?> AskAsync(XamlRoot root, string title, bool allowFollowing, bool allowOccurrence = true)
     {
         var options = new RadioButtons();
-        options.Items.Add(new RadioButton { Content = "This event", Tag = EditScope.Occurrence });
+        if (allowOccurrence)
+        {
+            options.Items.Add(new RadioButton { Content = "This event", Tag = EditScope.Occurrence });
+        }
         if (allowFollowing)
         {
             options.Items.Add(new RadioButton { Content = "This and following events", Tag = EditScope.Following });

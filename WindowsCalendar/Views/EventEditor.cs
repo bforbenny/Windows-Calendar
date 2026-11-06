@@ -16,6 +16,7 @@ namespace WindowsCalendar.Views;
 /// lose focus (or on Enter in the title), pickers and checkboxes at once. A new event is created once it has a
 /// title. Read-only calendars are view-only. A repeating event opens at the clicked occurrence; the first change asks
 /// This event / Entire series, which holds until the panel closes or switches event (recurring-events interim).
+/// The repeat rule (R3 interim) auto-saves on new and single events; on a series it is staged until Apply.
 /// </summary>
 internal sealed partial class EventEditor : UserControl
 {
@@ -39,8 +40,13 @@ internal sealed partial class EventEditor : UserControl
         TextWrapping = TextWrapping.Wrap,
         MinHeight = 120,
     };
+    private readonly RepeatPanel _repeat = new();
 
     private string? _itemId;
+    // The rule as saved; null when the controls can't show it (R7).
+    private RepeatRule? _savedRule;
+    // Opened as a new or single event: rule changes save at once, with no scope question.
+    private bool _ruleAutosave;
     private DateTimeOffset? _recurrence;
     private EditScope? _scope;
     private bool _allowFollowing;
@@ -71,6 +77,7 @@ internal sealed partial class EventEditor : UserControl
         form.Children.Add(_allDay);
         form.Children.Add(DateTimeRow(_startDate, _startTime));
         form.Children.Add(DateTimeRow(_endDate, _endTime));
+        form.Children.Add(_repeat);
         form.Children.Add(_location);
         form.Children.Add(_calendar);
         form.Children.Add(_description);
@@ -106,6 +113,8 @@ internal sealed partial class EventEditor : UserControl
         _endDate.DateChanged += (_, _) => Save();
         _endTime.TimeChanged += (_, _) => Save();
         _calendar.SelectionChanged += (_, _) => Save();
+        _repeat.RuleChanged += RuleChanged;
+        _repeat.ApplyClicked += async () => await ApplyRuleAsync();
 
         var escape = new KeyboardAccelerator { Key = VirtualKey.Escape };
         escape.Invoked += (_, e) =>
@@ -139,8 +148,12 @@ internal sealed partial class EventEditor : UserControl
     /// Opens an event, at <paramref name="recurrence"/>'s occurrence if it repeats; the event being edited is saved first
     /// (R6d: switching needs no confirmation).
     /// </summary>
-    public void OpenExisting(string itemId, DateTimeOffset? recurrence, IReadOnlyDictionary<string, Collection> collections)
+    public async void OpenExisting(string itemId, DateTimeOffset? recurrence, IReadOnlyDictionary<string, Collection> collections)
     {
+        if (!await DiscardRuleAsync())
+        {
+            return;
+        }
         Save();
         if (Store?.GetItem(itemId) is not { } item || !collections.TryGetValue(item.CollectionId, out var collection))
         {
@@ -161,6 +174,8 @@ internal sealed partial class EventEditor : UserControl
         _scope = null;
         _allowFollowing = recurrence is not null && !CalDavRecurrence.IsOrganisedMeeting(item, account?.Email);
         _readOnly = collection.ReadOnly || account?.Type != AccountType.CalDAV;
+        _savedRule = CalDavRecurrence.ReadRule(item, TimeZoneInfo.Local);
+        _ruleAutosave = recurrence is null;
         var choices = collections.Values
             .Where(c => c.Kind == CollectionKind.Calendar && c.AccountId == collection.AccountId && (!c.ReadOnly || c.Id == collection.Id))
             .ToList();
@@ -168,13 +183,17 @@ internal sealed partial class EventEditor : UserControl
         var message = collection.SourceUrl is not null ? "This is a subscribed calendar and can't be edited here."
             : collection.ReadOnly ? "This calendar is read-only."
             : _readOnly ? "Editing events in this account comes later."
-            : recurrence is not null ? CalDavRecurrence.Describe(item) ?? "Repeats" : "";
+            : _savedRule is null ? $"{CalDavRecurrence.Describe(item) ?? "Repeats"}. This repeat pattern can't be changed here." : "";
         ShowNotice(message, InfoBarSeverity.Informational);
     }
 
     /// <summary>Opens a new event at a clicked slot (R5 interim); it is created once it has a title.</summary>
-    public void OpenNew(DateTime start, bool allDay, IReadOnlyDictionary<string, Collection> collections)
+    public async void OpenNew(DateTime start, bool allDay, IReadOnlyDictionary<string, Collection> collections)
     {
+        if (!await DiscardRuleAsync())
+        {
+            return;
+        }
         Save();
         var accounts = Store?.GetAccounts().Where(a => a.Type == AccountType.CalDAV).Select(a => a.Id).ToHashSet() ?? [];
         var choices = collections.Values.Where(c => c.Kind == CollectionKind.Calendar && !c.ReadOnly && accounts.Contains(c.AccountId)).ToList();
@@ -187,15 +206,24 @@ internal sealed partial class EventEditor : UserControl
         _recurrence = null;
         _scope = null;
         _readOnly = false;
+        _savedRule = RepeatRule.None;
+        _ruleAutosave = true;
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
         Show("New event", new EventFields("", allDay, start, end, null, null), choices, defaultId);
         _notice.IsOpen = false;
         _title.Focus(FocusState.Programmatic);
     }
 
-    /// <summary>Saves what is typed and closes; a new event without a title is discarded (R6d).</summary>
-    public void Close()
+    /// <summary>
+    /// Saves what is typed and closes; a new event without a title is discarded (R6d). Unapplied rule changes are
+    /// discarded after asking.
+    /// </summary>
+    public async void Close()
     {
+        if (!await DiscardRuleAsync())
+        {
+            return;
+        }
         Save();
         Hide();
     }
@@ -245,6 +273,7 @@ internal sealed partial class EventEditor : UserControl
         _shownStart = fields.Start;
         ShowTimePickers();
         _loading = false;
+        RefreshRule();
     }
 
     /// <summary>The event that is open, if it exists in the store.</summary>
@@ -287,6 +316,9 @@ internal sealed partial class EventEditor : UserControl
         {
             control.IsEnabled = !_readOnly;
         }
+        _repeat.Visibility = _savedRule is null ? Visibility.Collapsed : Visibility.Visible;
+        _repeat.Show(_savedRule ?? RepeatRule.None, DateOnly.FromDateTime(fields.Start));
+        _repeat.SetEnabled(!_readOnly);
         ShowTimePickers();
         _loading = false;
 
@@ -335,6 +367,7 @@ internal sealed partial class EventEditor : UserControl
             _endTime.Time = end.TimeOfDay;
             _loading = false;
         }
+        _repeat.SetStart(DateOnly.FromDateTime(fields.Start));
         Save();
     }
 
@@ -378,11 +411,27 @@ internal sealed partial class EventEditor : UserControl
                     return;
                 }
                 var created = CalDavEvents.Create(target, fields, zone, now);
+                DateTimeOffset? recurrence = null;
+                // A repeat chosen before the title is written with the new event (R3 interim).
+                if (CalDavRecurrence.ChangeRule(created, null, false, _repeat.Read(), target, zone, now) is { } repeating)
+                {
+                    created = repeating.Original;
+                    recurrence = repeating.Recurrence;
+                }
                 store.CreateItem(created);
                 _itemId = created.Id;
+                _recurrence = recurrence;
+                _scope = recurrence is null ? null : EditScope.Series;
                 _heading.Text = "Event";
                 _delete.Visibility = Visibility.Visible;
                 Log.Information("Event {ItemId} created", created.Id);
+                if (recurrence is not null)
+                {
+                    // A weekly start may have moved to the first chosen weekday.
+                    Changed?.Invoke();
+                    Reload(created.Id);
+                    return;
+                }
             }
             else
             {
@@ -409,6 +458,7 @@ internal sealed partial class EventEditor : UserControl
                 }
             }
             Changed?.Invoke();
+            RefreshRule();
         }
         catch (Exception ex)
         {
@@ -477,6 +527,7 @@ internal sealed partial class EventEditor : UserControl
                 _shownStart = fields.Start;
                 Log.Information("Repeating event {ItemId} split", item.Id);
                 Changed?.Invoke();
+                RefreshRule();
                 return;
             }
             if (_scope == EditScope.Occurrence)
@@ -497,6 +548,7 @@ internal sealed partial class EventEditor : UserControl
             _shownStart = fields.Start;
             Log.Information("Repeating event {ItemId} changed ({Scope})", item.Id, _scope);
             Changed?.Invoke();
+            RefreshRule();
         }
         catch (EditRefusedException ex)
         {
@@ -510,6 +562,199 @@ internal sealed partial class EventEditor : UserControl
         {
             Log.Error(ex, "Saving repeating event {ItemId} failed", item.Id);
         }
+    }
+
+    // ---- Repeat rule (recurring-events R3 interim) ----
+
+    /// <summary>A series' rule differs from the saved one and has not been applied.</summary>
+    private bool RuleDirty => !_ruleAutosave && _savedRule is not null && !_repeat.Read().Equals(_savedRule);
+
+    private void RuleChanged()
+    {
+        if (_loading || _readOnly || !IsOpen)
+        {
+            return;
+        }
+        if (_ruleAutosave)
+        {
+            SaveRule();
+            return;
+        }
+        _repeat.ApplyVisible = RuleDirty;
+    }
+
+    /// <summary>Shows the saved rule again after a save moved the series (e.g. its weekday), unless one is staged.</summary>
+    private void RefreshRule()
+    {
+        if (_itemId is null || RuleDirty || Store?.GetItem(_itemId) is not { } item)
+        {
+            return;
+        }
+        try
+        {
+            _savedRule = CalDavRecurrence.ReadRule(item, TimeZoneInfo.Local);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Reading the repeat of event {ItemId} failed", _itemId);
+            return;
+        }
+        _repeat.Visibility = _savedRule is null ? Visibility.Collapsed : Visibility.Visible;
+        _repeat.Show(_savedRule ?? RepeatRule.None, DateOnly.FromDateTime(_startDate.Date?.Date ?? DateTime.Today));
+    }
+
+    /// <summary>A new or single event: the rule saves at once. A new event without a title gets it when created.</summary>
+    private void SaveRule()
+    {
+        if (_itemId is null || Store is not { } store || store.GetItem(_itemId) is not { } item
+            || (_calendar.SelectedItem as ComboBoxItem)?.Tag is not Collection target)
+        {
+            return;
+        }
+        try
+        {
+            if (CalDavRecurrence.ChangeRule(item, _recurrence, false, _repeat.Read(), target, TimeZoneInfo.Local, DateTimeOffset.UtcNow) is { } change)
+            {
+                store.UpdateItem(change.Original);
+                RuleSaved(change);
+            }
+        }
+        catch (EditRefusedException ex)
+        {
+            ShowNotice(ex.Message, InfoBarSeverity.Warning);
+            RefreshRule();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Changing the repeat of event {ItemId} failed", _itemId);
+        }
+    }
+
+    /// <summary>
+    /// Apply on a series: asks This and following / All (only All for meetings you organise), confirms dropping changed
+    /// occurrences, then saves once. A split is one linked outbox group, and the panel follows the new series.
+    /// </summary>
+    private async System.Threading.Tasks.Task ApplyRuleAsync()
+    {
+        if (_asking || _itemId is not { } id || _recurrence is not { } recurrence || Store is not { } store
+            || (_calendar.SelectedItem as ComboBoxItem)?.Tag is not Collection target)
+        {
+            return;
+        }
+        var rule = _repeat.Read();
+        _asking = true;
+        try
+        {
+            var scope = _allowFollowing
+                ? await ScopeDialog.AskAsync(XamlRoot, "Change the repeat pattern", true, allowOccurrence: false)
+                : EditScope.Series;
+            if (scope is null || _itemId != id || store.GetItem(id) is not { } item)
+            {
+                return;
+            }
+            var change = CalDavRecurrence.ChangeRule(item, recurrence, scope == EditScope.Following, rule, target, TimeZoneInfo.Local,
+                DateTimeOffset.UtcNow);
+            if (change is null)
+            {
+                _repeat.ApplyVisible = false;
+                return;
+            }
+            if (change.Lost > 0)
+            {
+                var confirm = new ContentDialog
+                {
+                    XamlRoot = XamlRoot,
+                    Title = "Change the repeat pattern?",
+                    Content = change.Lost == 1 ? "1 changed occurrence will be lost." : $"{change.Lost} changed occurrences will be lost.",
+                    PrimaryButtonText = "Change",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                };
+                if (await confirm.ShowAsync() != ContentDialogResult.Primary || _itemId != id)
+                {
+                    return;
+                }
+            }
+            if (change.Following is { } following)
+            {
+                store.SplitItem(change.Original, following);
+                _itemId = following.Id;
+                _scope = EditScope.Series;
+            }
+            else
+            {
+                store.UpdateItem(change.Original);
+            }
+            RuleSaved(change);
+        }
+        catch (EditRefusedException ex)
+        {
+            ShowNotice(ex.Message, InfoBarSeverity.Warning);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Changing the repeat of event {ItemId} failed", id);
+        }
+        finally
+        {
+            _asking = false;
+        }
+    }
+
+    /// <summary>After a rule change: the panel follows the occurrence (or the single event) and shows the saved rule.</summary>
+    private void RuleSaved(RuleChange change)
+    {
+        _recurrence = change.Recurrence;
+        if (_recurrence is null)
+        {
+            // No longer repeating: later rule changes save at once again.
+            _scope = null;
+            _ruleAutosave = true;
+        }
+        else if (_ruleAutosave)
+        {
+            _scope = EditScope.Series;
+        }
+        _savedRule = null;
+        Log.Information("Repeat of event {ItemId} changed", _itemId);
+        Changed?.Invoke();
+        Reload(_itemId!);
+    }
+
+    /// <summary>Before closing or switching event: true to go on. Unapplied rule changes are discarded after asking.</summary>
+    private async System.Threading.Tasks.Task<bool> DiscardRuleAsync()
+    {
+        if (!IsOpen || _readOnly || !RuleDirty)
+        {
+            return true;
+        }
+        if (_asking)
+        {
+            return false;
+        }
+        _asking = true;
+        try
+        {
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = "Discard repeat changes?",
+                Content = "The repeat pattern was changed but not applied.",
+                PrimaryButtonText = "Discard",
+                CloseButtonText = "Keep editing",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return false;
+            }
+        }
+        finally
+        {
+            _asking = false;
+        }
+        _repeat.ApplyVisible = false;
+        return true;
     }
 
     /// <summary>

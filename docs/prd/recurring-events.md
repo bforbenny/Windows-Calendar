@@ -41,8 +41,21 @@ Recurring events can be created, edited and deleted with three scopes: **this oc
 - Entire series: title, location and description are written to the master (overrides keep their own values). A time change moves the master by the same amount and sets its length; EXDATEs and override RECURRENCE-IDs move with it, and overrides whose times were not changed move too. A move to another day shifts the rule: weekly BYDAY by the same number of days, monthly and yearly BYMONTHDAY by days, and ordinal BYDAY ("2nd Tuesday") to the new weekday. A rule that cannot be shifted that way (BYSETPOS, BYYEARDAY, BYWEEKNO, several BYMONTHDAY values, or a day that would pass 28) refuses the move with a message. So do switching a whole series between all-day and timed, and moving a series that has RDATEs; This event still works for both.
 - This and following (R6): the original ends before the occurrence (UNTIL as UTC for TZID and UTC series, floating for floating ones, a DATE for all-day ones; a COUNT becomes an UNTIL). Its overrides and EXDATEs from the occurrence on move to the new series, which gets a new UID, starts at the occurrence and keeps the rest of the rule (a COUNT is reduced by the occurrences before the split, counting excluded ones, RFC 5545). The change is then applied to the new series as an entire-series change. Delete with this scope only ends the original. The truncate and the create are one linked outbox group. After a split the editor follows the new series.
 - The organiser check for R6: not offered when the series has attendees and its ORGANIZER is the account's email address.
-- The editor shows the rule read-only ("Repeats weekly on Monday"); creating or changing rules (R3) comes later. R7 holds: unshiftable rules can still get this-occurrence edits and series text edits.
+- R7 holds: unshiftable rules can still get this-occurrence edits and series text edits.
 - A conflict covers the whole resource (the series), per [conflict-resolution](conflict-resolution.md) R8.
+
+## Interim (rule editing R3, CalDAV)
+
+- The editor has a **Repeat** dropdown (Doesn't repeat / Daily / Weekly / Monthly / Yearly). Choosing one shows these inline: **Every N** day(s)/week(s)/month(s)/year(s); weekday toggles for Weekly (preset to the start's weekday, at least one always selected); for Monthly, **On day D** or **On the 1st/2nd/3rd/4th/last weekday** (from the start date); Yearly repeats on the start date; **Ends** Never / After N times / On date.
+- The rule is written as one RRULE (FREQ, INTERVAL, BYDAY, BYMONTHDAY, COUNT or UNTIL). UNTIL takes the same form as for a split (UTC for TZID and UTC series, floating for floating, DATE for all-day), inclusive of the chosen date.
+- A rule the controls cannot represent (R7) is shown read-only as before, with the controls disabled and a notice.
+- New events and single events: rule changes autosave like the other fields, with no scope question.
+- Existing series: rule changes are staged, and an **Apply** button appears in the Repeat section. Apply asks for the scope (**This and following events** or **All events in the series**; there is no This event option) and then saves once. Closing the editor with unapplied rule changes asks whether to discard them.
+  - All events: the master's RRULE is replaced. Overrides and EXDATEs that are not occurrences of the new rule are dropped, after a confirmation ("N changed occurrences will be lost").
+  - This and following: the series is split as in R6, and the new series gets the new rule. The same confirmation applies to the overrides that move to the new series.
+  - On the first occurrence, This and following acts as All (R6). Not offered for meetings you organise (R6).
+- **Doesn't repeat** on an existing series: with All, the series becomes a single event at its first occurrence (overrides and EXDATEs are dropped, after confirmation). With This and following, the series ends before this occurrence and this occurrence becomes a new single event, one linked outbox group.
+- Not yet: MS365, undo for rule changes, and rule creation from quick add.
 
 ## Out of scope
 

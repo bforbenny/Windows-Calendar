@@ -67,7 +67,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 
 ## Interim (second slice: editor)
 
-- R6, R6b (click), R6c and R6d with these fields: title, all-day, start and end, location, description (plain text), calendar (writable calendars in the same account) and Delete. Other properties stay untouched in the payload ([sync-radicale](sync-radicale.md) R8).
+- R6, R6b (click), R6c and R6d with these fields: title, all-day, start and end, repeat ([recurring-events](recurring-events.md) R3 interim), location, description (plain text), calendar (writable calendars in the same account) and Delete. Other properties stay untouched in the payload ([sync-radicale](sync-radicale.md) R8).
 - Times are edited in the Windows timezone and written in the event's own timezone; floating and UTC times stay so. New events use the Windows timezone with a VTIMEZONE.
 - Read-only calendars open view-only with a notice. Recurring events are editable per the [recurring-events](recurring-events.md) interim (this / this and following / all).
 - R5 interim: clicking an empty Week slot opens the editor on a new 1-hour event at that half hour; the all-day lane or a Month day gives an all-day event. The quick-create popup comes with [quick-add](quick-add.md).

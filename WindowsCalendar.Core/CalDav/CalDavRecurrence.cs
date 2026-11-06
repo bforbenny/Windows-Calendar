@@ -17,7 +17,7 @@ public sealed record SplitResult(Item Original, Item? Following, DateTimeOffset 
 /// named by its original start in UTC (its RECURRENCE-ID), as stored in the occurrence index. Edits keep everything
 /// else in the payload, as <see cref="CalDavEvents"/> does.
 /// </summary>
-public static class CalDavRecurrence
+public static partial class CalDavRecurrence
 {
     /// <summary>The fields of one occurrence: its override's, or the series' at that occurrence's times.</summary>
     public static EventFields ReadOccurrence(Item item, DateTimeOffset recurrence, TimeZoneInfo zone) =>
