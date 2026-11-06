@@ -165,9 +165,11 @@ public sealed partial class MainWindow : Window
         // Redraw in the new theme when Windows switches light/dark (app-platform R2a).
         ((FrameworkElement)Content).ActualThemeChanged += (_, _) => RenderView();
 
-        // Move the current-time line every minute; at midnight the window and today's shading move on.
+        // Move the current-time line every minute; at midnight the window and today's shading move on. Each tick is
+        // just after the clock minute, so Join appears at the 10-minute mark (online-meeting-join R4), not up to a
+        // minute later.
         _minuteTimer = DispatcherQueue.CreateTimer();
-        _minuteTimer.Interval = TimeSpan.FromMinutes(1);
+        _minuteTimer.IsRepeating = false;
         _minuteTimer.Tick += (_, _) =>
         {
             if (DateOnly.FromDateTime(DateTime.Now) != _today || JoinChanged() || !CurrentView.UpdateNowLine())
@@ -175,8 +177,9 @@ public sealed partial class MainWindow : Window
                 _today = DateOnly.FromDateTime(DateTime.Now);
                 RenderView();
             }
+            StartMinuteTimer();
         };
-        _minuteTimer.Start();
+        StartMinuteTimer();
 
         ShowSidebar(Store?.GetUiFlag(SidebarHiddenFlag) != true);
         ShowAccounts();
@@ -186,6 +189,13 @@ public sealed partial class MainWindow : Window
     }
 
     private const string SidebarHiddenFlag = "sidebar-hidden";
+
+    private void StartMinuteTimer()
+    {
+        var now = DateTime.Now;
+        _minuteTimer.Interval = TimeSpan.FromSeconds(60 - now.Second) - TimeSpan.FromMilliseconds(now.Millisecond) + TimeSpan.FromMilliseconds(200);
+        _minuteTimer.Start();
+    }
 
     private static LocalStore? Store => ((App)Application.Current).Store;
 

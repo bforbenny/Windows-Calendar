@@ -262,6 +262,8 @@ internal static class EventCard
         var button = new Button
         {
             Content = "Join",
+            // Filled in the accent colour, so it stands out on the tinted card (high contrast keeps its own colours).
+            Style = Theme.Style("AccentButtonStyle"),
             FontSize = 12,
             Padding = new Thickness(6, 0, 6, 1),
             MinHeight = 0,
