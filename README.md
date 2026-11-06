@@ -11,13 +11,13 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [app-platform](docs/prd/app-platform.md) | Tech stack, packaging, tray, start with Windows | in-progress |
 | [account-management](docs/prd/account-management.md) | Multiple MS365 and Radicale accounts, credential storage | in-progress |
 | [local-store-offline](docs/prd/local-store-offline.md) | SQLite cache, outbox, offline read/write | closed |
-| [sync-ms365](docs/prd/sync-ms365.md) | Graph calendar and To Do sync | pending |
+| [sync-ms365](docs/prd/sync-ms365.md) | Graph calendar and To Do sync | in-progress |
 | [sync-radicale](docs/prd/sync-radicale.md) | CalDAV sync for events and tasks | in-progress |
 | [conflict-resolution](docs/prd/conflict-resolution.md) | Server wins, local copy preserved | in-progress |
 | [recurring-events](docs/prd/recurring-events.md) | Recurrence model and edit scopes incl. "this and following" | in-progress |
 | [calendar-views](docs/prd/calendar-views.md) | Week/Month views with natural scrolling, calendar colours, drag to move/resize | in-progress |
 | [agenda-view](docs/prd/agenda-view.md) | Agenda: day columns of lists, free scrolling | in-progress |
-| [attendees-invitations](docs/prd/attendees-invitations.md) | Read-only attendees, needs-response marker, Open in Outlook, organiser guards | pending |
+| [attendees-invitations](docs/prd/attendees-invitations.md) | Read-only attendees, needs-response marker, Open in Outlook, organiser guards | in-progress |
 | [event-show-as](docs/prd/event-show-as.md) | Busy / Free / Tentative / Out of office | pending |
 | [online-meeting-join](docs/prd/online-meeting-join.md) | Join button for Teams/Zoom/Meet/Webex links | pending |
 | [quick-add](docs/prd/quick-add.md) | Typed quick add, offline rule-based parser | pending |
