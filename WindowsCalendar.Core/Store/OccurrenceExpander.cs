@@ -7,7 +7,8 @@ namespace WindowsCalendar.Core.Store;
 /// <summary>
 /// Expands an item into the instances that fall inside a window (local-store-offline R3, recurring-events R2).
 /// CalDAV events are read from their iCalendar payload, so overrides, EXDATEs, floating and all-day times are
-/// applied with the given local timezone. Everything else (MS365, tasks) uses the item's normalised columns.
+/// applied with the given local timezone. MS365 events are read from their Graph JSON (one instance each, as
+/// calendarView lists occurrences). Everything else (tasks) uses the item's normalised columns.
 /// </summary>
 internal static class OccurrenceExpander
 {
@@ -18,6 +19,11 @@ internal static class OccurrenceExpander
         if (accountType == AccountType.CalDAV && item.Kind == ItemKind.Event && TryLoad(item.RawPayload) is { } calendar)
         {
             return Expand(calendar, windowStart, windowEnd, zone);
+        }
+        if (accountType == AccountType.MS365 && item.Kind == ItemKind.Event && Graph.GraphEventMapper.Times(item.RawPayload, zone) is { } t)
+        {
+            // All-day dates follow the Windows timezone (sync-ms365 R8).
+            return t.End >= windowStart && t.Start < windowEnd ? [(t.Start, t.End, t.Start)] : [];
         }
 
         var s = item.StartUtc ?? item.DueUtc;

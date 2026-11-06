@@ -22,7 +22,9 @@ using Windows.ApplicationModel.Activation;
 using Windows.Foundation;
 using Windows.Foundation.Collections;
 using Windows.Networking.Connectivity;
+using Microsoft.Identity.Client;
 using WindowsCalendar.Core.CalDav;
+using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Core.Sync;
 using AppInstance = Microsoft.Windows.AppLifecycle.AppInstance;
@@ -52,6 +54,15 @@ public partial class App : Application
     {
         Timeout = TimeSpan.FromSeconds(30),
     };
+
+    /// <summary>Shared client for Microsoft Graph (sync-ms365).</summary>
+    internal static readonly HttpClient GraphHttp = new() { Timeout = TimeSpan.FromSeconds(60) };
+
+    /// <summary>MS365 sign-in; null until ms365.json holds the app registration's ids (account-management R3).</summary>
+    internal static Ms365Auth? Ms365 { get; } = Ms365Auth.Load();
+
+    /// <summary>MS365 accounts skipped until this time after a 429/503 (sync-ms365 R10).</summary>
+    private readonly Dictionary<string, DateTimeOffset> _backoffUntil = [];
 
     /// <summary>Kept alive for ColorValuesChanged (tray icon theme swap).</summary>
     private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
@@ -229,10 +240,80 @@ public partial class App : Application
             }
         }
 
+        changed |= await SyncMs365Async(store, cancellationToken);
+
         if (changed && _window is { } window)
         {
             window.DispatcherQueue.TryEnqueue(window.RefreshView);
         }
+    }
+
+    /// <summary>
+    /// Pulls each MS365 account (sync-ms365 slice 1). The access token is fetched silently for this run only and never
+    /// logged. Needing sign-in pauses the account until restart (R11 interim); throttling backs it off (R10).
+    /// </summary>
+    private async Task<bool> SyncMs365Async(LocalStore store, CancellationToken cancellationToken)
+    {
+        var accounts = store.GetAccounts().Where(a => a.Type == AccountType.MS365).ToList();
+        if (accounts.Count == 0)
+        {
+            return false;
+        }
+        if (Ms365 is not { } auth)
+        {
+            Log.Warning("MS365 accounts not synced: ms365.json has no app registration ids");
+            return false;
+        }
+        var graph = new GraphSync(store, GraphHttp);
+        graph.ChunkRestarted += (collectionId, chunk, why) =>
+            Log.Warning("Calendar {CollectionId} chunk {Chunk} restarted: {Reason}", collectionId, chunk, why);
+        var changed = false;
+        foreach (var account in accounts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (_pausedAccounts.Contains(account.Id)
+                || (_backoffUntil.TryGetValue(account.Id, out var until) && DateTimeOffset.UtcNow < until))
+            {
+                continue;
+            }
+            string? token = null;
+            try
+            {
+                token = await auth.GetTokenAsync(account.Username ?? "", cancellationToken);
+                var summary = await graph.SyncAccountAsync(account, token, cancellationToken);
+                Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
+                changed |= summary.AnyChange;
+            }
+            catch (MsalUiRequiredException ex)
+            {
+                Log.Warning("Account {AccountId} needs to sign in again ({Code}); paused until restart", account.Id, ex.ErrorCode);
+                _pausedAccounts.Add(account.Id);
+            }
+            catch (GraphException ex) when (ex.Error == GraphError.Unauthorized)
+            {
+                Log.Warning("Account {AccountId} was refused by Graph (401); paused until restart", account.Id);
+                _pausedAccounts.Add(account.Id);
+            }
+            catch (GraphException ex) when (ex.Error == GraphError.Throttled)
+            {
+                var wait = ex.RetryAfter ?? GraphClient.DefaultRetryAfter;
+                _backoffUntil[account.Id] = DateTimeOffset.UtcNow + wait;
+                Log.Warning("Account {AccountId} throttled ({Status}); retrying after {Seconds} s", account.Id, (int?)ex.Status, (int)wait.TotalSeconds);
+            }
+            catch (GraphException ex)
+            {
+                Log.Warning("Account {AccountId} sync failed: {Error} {Status}", account.Id, ex.Error, (int?)ex.Status);
+            }
+            catch (MsalException ex)
+            {
+                Log.Warning("Account {AccountId} token request failed: {Code}", account.Id, ex.ErrorCode);
+            }
+            finally
+            {
+                token = null;
+            }
+        }
+        return changed;
     }
 
     /// <summary>Asks for a sync now, e.g. after an account is added (local-store-offline R10).</summary>

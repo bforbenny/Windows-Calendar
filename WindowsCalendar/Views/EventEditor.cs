@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Input;
 using Serilog;
 using Windows.System;
 using WindowsCalendar.Core.CalDav;
+using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar.Views;
@@ -47,6 +48,8 @@ internal sealed partial class EventEditor : UserControl
     private RepeatRule? _savedRule;
     // Opened as a new or single event: rule changes save at once, with no scope question.
     private bool _ruleAutosave;
+    // An MS365 event: Graph JSON, shown view-only (sync-ms365 slice 1).
+    private bool _graph;
     private DateTimeOffset? _recurrence;
     private EditScope? _scope;
     private bool _allowFollowing;
@@ -159,22 +162,30 @@ internal sealed partial class EventEditor : UserControl
         {
             return;
         }
+        var account = Store.GetAccounts().FirstOrDefault(a => a.Id == collection.AccountId);
+        var graph = account?.Type == AccountType.MS365;
+        if (graph)
+        {
+            // Each Graph occurrence is its own item.
+            recurrence = null;
+        }
         EventFields fields;
         try
         {
-            fields = recurrence is { } r ? CalDavRecurrence.ReadOccurrence(item, r, TimeZoneInfo.Local) : CalDavEvents.Read(item, TimeZoneInfo.Local);
+            fields = graph ? GraphEventMapper.Read(item, TimeZoneInfo.Local)
+                : recurrence is { } r ? CalDavRecurrence.ReadOccurrence(item, r, TimeZoneInfo.Local) : CalDavEvents.Read(item, TimeZoneInfo.Local);
         }
         catch (EditRefusedException)
         {
             return;
         }
-        var account = Store.GetAccounts().FirstOrDefault(a => a.Id == collection.AccountId);
+        _graph = graph;
         _itemId = itemId;
         _recurrence = recurrence;
         _scope = null;
-        _allowFollowing = recurrence is not null && !CalDavRecurrence.IsOrganisedMeeting(item, account?.Email);
+        _allowFollowing = !graph && recurrence is not null && !CalDavRecurrence.IsOrganisedMeeting(item, account?.Email);
         _readOnly = collection.ReadOnly || account?.Type != AccountType.CalDAV;
-        _savedRule = CalDavRecurrence.ReadRule(item, TimeZoneInfo.Local);
+        _savedRule = graph ? null : CalDavRecurrence.ReadRule(item, TimeZoneInfo.Local);
         _ruleAutosave = recurrence is null;
         var choices = collections.Values
             .Where(c => c.Kind == CollectionKind.Calendar && c.AccountId == collection.AccountId && (!c.ReadOnly || c.Id == collection.Id))
@@ -206,6 +217,7 @@ internal sealed partial class EventEditor : UserControl
         _recurrence = null;
         _scope = null;
         _readOnly = false;
+        _graph = false;
         _savedRule = RepeatRule.None;
         _ruleAutosave = true;
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
@@ -280,8 +292,8 @@ internal sealed partial class EventEditor : UserControl
     public string? ItemId => _itemId;
 
     /// <summary>The open event's fields: its occurrence's when it repeats.</summary>
-    private EventFields Fields(Item item) => _recurrence is { } r
-        ? CalDavRecurrence.ReadOccurrence(item, r, TimeZoneInfo.Local)
+    private EventFields Fields(Item item) => _graph ? GraphEventMapper.Read(item, TimeZoneInfo.Local)
+        : _recurrence is { } r ? CalDavRecurrence.ReadOccurrence(item, r, TimeZoneInfo.Local)
         : CalDavEvents.Read(item, TimeZoneInfo.Local);
 
     private void ShowNotice(string message, InfoBarSeverity severity)
@@ -586,7 +598,7 @@ internal sealed partial class EventEditor : UserControl
     /// <summary>Shows the saved rule again after a save moved the series (e.g. its weekday), unless one is staged.</summary>
     private void RefreshRule()
     {
-        if (_itemId is null || RuleDirty || Store?.GetItem(_itemId) is not { } item)
+        if (_itemId is null || _graph || RuleDirty || Store?.GetItem(_itemId) is not { } item)
         {
             return;
         }

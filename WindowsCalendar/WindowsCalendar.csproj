@@ -31,6 +31,8 @@
     <Content Include="Assets\TrayIconDark.ico" />
     <Content Include="Assets\TrayIconLight.ico" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+    <!-- MS365 app registration: client and tenant id, not secrets (account-management R3). -->
+    <Content Include="ms365.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -39,6 +41,8 @@
 
   <ItemGroup>
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
+    <PackageReference Include="Microsoft.Identity.Client" Version="4.92.0" />
+    <PackageReference Include="Microsoft.Identity.Client.Broker" Version="4.92.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
     <PackageReference Include="Serilog" Version="4.4.0" />

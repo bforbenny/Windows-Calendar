@@ -37,8 +37,8 @@
                 <ScrollViewer>
                     <StackPanel x:Name="AccountList" Padding="12,8" Spacing="2" />
                 </ScrollViewer>
-                <HyperlinkButton x:Name="AddAccountLink" Grid.Row="1" Margin="8" Content="Add Radicale account"
-                                 Visibility="Collapsed" Click="OnAddRadicale" />
+                <HyperlinkButton x:Name="AddAccountLink" Grid.Row="1" Margin="8" Content="Add account"
+                                 Visibility="Collapsed" Click="OnAddAccount" />
             </Grid>
 
             <Grid x:Name="ContentArea" Grid.Column="1" Background="{ThemeResource SurfaceBaseBrush}">
@@ -83,8 +83,7 @@
                         <TextBlock Text="Add an account to get started" Style="{StaticResource SubtitleTextBlockStyle}"
                                    HorizontalAlignment="Center" />
                         <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                            <!-- Interim: MS365 sign-in comes in the next account-management slice. -->
-                            <Button Content="Microsoft 365" IsEnabled="False" />
+                            <Button x:Name="AddMs365Button" Content="Microsoft 365" Click="OnAddMs365" />
                             <Button x:Name="AddRadicaleButton" Content="Radicale" Style="{StaticResource AccentButtonStyle}"
                                     Click="OnAddRadicale" />
                         </StackPanel>

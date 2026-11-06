@@ -13,7 +13,7 @@ namespace WindowsCalendar.Views;
 /// <summary>
 /// An occurrence in local wall-clock time, ready to draw (calendar-views). End is exclusive.
 /// All-day and 24-hour-or-longer events go in the all-day lane (R3). Editable events can be dragged (R7); read-only
-/// calendars and subscriptions cannot. <paramref name="Recurrence"/> names the occurrence of a repeating event.
+/// calendars, subscriptions and accounts the app cannot write to yet (MS365, sync-ms365 slice 1) cannot. <paramref name="Recurrence"/> names the occurrence of a repeating event.
 /// </summary>
 internal sealed record DisplayEvent(string ItemId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay,
     Collection Collection, bool Editable, DateTimeOffset? Recurrence)
@@ -25,7 +25,7 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
     /// <summary>Last day touched (inclusive); an event ending at midnight does not touch the next day.</summary>
     public DateOnly LastDay => End > Start ? DateOnly.FromDateTime(End.AddTicks(-1)) : FirstDay;
 
-    public static DisplayEvent From(OccurrenceView o, Collection collection) => new(
+    public static DisplayEvent From(OccurrenceView o, Collection collection, bool accountWritable = true) => new(
         o.ItemId,
         string.IsNullOrWhiteSpace(o.Summary) ? "(No title)" : o.Summary,
         o.Location,
@@ -33,7 +33,7 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
         TimeZoneInfo.ConvertTime(o.EndUtc, TimeZoneInfo.Local).DateTime,
         o.AllDay,
         collection,
-        !collection.ReadOnly && collection.SourceUrl is null,
+        accountWritable && !collection.ReadOnly && collection.SourceUrl is null,
         o.RecurrenceUtc);
 
     /// <summary>Times in the Windows region format (ui-style R7).</summary>

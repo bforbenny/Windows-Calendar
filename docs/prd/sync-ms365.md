@@ -2,7 +2,7 @@
 description: Two-way sync of MS365 calendars (events) and Microsoft To Do task lists via Microsoft Graph
 when-to-use: Before working on anything that calls Microsoft Graph
 tags: [sync, ms365, graph, delta, todo]
-status: pending
+status: in-progress
 ---
 
 # MS365 sync (Microsoft Graph)
@@ -25,6 +25,19 @@ Each MS365 account syncs its calendars and To Do task lists through Microsoft Gr
 - R10. Throttling: honour HTTP 429/503 `Retry-After`; global backoff per account.
 - R11. 401 / `invalid_grant`, or 403 after consent is revoked → mark the account "auth required"; do not loop. While the window is hidden or starting minimised, show one toast and the red Sign in bar ([ui-states](ui-states.md) R2); the interactive WAM prompt opens only when the user clicks Sign in.
 - R12. Store the Graph JSON payload as-is for round-trip safety; PATCH only the fields that changed, so fields the app does not show (categories, sensitivity, attachments, HTML body) are kept. Store `webLink` for Open in Outlook ([attendees-invitations](attendees-invitations.md) R6).
+
+## Interim (first slice: sign-in and pull of events)
+
+- Events are pulled only; MS365 events open view-only in the editor and cannot be dragged. Writes (R7), series masters (R6), on-demand fetch outside the window (R5) and To Do (R9) come in later slices.
+- R1: calendars from `/me/calendars` feed re-discovery ([account-management](account-management.md) R11); `canEdit` false makes a calendar read-only, `isDefaultCalendar` marks the default.
+- R2, R4: the window is split into fixed 30-day chunks (aligned to a fixed date, so they stay the same from day to day), each with its own deltaLink in the collection's sync state. Each sync drops chunks that left the window and adds new ones. Pages are requested with `Prefer: odata.maxpagesize=50`.
+- Each chunk keeps the set of event ids it returned. An event leaves the store only when no chunk of its calendar still holds it, so an event spanning two chunks, or moved from one to another, is not lost.
+- R3: a chunk restarts from a fresh initial delta when a round passes 200 pages, when a page repeats the previous one, or on HTTP 410 / `syncStateNotFound`. Ids it no longer returns are then removed as above. Only the calendar's local id and the reason are logged.
+- Each occurrence and exception from calendarView is its own item (`IsRecurring` set); cancelled events are removed. The Graph JSON is stored as-is with its `@odata.etag` (R12).
+- R8: reads use `Prefer: outlook.timezone="UTC"`. All-day events are dates in the Windows timezone; the occurrence index reads MS365 event times from the payload, so a Windows timezone change moves them.
+- R10: a 429 or 503 sets a backoff for the account from `Retry-After` (60 seconds when missing); the account is skipped until then.
+- R11 interim: a 401, or MSAL needing interaction, pauses the account until restart, with a log warning. The toast and Sign in bar come with [ui-states](ui-states.md).
+- Access tokens are fetched silently for each sync run, used for that run only and never logged.
 
 ## Out of scope
 
