@@ -37,7 +37,7 @@ public sealed partial class MainWindow : Window
     private bool _quitting;
     private int _conflictsDismissed;
     private readonly DispatcherQueueTimer _undoTimer;
-    private (string ItemId, EventFields Before, string PayloadAfter)? _lastMove;
+    private (string ItemId, string PayloadBefore, string PayloadAfter)? _lastChange;
     private bool _renderPending;
 
     public MainWindow()
@@ -75,7 +75,7 @@ public sealed partial class MainWindow : Window
         // Clicking a card opens the editor; clicking an empty slot starts a new event (calendar-views R5, R6b).
         foreach (var view in new IScrollingView[] { _week, _month, _agenda })
         {
-            view.EventOpened += id => _editor.OpenExisting(id, _collections);
+            view.EventOpened += e => _editor.OpenExisting(e.ItemId, e.Recurrence, _collections);
             view.CreateRequested += (start, allDay) => _editor.OpenNew(start, allDay, _collections);
             view.EventDropped += OnEventDropped;
         }
@@ -88,10 +88,10 @@ public sealed partial class MainWindow : Window
                 e.Handled = true;
             }
             else if (e.Key == Windows.System.VirtualKey.Z && IsControlDown()
-                && FocusManager.GetFocusedElement(Content.XamlRoot) is not TextBox && _lastMove is not null)
+                && FocusManager.GetFocusedElement(Content.XamlRoot) is not TextBox && _lastChange is not null)
             {
                 e.Handled = true;
-                UndoMove();
+                Undo();
             }
         };
         _undoTimer = DispatcherQueue.CreateTimer();
@@ -109,6 +109,11 @@ public sealed partial class MainWindow : Window
         };
         EditorHost.Child = _editor;
         _editor.Changed += RenderView;
+        _editor.OccurrenceDeleted += (id, before, after) =>
+        {
+            _lastChange = (id, before, after);
+            ShowUndo("Occurrence deleted", canUndo: true);
+        };
         _editor.OpenChanged += PlaceEditor;
         ((FrameworkElement)Content).SizeChanged += (_, _) => PlaceEditor();
 
@@ -184,9 +189,22 @@ public sealed partial class MainWindow : Window
     private void OnConflictBarClosed(InfoBar sender, InfoBarClosedEventArgs args) =>
         _conflictsDismissed = Store?.GetConflictCount() ?? 0;
 
-    /// <summary>A drop saves the new times like an editor change and offers Undo (calendar-views R7, undo interim).</summary>
-    private void OnEventDropped(DisplayEvent e, DragTarget target)
+    /// <summary>
+    /// A drop saves the new times like an editor change and offers Undo (calendar-views R7, undo interim). A repeating
+    /// event first asks This event / Entire series (recurring-events interim).
+    /// </summary>
+    private async void OnEventDropped(DisplayEvent e, DragTarget target)
     {
+        var scope = (EditScope?)null;
+        if (e.Recurrence is not null)
+        {
+            scope = await ScopeDialog.AskAsync(Content.XamlRoot, "Move a repeating event");
+            if (scope is null)
+            {
+                return;
+            }
+        }
+        var to = e.Recurrence;
         try
         {
             if (Store?.GetItem(e.ItemId) is not { } item)
@@ -194,63 +212,83 @@ public sealed partial class MainWindow : Window
                 return;
             }
             var zone = TimeZoneInfo.Local;
-            var before = CalDavEvents.Read(item, zone);
-            if (CalDavEvents.Edit(item, before with { AllDay = target.AllDay, Start = target.Start, End = target.End }, zone,
-                DateTimeOffset.UtcNow) is not { } edited)
+            var now = DateTimeOffset.UtcNow;
+            Item? edited;
+            if (e.Recurrence is { } recurrence)
+            {
+                var fields = CalDavRecurrence.ReadOccurrence(item, recurrence, zone) with { AllDay = target.AllDay, Start = target.Start, End = target.End };
+                if (scope == EditScope.Series)
+                {
+                    to = CalDavRecurrence.MovedRecurrence(item, recurrence, fields, zone);
+                    edited = CalDavRecurrence.EditSeries(item, recurrence, fields, zone, now);
+                }
+                else
+                {
+                    edited = CalDavRecurrence.EditOccurrence(item, recurrence, fields, zone, now);
+                }
+            }
+            else
+            {
+                var before = CalDavEvents.Read(item, zone);
+                edited = CalDavEvents.Edit(item, before with { AllDay = target.AllDay, Start = target.Start, End = target.End }, zone, now);
+            }
+            if (edited is null)
             {
                 return;
             }
             Store.UpdateItem(edited);
-            _lastMove = (item.Id, before, edited.RawPayload);
-            ShowUndo("Event moved", canUndo: true);
-            Log.Information("Event {ItemId} moved by drag", item.Id);
+            _lastChange = (item.Id, item.RawPayload, edited.RawPayload);
+            ShowUndo(scope == EditScope.Series ? "Series moved" : "Event moved", canUndo: true);
+            Log.Information("Event {ItemId} moved by drag ({Scope})", item.Id, scope?.ToString() ?? "single");
+        }
+        catch (EditRefusedException ex)
+        {
+            ShowUndo("Can't move this event", canUndo: false, ex.Message);
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Moving event {ItemId} failed", e.ItemId);
         }
         RenderView();
-        _editor.Reload(e.ItemId);
+        _editor.Reload(e.ItemId, e.Recurrence, to);
     }
 
     /// <summary>
-    /// Puts the previous times back (undo R4). Refused if the server changed the event since (R6): its payload is no
-    /// longer the one the move wrote.
+    /// Puts the previous version of the event back (undo R4). Refused if the server changed the event since (R6): its
+    /// payload is no longer the one the action wrote.
     /// </summary>
-    private void UndoMove()
+    private void Undo()
     {
-        if (_lastMove is not { } move || Store is not { } store)
+        if (_lastChange is not { } change || Store is not { } store)
         {
             return;
         }
-        _lastMove = null;
+        _lastChange = null;
         try
         {
-            if (store.GetItem(move.ItemId) is not { } item || item.RawPayload != move.PayloadAfter)
+            if (store.GetItem(change.ItemId) is not { } item || item.RawPayload != change.PayloadAfter)
             {
                 ShowUndo("This item changed on the server; can't undo", canUndo: false);
                 return;
             }
-            if (CalDavEvents.Edit(item, move.Before, TimeZoneInfo.Local, DateTimeOffset.UtcNow) is { } restored)
-            {
-                store.UpdateItem(restored);
-            }
+            store.UpdateItem(CalDavEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local));
             UndoBar.IsOpen = false;
-            Log.Information("Move of event {ItemId} undone", move.ItemId);
+            Log.Information("Change to event {ItemId} undone", change.ItemId);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Undoing move of event {ItemId} failed", move.ItemId);
+            Log.Error(ex, "Undoing change to event {ItemId} failed", change.ItemId);
         }
         RenderView();
-        _editor.Reload(move.ItemId);
+        _editor.Reload(change.ItemId);
     }
 
-    private void OnUndo(object sender, RoutedEventArgs e) => UndoMove();
+    private void OnUndo(object sender, RoutedEventArgs e) => Undo();
 
-    private void ShowUndo(string title, bool canUndo)
+    private void ShowUndo(string title, bool canUndo, string message = "")
     {
         UndoBar.Title = title;
+        UndoBar.Message = message;
         UndoBar.Severity = canUndo ? InfoBarSeverity.Informational : InfoBarSeverity.Warning;
         UndoButton.Visibility = canUndo ? Visibility.Visible : Visibility.Collapsed;
         UndoBar.IsOpen = true;

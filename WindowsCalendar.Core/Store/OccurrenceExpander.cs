@@ -11,22 +11,13 @@ namespace WindowsCalendar.Core.Store;
 /// </summary>
 internal static class OccurrenceExpander
 {
-    public static List<(DateTimeOffset Start, DateTimeOffset End)> Expand(
+    /// <summary>Each instance with its original start (its RECURRENCE-ID; the start itself when not recurring).</summary>
+    public static List<(DateTimeOffset Start, DateTimeOffset End, DateTimeOffset Recurrence)> Expand(
         Item item, AccountType accountType, DateTimeOffset windowStart, DateTimeOffset windowEnd, TimeZoneInfo zone)
     {
         if (accountType == AccountType.CalDAV && item.Kind == ItemKind.Event && TryLoad(item.RawPayload) is { } calendar)
         {
-            return calendar
-                .GetOccurrences(ToCal(windowStart))
-                .TakeWhileBefore(ToCal(windowEnd))
-                .Where(o => !(o.Source is CalendarEvent e && string.Equals(e.Status, EventStatus.Cancelled, StringComparison.OrdinalIgnoreCase)))
-                .Select(o =>
-                {
-                    var start = ToUtc(o.Period.StartTime, zone);
-                    var end = o.Period.EffectiveEndTime is { } e ? ToUtc(e, zone) : start;
-                    return (start, end);
-                })
-                .ToList();
+            return Expand(calendar, windowStart, windowEnd, zone);
         }
 
         var s = item.StartUtc ?? item.DueUtc;
@@ -35,8 +26,24 @@ internal static class OccurrenceExpander
             return [];
         }
         var en = item.EndUtc ?? s.Value;
-        return en >= windowStart && s.Value < windowEnd ? [(s.Value, en)] : [];
+        return en >= windowStart && s.Value < windowEnd ? [(s.Value, en, s.Value)] : [];
     }
+
+    /// <summary>The live (not cancelled) instances of an iCalendar object that start in [windowStart, windowEnd).</summary>
+    internal static List<(DateTimeOffset Start, DateTimeOffset End, DateTimeOffset Recurrence)> Expand(
+        Calendar calendar, DateTimeOffset windowStart, DateTimeOffset windowEnd, TimeZoneInfo zone) =>
+        calendar
+            .GetOccurrences(ToCal(windowStart))
+            .TakeWhileBefore(ToCal(windowEnd))
+            .Where(o => !(o.Source is CalendarEvent e && string.Equals(e.Status, EventStatus.Cancelled, StringComparison.OrdinalIgnoreCase)))
+            .Select(o =>
+            {
+                var start = ToUtc(o.Period.StartTime, zone);
+                var end = o.Period.EffectiveEndTime is { } e ? ToUtc(e, zone) : start;
+                var recurrence = o.Source is CalendarEvent { RecurrenceIdentifier: { } id } ? ToUtc(id.StartTime, zone) : start;
+                return (start, end, recurrence);
+            })
+            .ToList();
 
     /// <summary>Null when the payload is not iCalendar; the caller falls back to the normalised columns.</summary>
     private static Calendar? TryLoad(string payload)
@@ -51,7 +58,7 @@ internal static class OccurrenceExpander
         }
     }
 
-    private static CalDateTime ToCal(DateTimeOffset t) => new(t.UtcDateTime, "UTC");
+    internal static CalDateTime ToCal(DateTimeOffset t) => new(t.UtcDateTime, "UTC");
 
     /// <summary>Floating and all-day values are wall-clock times in the Windows timezone (timezone-handling R6).</summary>
     internal static DateTimeOffset ToUtc(CalDateTime t, TimeZoneInfo zone)

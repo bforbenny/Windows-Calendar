@@ -26,9 +26,9 @@ The user can undo recent changes with Ctrl+Z or from the "Undo" banner that appe
 
 ## Interim (first slice: drag moves)
 
-- Only drag moves and resizes ([calendar-views](calendar-views.md) R7) are undoable so far, one level deep: the banner "Event moved · Undo" for 8 seconds, and Ctrl+Z for the latest move while no text box has focus.
+- Only drag moves and resizes ([calendar-views](calendar-views.md) R7), including recurring ones of either scope, and deleting one occurrence of a series are undoable so far, one level deep: the banner ("Event moved · Undo", "Occurrence deleted · Undo") for 8 seconds, and Ctrl+Z for the latest action while no text box has focus.
 - The banner (R3) floats per [floating-banners](floating-banners.md).
-- R4 and R6 apply: undo writes the previous times back (coalescing with an unsent change, otherwise queuing an update), and is refused if the item changed on the server since the move.
+- R4 and R6 apply: undo writes the previous version of the event back (coalescing with an unsent change, otherwise queuing an update), and is refused if the item changed on the server since the action.
 - The 20-step stack (R2) and the other actions in R1 come later.
 
 ## Out of scope

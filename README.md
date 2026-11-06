@@ -14,7 +14,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [sync-ms365](docs/prd/sync-ms365.md) | Graph calendar and To Do sync | pending |
 | [sync-radicale](docs/prd/sync-radicale.md) | CalDAV sync for events and tasks | in-progress |
 | [conflict-resolution](docs/prd/conflict-resolution.md) | Server wins, local copy preserved | in-progress |
-| [recurring-events](docs/prd/recurring-events.md) | Recurrence model and edit scopes incl. "this and following" | pending |
+| [recurring-events](docs/prd/recurring-events.md) | Recurrence model and edit scopes incl. "this and following" | in-progress |
 | [calendar-views](docs/prd/calendar-views.md) | Week/Month views with natural scrolling, calendar colours, drag to move/resize | in-progress |
 | [agenda-view](docs/prd/agenda-view.md) | Agenda: day columns of lists, free scrolling | in-progress |
 | [attendees-invitations](docs/prd/attendees-invitations.md) | Read-only attendees, needs-response marker, Open in Outlook, organiser guards | pending |

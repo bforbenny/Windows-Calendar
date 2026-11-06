@@ -110,7 +110,8 @@ public sealed record OccurrenceView(
     DateTimeOffset StartUtc,
     DateTimeOffset EndUtc,
     bool AllDay,
-    bool IsRecurring = false);
+    bool IsRecurring = false,
+    DateTimeOffset? RecurrenceUtc = null);
 
 /// <summary>One expanded instance of an item in the occurrence index (local-store-offline R3).</summary>
 public sealed record ItemOccurrence(string ItemId, DateTimeOffset StartUtc, DateTimeOffset EndUtc);

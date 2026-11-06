@@ -2,7 +2,7 @@
 description: Recurring event model across Graph and CalDAV, and edit scopes this-occurrence / this-and-following / whole-series, online and offline
 when-to-use: Before working on recurrence rules, occurrence expansion, or editing/deleting recurring events or tasks
 tags: [recurrence, rrule, events, sync, offline]
-status: pending
+status: in-progress
 ---
 
 # Recurring events
@@ -32,6 +32,15 @@ Recurring events can be created, edited and deleted with three scopes: **this oc
   - Undo restores the dropped overrides ([undo](undo.md) R5).
 - R7. Recurrence rules received from servers that the editor cannot represent (e.g. complex BYSETPOS, RDATE lists) are displayed and preserved. Editing such a series is limited to this-occurrence plus non-recurrence fields, with a notice.
 - R8. Recurring tasks: display and complete only (completing advances to the next instance per server behaviour). Completed offline, the task shows as completed until the next sync brings the next instance. Rule editing for tasks is out of scope for v1. See [tasks](tasks.md).
+
+## Interim (first slice: this occurrence and entire series, CalDAV)
+
+- R4 and R5 for drag ([calendar-views](calendar-views.md) R7), editor changes and delete, on Radicale. "This and following" (R6) and MS365 come later, so the scope question offers **This event** and **Entire series**.
+- The occurrence index stores each occurrence's original start (its RECURRENCE-ID), so a card, the editor and a delete know which occurrence they act on.
+- This occurrence: an override VEVENT is added or replaced; its RECURRENCE-ID uses the same form as the master's DTSTART (TZID, floating, UTC or DATE). Deleting it adds an EXDATE and drops the override.
+- Entire series: title, location and description are written to the master (overrides keep their own values). A time change moves the master by the same amount and sets its length; EXDATEs and override RECURRENCE-IDs move with it, and overrides whose times were not changed move too. A move to another day shifts the rule: weekly BYDAY by the same number of days, monthly and yearly BYMONTHDAY by days, and ordinal BYDAY ("2nd Tuesday") to the new weekday. A rule that cannot be shifted that way (BYSETPOS, BYYEARDAY, BYWEEKNO, several BYMONTHDAY values, or a day that would pass 28) refuses the move with a message. So do switching a whole series between all-day and timed, and moving a series that has RDATEs; This event still works for both.
+- The editor shows the rule read-only ("Repeats weekly on Monday"); creating or changing rules (R3) comes later. R7 holds: unshiftable rules can still get this-occurrence edits and series text edits.
+- A conflict covers the whole resource (the series), per [conflict-resolution](conflict-resolution.md) R8.
 
 ## Out of scope
 

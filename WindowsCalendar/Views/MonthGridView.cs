@@ -73,7 +73,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
 
     public event Action<DateOnly>? VisibleDayChanged;
 
-    public event Action<string>? EventOpened;
+    public event Action<DisplayEvent>? EventOpened;
 
     public event Action<DateTime, bool>? CreateRequested;
 
@@ -267,7 +267,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
 
     public void CompleteDrag(DisplayEvent e, DragTarget target) => EventDropped?.Invoke(e, target);
 
-    public void OpenEvent(DisplayEvent e) => EventOpened?.Invoke(e.ItemId);
+    public void OpenEvent(DisplayEvent e) => EventOpened?.Invoke(e);
 
     private void AddWeekEvents(Grid row, DateOnly weekStart)
     {

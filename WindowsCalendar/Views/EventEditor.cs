@@ -14,7 +14,8 @@ namespace WindowsCalendar.Views;
 /// <summary>
 /// The event editor side panel (calendar-views R6, R6c, R6d; interim fields). It auto-saves: text fields when they
 /// lose focus (or on Enter in the title), pickers and checkboxes at once. A new event is created once it has a
-/// title. Recurring events and read-only calendars are view-only.
+/// title. Read-only calendars are view-only. A repeating event opens at the clicked occurrence; the first change asks
+/// This event / Entire series, which holds until the panel closes or switches event (recurring-events interim).
 /// </summary>
 internal sealed partial class EventEditor : UserControl
 {
@@ -40,6 +41,9 @@ internal sealed partial class EventEditor : UserControl
     };
 
     private string? _itemId;
+    private DateTimeOffset? _recurrence;
+    private EditScope? _scope;
+    private bool _asking;
     private bool _loading;
     private bool _readOnly;
     private DateTime _shownStart;
@@ -120,31 +124,47 @@ internal sealed partial class EventEditor : UserControl
     /// <summary>Raised when the panel opens or closes.</summary>
     public event Action? OpenChanged;
 
+    /// <summary>Raised after one occurrence was deleted: item id, payload before and after, for Undo (undo interim).</summary>
+    public event Action<string, string, string>? OccurrenceDeleted;
+
     public bool IsOpen => Visibility == Visibility.Visible;
 
     private static LocalStore? Store => ((App)Application.Current).Store;
 
-    /// <summary>Opens an event; the event being edited is saved first (R6d: switching needs no confirmation).</summary>
-    public void OpenExisting(string itemId, IReadOnlyDictionary<string, Collection> collections)
+    /// <summary>
+    /// Opens an event, at <paramref name="recurrence"/>'s occurrence if it repeats; the event being edited is saved first
+    /// (R6d: switching needs no confirmation).
+    /// </summary>
+    public void OpenExisting(string itemId, DateTimeOffset? recurrence, IReadOnlyDictionary<string, Collection> collections)
     {
         Save();
         if (Store?.GetItem(itemId) is not { } item || !collections.TryGetValue(item.CollectionId, out var collection))
         {
             return;
         }
+        EventFields fields;
+        try
+        {
+            fields = recurrence is { } r ? CalDavRecurrence.ReadOccurrence(item, r, TimeZoneInfo.Local) : CalDavEvents.Read(item, TimeZoneInfo.Local);
+        }
+        catch (EditRefusedException)
+        {
+            return;
+        }
         var account = Store.GetAccounts().FirstOrDefault(a => a.Id == collection.AccountId);
         _itemId = itemId;
-        _readOnly = collection.ReadOnly || item.IsRecurring || account?.Type != AccountType.CalDAV;
-        var fields = CalDavEvents.Read(item, TimeZoneInfo.Local);
+        _recurrence = recurrence;
+        _scope = null;
+        _readOnly = collection.ReadOnly || account?.Type != AccountType.CalDAV;
         var choices = collections.Values
             .Where(c => c.Kind == CollectionKind.Calendar && c.AccountId == collection.AccountId && (!c.ReadOnly || c.Id == collection.Id))
             .ToList();
         Show("Event", fields, choices, collection.Id);
-        _notice.Message = collection.SourceUrl is not null ? "This is a subscribed calendar and can't be edited here."
+        var message = collection.SourceUrl is not null ? "This is a subscribed calendar and can't be edited here."
             : collection.ReadOnly ? "This calendar is read-only."
-            : item.IsRecurring ? "Editing recurring events comes later. This event is view-only for now."
-            : _readOnly ? "Editing events in this account comes later." : "";
-        _notice.IsOpen = _notice.Message.Length > 0;
+            : _readOnly ? "Editing events in this account comes later."
+            : recurrence is not null ? CalDavRecurrence.Describe(item) ?? "Repeats" : "";
+        ShowNotice(message, InfoBarSeverity.Informational);
     }
 
     /// <summary>Opens a new event at a clicked slot (R5 interim); it is created once it has a title.</summary>
@@ -159,6 +179,8 @@ internal sealed partial class EventEditor : UserControl
         }
         var defaultId = Store?.DefaultCalendarId is { } id && choices.Any(c => c.Id == id) ? id : choices[0].Id;
         _itemId = null;
+        _recurrence = null;
+        _scope = null;
         _readOnly = false;
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
         Show("New event", new EventFields("", allDay, start, end, null, null), choices, defaultId);
@@ -185,15 +207,30 @@ internal sealed partial class EventEditor : UserControl
     }
 
     /// <summary>
-    /// After a drag or undo changed the open event's times: shows them, leaving text being typed alone.
+    /// After a drag or undo changed the open event's times: shows them, leaving text being typed alone. A series move
+    /// changes the occurrence's id from <paramref name="from"/> to <paramref name="to"/>; if the occurrence is gone the
+    /// panel closes.
     /// </summary>
-    public void Reload(string itemId)
+    public void Reload(string itemId, DateTimeOffset? from = null, DateTimeOffset? to = null)
     {
         if (!IsOpen || _itemId != itemId || Store?.GetItem(itemId) is not { } item)
         {
             return;
         }
-        var fields = CalDavEvents.Read(item, TimeZoneInfo.Local);
+        if (from is not null && _recurrence == from)
+        {
+            _recurrence = to;
+        }
+        EventFields fields;
+        try
+        {
+            fields = Fields(item);
+        }
+        catch (EditRefusedException)
+        {
+            Hide();
+            return;
+        }
         _loading = true;
         _allDay.IsChecked = fields.AllDay;
         _startDate.Date = fields.Start.Date;
@@ -208,20 +245,23 @@ internal sealed partial class EventEditor : UserControl
     /// <summary>The event that is open, if it exists in the store.</summary>
     public string? ItemId => _itemId;
 
+    /// <summary>The open event's fields: its occurrence's when it repeats.</summary>
+    private EventFields Fields(Item item) => _recurrence is { } r
+        ? CalDavRecurrence.ReadOccurrence(item, r, TimeZoneInfo.Local)
+        : CalDavEvents.Read(item, TimeZoneInfo.Local);
+
+    private void ShowNotice(string message, InfoBarSeverity severity)
+    {
+        _notice.Message = message;
+        _notice.Severity = severity;
+        _notice.IsOpen = message.Length > 0;
+    }
+
     private void Show(string heading, EventFields fields, List<Collection> choices, string selectedId)
     {
         _loading = true;
         _heading.Text = heading;
-        _title.Text = fields.Title;
-        _allDay.IsChecked = fields.AllDay;
-        _startDate.Date = fields.Start.Date;
-        _startTime.Time = fields.Start.TimeOfDay;
-        // All-day end dates are shown inclusive.
-        _endDate.Date = fields.AllDay ? fields.End.Date.AddDays(-1) : fields.End.Date;
-        _endTime.Time = fields.End.TimeOfDay;
-        _location.Text = fields.Location ?? "";
-        _description.Text = (fields.Description ?? "").Replace("\r\n", "\r").Replace("\n", "\r");
-        _shownStart = fields.Start;
+        ShowFields(fields);
 
         _calendar.Items.Clear();
         foreach (var c in choices)
@@ -250,6 +290,24 @@ internal sealed partial class EventEditor : UserControl
             Visibility = Visibility.Visible;
             OpenChanged?.Invoke();
         }
+    }
+
+    private void ShowFields(EventFields fields)
+    {
+        var loading = _loading;
+        _loading = true;
+        _title.Text = fields.Title;
+        _allDay.IsChecked = fields.AllDay;
+        _startDate.Date = fields.Start.Date;
+        _startTime.Time = fields.Start.TimeOfDay;
+        // All-day end dates are shown inclusive.
+        _endDate.Date = fields.AllDay ? fields.End.Date.AddDays(-1) : fields.End.Date;
+        _endTime.Time = fields.End.TimeOfDay;
+        _location.Text = fields.Location ?? "";
+        _description.Text = (fields.Description ?? "").Replace("\r\n", "\r").Replace("\n", "\r");
+        _shownStart = fields.Start;
+        ShowTimePickers();
+        _loading = loading;
     }
 
     private void ShowTimePickers() =>
@@ -335,6 +393,11 @@ internal sealed partial class EventEditor : UserControl
                     item = store.GetItem(_itemId)!;
                     Log.Information("Event {ItemId} moved to another calendar", _itemId);
                 }
+                if (_recurrence is { } recurrence)
+                {
+                    SaveRecurring(item, recurrence, fields);
+                    return;
+                }
                 if (CalDavEvents.Edit(item, fields, zone, now) is { } edited)
                 {
                     store.UpdateItem(edited);
@@ -348,17 +411,121 @@ internal sealed partial class EventEditor : UserControl
         }
     }
 
-    /// <summary>Asks first until undo exists (R10 interim).</summary>
+    /// <summary>
+    /// A change to a repeating event: asks the scope at the first change (R6d), then writes this occurrence or the
+    /// whole series. Cancel or a refused change puts the form back.
+    /// </summary>
+    private async void SaveRecurring(Item item, DateTimeOffset recurrence, EventFields fields)
+    {
+        var zone = TimeZoneInfo.Local;
+        try
+        {
+            var current = CalDavRecurrence.ReadOccurrence(item, recurrence, zone);
+            if (!CalDavRecurrence.Changed(current, fields))
+            {
+                return;
+            }
+            if (_scope is null)
+            {
+                if (_asking)
+                {
+                    return;
+                }
+                _asking = true;
+                var scope = await ScopeDialog.AskAsync(XamlRoot, "Change a repeating event");
+                _asking = false;
+                if (_itemId != item.Id || _recurrence != recurrence)
+                {
+                    return;
+                }
+                if (scope is null)
+                {
+                    ShowFields(current);
+                    return;
+                }
+                _scope = scope;
+                // The form may have changed while the question was open.
+                fields = ReadFields();
+                item = Store?.GetItem(item.Id) ?? item;
+            }
+
+            Item? edited;
+            var to = recurrence;
+            if (_scope == EditScope.Occurrence)
+            {
+                edited = CalDavRecurrence.EditOccurrence(item, recurrence, fields, zone, DateTimeOffset.UtcNow);
+            }
+            else
+            {
+                to = CalDavRecurrence.MovedRecurrence(item, recurrence, fields, zone);
+                edited = CalDavRecurrence.EditSeries(item, recurrence, fields, zone, DateTimeOffset.UtcNow);
+            }
+            if (edited is null)
+            {
+                return;
+            }
+            Store!.UpdateItem(edited);
+            _recurrence = to;
+            _shownStart = fields.Start;
+            Log.Information("Repeating event {ItemId} changed ({Scope})", item.Id, _scope);
+            Changed?.Invoke();
+        }
+        catch (EditRefusedException ex)
+        {
+            ShowNotice(ex.Message, InfoBarSeverity.Warning);
+            if (Store?.GetItem(item.Id) is { } latest)
+            {
+                ShowFields(Fields(latest));
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Saving repeating event {ItemId} failed", item.Id);
+        }
+    }
+
+    /// <summary>
+    /// Asks first until undo exists (R10 interim). A repeating event asks the scope: one occurrence goes at once with
+    /// Undo, the entire series asks for confirmation.
+    /// </summary>
     private async System.Threading.Tasks.Task DeleteAsync()
     {
         if (_itemId is not { } id || Store is not { } store)
         {
             return;
         }
+        if (_recurrence is { } recurrence)
+        {
+            var scope = await ScopeDialog.AskAsync(XamlRoot, "Delete a repeating event");
+            if (scope is null)
+            {
+                return;
+            }
+            if (scope == EditScope.Occurrence)
+            {
+                try
+                {
+                    if (store.GetItem(id) is { } item)
+                    {
+                        var deleted = CalDavRecurrence.DeleteOccurrence(item, recurrence, TimeZoneInfo.Local, DateTimeOffset.UtcNow);
+                        store.UpdateItem(deleted);
+                        Log.Information("Occurrence of event {ItemId} deleted", id);
+                        OccurrenceDeleted?.Invoke(id, item.RawPayload, deleted.RawPayload);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Deleting occurrence of event {ItemId} failed", id);
+                }
+                Hide();
+                Changed?.Invoke();
+                return;
+            }
+        }
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "Delete this event?",
+            Title = _recurrence is null ? "Delete this event?" : "Delete the entire series?",
             Content = string.IsNullOrWhiteSpace(_title.Text) ? "(No title)" : _title.Text,
             PrimaryButtonText = "Delete",
             CloseButtonText = "Cancel",

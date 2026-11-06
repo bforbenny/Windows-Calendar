@@ -69,15 +69,15 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 
 - R6, R6b (click), R6c and R6d with these fields: title, all-day, start and end, location, description (plain text), calendar (writable calendars in the same account) and Delete. Other properties stay untouched in the payload ([sync-radicale](sync-radicale.md) R8).
 - Times are edited in the Windows timezone and written in the event's own timezone; floating and UTC times stay so. New events use the Windows timezone with a VTIMEZONE.
-- Recurring events and read-only calendars open view-only with a notice; recurrence editing comes with [recurring-events](recurring-events.md).
+- Read-only calendars open view-only with a notice. Recurring events are editable per the [recurring-events](recurring-events.md) interim (this event / entire series).
 - R5 interim: clicking an empty Week slot opens the editor on a new 1-hour event at that half hour; the all-day lane or a Month day gives an all-day event. The quick-create popup comes with [quick-add](quick-add.md).
 - R8 within an account: the move is queued as a create in the new calendar then a delete of the old one, one linked outbox group. An unsent new event is re-targeted instead.
-- R10 interim: Delete asks for confirmation until [undo](undo.md) exists. No keyboard selection yet.
+- R10 interim: Delete asks for confirmation until [undo](undo.md) exists. No keyboard selection yet. For a recurring event Delete asks for the scope: one occurrence is deleted at once with the undo banner, the entire series asks for confirmation.
 
 ## Interim (third slice: drag)
 
 - R7 with mouse and pen. On touch, a swipe keeps scrolling; press-and-hold to drag comes later.
-- Recurring events, read-only calendars and subscriptions cannot be dragged (they are view-only until [recurring-events](recurring-events.md)), so the scope question does not arise yet.
+- Read-only calendars and subscriptions cannot be dragged. Recurring occurrences can; the drop asks This event / Entire series / Cancel ("this and following" comes with the split, [recurring-events](recurring-events.md) interim).
 - A drop is saved like an editor change and gets the "Event moved · Undo" banner ([undo](undo.md) interim).
 
 ## Out of scope

@@ -24,8 +24,8 @@ internal interface IScrollingView
     /// <summary>Raised with the day in the middle of the viewport, for the period title.</summary>
     event Action<DateOnly>? VisibleDayChanged;
 
-    /// <summary>Raised with the item id when an event card is clicked (calendar-views R6b).</summary>
-    event Action<string>? EventOpened;
+    /// <summary>Raised with the event (and its occurrence) when an event card is clicked (calendar-views R6b).</summary>
+    event Action<DisplayEvent>? EventOpened;
 
     /// <summary>Raised when an empty slot is clicked: its start, and whether it is all-day (R5 interim).</summary>
     event Action<DateTime, bool>? CreateRequested;

@@ -80,10 +80,10 @@ public static class CalDavEvents
     public static string Href(Collection collection, string uid) =>
         new Uri(new Uri(collection.RemoteRef.TrimEnd('/') + "/"), Uri.EscapeDataString(uid) + ".ics").AbsoluteUri;
 
-    private static CalendarEvent Master(Calendar calendar) =>
+    internal static CalendarEvent Master(Calendar calendar) =>
         calendar.Events.FirstOrDefault(e => e.RecurrenceIdentifier is null) ?? calendar.Events.First();
 
-    private static EventFields Read(CalendarEvent ev, TimeZoneInfo zone)
+    internal static EventFields Read(CalendarEvent ev, TimeZoneInfo zone)
     {
         var start = ev.DtStart!;
         if (!start.HasTime)
@@ -95,14 +95,14 @@ public static class CalDavEvents
         return new EventFields(ev.Summary ?? "", false, Wall(start, zone), Wall(end, zone), ev.Location, ev.Description);
     }
 
-    private static DateTime Wall(CalDateTime t, TimeZoneInfo zone) =>
+    internal static DateTime Wall(CalDateTime t, TimeZoneInfo zone) =>
         TimeZoneInfo.ConvertTime(OccurrenceExpander.ToUtc(t, zone), zone).DateTime;
 
     /// <summary>
     /// All-day events get DATE values. Timed events keep their form: floating stays floating, UTC stays UTC, and
     /// a TZID event is written in its own zone. An all-day event becoming timed gets the Windows timezone.
     /// </summary>
-    private static void SetTimes(Calendar calendar, CalendarEvent ev, EventFields fields, TimeZoneInfo zone)
+    internal static void SetTimes(Calendar calendar, CalendarEvent ev, EventFields fields, TimeZoneInfo zone)
     {
         if (ev.Duration is not null)
         {
@@ -138,19 +138,19 @@ public static class CalDavEvents
         }
     }
 
-    private static void SetText(CalendarEvent ev, EventFields fields)
+    internal static void SetText(CalendarEvent ev, EventFields fields)
     {
         ev.Summary = fields.Title;
         ev.Location = Blank(fields.Location);
         ev.Description = Blank(fields.Description);
     }
 
-    private static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
+    internal static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
     private static string? IanaId(TimeZoneInfo zone) =>
         zone.HasIanaId ? zone.Id : TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var iana) ? iana : null;
 
-    private static DateTime ToUtc(DateTime wall, TimeZoneInfo zone)
+    internal static DateTime ToUtc(DateTime wall, TimeZoneInfo zone)
     {
         wall = DateTime.SpecifyKind(wall, DateTimeKind.Unspecified);
         if (zone.IsInvalidTime(wall))
@@ -160,9 +160,13 @@ public static class CalDavEvents
         return TimeZoneInfo.ConvertTimeToUtc(wall, zone);
     }
 
-    private static CalDateTime Utc(DateTimeOffset t) => new(t.UtcDateTime, "UTC");
+    internal static CalDateTime Utc(DateTimeOffset t) => new(t.UtcDateTime, "UTC");
 
-    private static Item ToItem(string id, string collectionId, string href, string? etag, Calendar calendar, TimeZoneInfo zone)
+    /// <summary>The item with an earlier payload put back, e.g. for undo (undo R4).</summary>
+    public static Item Restore(Item item, string payload, TimeZoneInfo zone) =>
+        ToItem(item.Id, item.CollectionId, item.RemoteId!, item.Etag, Calendar.Load(payload)!, zone);
+
+    internal static Item ToItem(string id, string collectionId, string href, string? etag, Calendar calendar, TimeZoneInfo zone)
     {
         var data = new CalendarSerializer().SerializeToString(calendar)!;
         return CalDavItemMapper.Map(href, etag ?? "", data, zone)! with { Id = id, CollectionId = collectionId, Etag = etag };

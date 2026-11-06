@@ -78,6 +78,23 @@ public sealed class OccurrenceTests : IDisposable
     }
 
     [Fact]
+    public void RecurringOccurrence_KeepsItsOriginalStart()
+    {
+        // Weekly Tuesdays 09:00 UTC; the 17 Nov occurrence moved to 11:00. One-off events get no recurrence id.
+        _store.CreateItem(new Item("r1", "cal", ItemKind.Event, null, Ics(
+            "UID:r1\nDTSTART:20261110T090000Z\nDURATION:PT1H\nRRULE:FREQ=WEEKLY;COUNT=3\n",
+            "UID:r1\nRECURRENCE-ID:20261117T090000Z\nDTSTART:20261117T110000Z\nDURATION:PT1H\n"), IsRecurring: true));
+        _store.CreateItem(new Item("g1", "work", ItemKind.Event, "AAMkG1", "{}", StartUtc: Utc(11, 6, 9), EndUtc: Utc(11, 6, 10)));
+
+        var views = _store.GetOccurrenceViews(From, To);
+
+        Assert.Equal(
+            [(Utc(11, 10, 9), Utc(11, 10, 9)), (Utc(11, 17, 11), Utc(11, 17, 9)), (Utc(11, 24, 9), Utc(11, 24, 9))],
+            views.Where(v => v.ItemId == "r1").Select(v => (v.StartUtc, v.RecurrenceUtc!.Value)));
+        Assert.Null(views.Single(v => v.ItemId == "g1").RecurrenceUtc);
+    }
+
+    [Fact]
     public void FloatingTime_FollowsWindowsTimezoneChange()
     {
         _store.CreateItem(new Item("f1", "cal", ItemKind.Event, null, Ics("UID:f1\nDTSTART:20261110T090000\nDURATION:PT1H\n\n")));

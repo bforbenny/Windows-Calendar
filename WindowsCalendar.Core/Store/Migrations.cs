@@ -126,6 +126,13 @@ internal static class Migrations
         """
         ALTER TABLE collections ADD COLUMN source_url TEXT;
         """,
+
+        // v6: each occurrence's original start (RECURRENCE-ID) for recurring items (recurring-events interim);
+        // forces a full index rebuild to fill it.
+        """
+        ALTER TABLE occurrences ADD COLUMN recurrence_utc INTEGER;
+        DELETE FROM meta WHERE key = 'occurrences_built';
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

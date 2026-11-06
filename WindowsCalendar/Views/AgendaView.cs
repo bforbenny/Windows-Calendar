@@ -64,7 +64,7 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
 
     public event Action<DateOnly>? VisibleDayChanged;
 
-    public event Action<string>? EventOpened;
+    public event Action<DisplayEvent>? EventOpened;
 
     // Agenda has no empty slots to click.
     public event Action<DateTime, bool>? CreateRequested { add { } remove { } }
@@ -212,7 +212,7 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
 
     public void CompleteDrag(DisplayEvent e, DragTarget target) => EventDropped?.Invoke(e, target);
 
-    public void OpenEvent(DisplayEvent e) => EventOpened?.Invoke(e.ItemId);
+    public void OpenEvent(DisplayEvent e) => EventOpened?.Invoke(e);
 
     private StackPanel BuildList(DateOnly date, bool isToday)
     {
