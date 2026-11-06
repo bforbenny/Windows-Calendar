@@ -67,6 +67,7 @@ public sealed partial class MainWindow
         {
             AddKeyHint(ViewSwitcher.Items[i], $"F{i + 1}");
         }
+        AddKeyHint(SearchBox, "Ctrl+F");
         AddKeyHint(SyncButton, "F5");
         AddKeyHint(SettingsButton, "Ctrl+,");
         if (UndoBar.IsOpen)

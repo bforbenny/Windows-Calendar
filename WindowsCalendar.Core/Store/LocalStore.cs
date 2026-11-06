@@ -53,6 +53,7 @@ public sealed class LocalStore : IDisposable
             Remap(connection, "remap-show-as", "status", "raw_payload NOT LIKE '{%'",
                 payload => ShowAsValues.ToGraph(CalDav.CalDavEvents.ReadShowAs(CalDav.CalDavEvents.Master(Ical.Net.Calendar.Load(payload)!))));
             Remap(connection, "remap-join-url", "join_url", "1 = 1", payload => JoinLink.FromPayload(payload)?.Url);
+            BuildSearchIndex(connection);
             Execute(connection, null, "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
             // Entries left in flight by a crash are sent again (R4).
             Execute(connection, null, "UPDATE outbox SET in_flight = 0 WHERE in_flight = 1;");
@@ -104,6 +105,35 @@ public sealed class LocalStore : IDisposable
             Execute(connection, tx, $"UPDATE items SET {column} = $value WHERE id = $id;", ("$value", value), ("$id", id));
         }
         Execute(connection, tx, "DELETE FROM meta WHERE key = $key;", ("$key", key));
+        tx.Commit();
+    }
+
+    /// <summary>After v13: indexes every stored item for search once (search R1), then clears the flag.</summary>
+    private static void BuildSearchIndex(SqliteConnection connection)
+    {
+        using (var check = Command(connection, null, "SELECT 1 FROM meta WHERE key = 'build-search';"))
+        {
+            if (check.ExecuteScalar() is null)
+            {
+                return;
+            }
+        }
+        using var tx = connection.BeginTransaction();
+        var ids = new List<string>();
+        using (var cmd = Command(connection, tx, "SELECT id FROM items;"))
+        using (var r = cmd.ExecuteReader())
+        {
+            while (r.Read())
+            {
+                ids.Add(r.GetString(0));
+            }
+        }
+        Execute(connection, tx, "DELETE FROM search_index;");
+        foreach (var id in ids)
+        {
+            IndexItem(connection, tx, id);
+        }
+        Execute(connection, tx, "DELETE FROM meta WHERE key = 'build-search';");
         tx.Commit();
     }
 
@@ -306,6 +336,12 @@ public sealed class LocalStore : IDisposable
                             """,
                             ("$name", f.Name), ("$ro", f.ReadOnly), ("$source", f.SourceUrl), ("$colour", colour),
                             ("$server", server), ("$id", match.Id));
+                        if (match.Name != f.Name)
+                        {
+                            Execute(_connection, tx,
+                                "UPDATE search_index SET calendar = $name WHERE rowid IN (SELECT rowid FROM items WHERE collection_id = $id);",
+                                ("$name", f.Name), ("$id", match.Id));
+                        }
                         updated++;
                     }
                 }
@@ -371,6 +407,7 @@ public sealed class LocalStore : IDisposable
             using var tx = _connection.BeginTransaction();
             Execute(_connection, tx, InsertItemSql, ItemParameters(item));
             RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
+            IndexItem(_connection, tx, item.Id);
             Enqueue(tx, item.Id, OutboxOperation.Create, item.RawPayload, null, groupId);
             tx.Commit();
         }
@@ -385,6 +422,7 @@ public sealed class LocalStore : IDisposable
             var baseEtag = GetLiveEtag(tx, item.Id);
             Execute(_connection, tx, UpdateItemSql, ItemParameters(item));
             RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
+            IndexItem(_connection, tx, item.Id);
             Enqueue(tx, item.Id, OutboxOperation.Update, item.RawPayload, baseEtag, groupId);
             tx.Commit();
         }
@@ -448,6 +486,7 @@ public sealed class LocalStore : IDisposable
                 Enqueue(tx, itemId, OutboxOperation.Delete, null, baseEtag, group);
             }
             RebuildItemOccurrences(tx, id, OccurrenceWindow());
+            IndexItem(_connection, tx, id);
             tx.Commit();
         }
         LocalChanged?.Invoke();
@@ -468,9 +507,11 @@ public sealed class LocalStore : IDisposable
             var baseEtag = GetLiveEtag(tx, original.Id);
             Execute(_connection, tx, UpdateItemSql, ItemParameters(original));
             RebuildItemOccurrences(tx, original.Id, window);
+            IndexItem(_connection, tx, original.Id);
             Enqueue(tx, original.Id, OutboxOperation.Update, original.RawPayload, baseEtag, group);
             Execute(_connection, tx, InsertItemSql, ItemParameters(following));
             RebuildItemOccurrences(tx, following.Id, window);
+            IndexItem(_connection, tx, following.Id);
             Enqueue(tx, following.Id, OutboxOperation.Create, following.RawPayload, null, group);
             tx.Commit();
         }
@@ -487,6 +528,7 @@ public sealed class LocalStore : IDisposable
             var baseEtag = GetLiveEtag(tx, restored.Id);
             Execute(_connection, tx, UpdateItemSql, ItemParameters(restored));
             RebuildItemOccurrences(tx, restored.Id, OccurrenceWindow());
+            IndexItem(_connection, tx, restored.Id);
             Enqueue(tx, restored.Id, OutboxOperation.Update, restored.RawPayload, baseEtag, group);
             var followingEtag = GetLiveEtag(tx, followingId);
             Execute(_connection, tx,
@@ -625,6 +667,98 @@ public sealed class LocalStore : IDisposable
     // ---- Collection colour and marker overrides (ui-colour-theme interim); local only ----
 
     /// <summary>A colour the user chose: later server colours no longer change it.</summary>
+    // ---- Search ----
+
+    /// <summary>
+    /// Live events and tasks matching every typed word as a prefix, in any account or collection (search R1, R2, R6).
+    /// A series is one result (R7): items of one MS365 series, or one CalDAV item, are grouped and shown by the next
+    /// matched occurrence, else the last one. Upcoming results come first, soonest first, then past ones, newest first,
+    /// then undated tasks (R3). Titles and snippets mark matches with <see cref="SearchResult.MarkStart"/> and
+    /// <see cref="SearchResult.MarkEnd"/>.
+    /// </summary>
+    public IReadOnlyList<SearchResult> Search(string text, int limit = 50)
+    {
+        if (SearchText.Query(text) is not { } query)
+        {
+            return [];
+        }
+        var now = _time.GetUtcNow();
+        lock (_gate)
+        {
+            // One row per matched item and occurrence; each group keeps its best row as it is read (R8).
+            var groups = new Dictionary<string, (SearchResult Row, bool Indexed)>();
+            using (var cmd = Command(_connection, null,
+                """
+                SELECT i.id, i.collection_id, i.kind, i.collection_id || '|' || COALESCE(i.series_id, i.remote_id, i.id), i.is_recurring,
+                       i.all_day, i.completed_utc IS NOT NULL OR lower(COALESCE(i.status, '')) = 'completed',
+                       COALESCE(o.start_utc, i.start_utc, i.due_utc), COALESCE(o.end_utc, i.end_utc, i.due_utc), o.recurrence_utc,
+                       o.item_id IS NOT NULL
+                FROM search_index s JOIN items i ON i.rowid = s.rowid LEFT JOIN occurrences o ON o.item_id = i.id
+                WHERE search_index MATCH $q AND i.deleted = 0;
+                """, ("$q", query)))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    var group = r.GetString(3);
+                    var row = new SearchResult(r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)), "", null,
+                        NullableTime(r, 7), NullableTime(r, 8), r.GetBoolean(5), r.IsDBNull(9) ? null : Time(r, 9), r.GetBoolean(4),
+                        r.GetBoolean(6));
+                    var indexed = r.GetBoolean(10);
+                    if (!groups.TryGetValue(group, out var best))
+                    {
+                        groups[group] = (row, indexed);
+                    }
+                    else if (indexed && (!best.Indexed || Before(row, best.Row)))
+                    {
+                        groups[group] = (row with { IsSeries = row.IsSeries || best.Row.IsSeries }, true);
+                    }
+                    else if (row.IsSeries && !best.Row.IsSeries)
+                    {
+                        groups[group] = (best.Row with { IsSeries = true }, best.Indexed);
+                    }
+                }
+            }
+            var shown = groups.Values.Select(g => g.Row)
+                .OrderBy(r => r.StartUtc is null ? 2 : Upcoming(r) ? 0 : 1)
+                .ThenBy(r => r.StartUtc is not { } t ? 0 : Upcoming(r) ? t.UtcTicks : -t.UtcTicks)
+                .Take(limit)
+                .ToList();
+
+            // Highlights only for the results shown (R8).
+            var marks = new Dictionary<string, (string Title, string? Snippet)>();
+            if (shown.Count > 0)
+            {
+                var ids = shown.Select(r => r.ItemId).ToList();
+                using var cmd = Command(_connection, null,
+                    $"""
+                    SELECT i.id, highlight(search_index, 0, $a, $b), snippet(search_index, -1, $a, $b, '…', 12)
+                    FROM search_index s JOIN items i ON i.rowid = s.rowid
+                    WHERE search_index MATCH $q AND i.id IN ({InList(ids)});
+                    """,
+                    [("$q", query), ("$a", SearchResult.MarkStart.ToString()), ("$b", SearchResult.MarkEnd.ToString()), .. InParameters(ids)]);
+                using var r = cmd.ExecuteReader();
+                while (r.Read())
+                {
+                    marks[r.GetString(0)] = (NullableString(r, 1) ?? "", NullableString(r, 2));
+                }
+            }
+            return shown.Select(r =>
+            {
+                var (title, snippet) = marks.GetValueOrDefault(r.ItemId, ("", null));
+                return r with { Title = title, Snippet = snippet is { } s && Unmarked(s) != Unmarked(title) ? s : null };
+            }).ToList();
+        }
+
+        bool Upcoming(SearchResult r) => r.EndUtc > now;
+
+        // An occurrence still to end beats a past one; the soonest upcoming, else the latest past one.
+        bool Before(SearchResult a, SearchResult b) =>
+            Upcoming(a) != Upcoming(b) ? Upcoming(a) : Upcoming(a) ? a.StartUtc < b.StartUtc : a.StartUtc > b.StartUtc;
+
+        static string Unmarked(string s) => s.Replace(SearchResult.MarkStart.ToString(), "").Replace(SearchResult.MarkEnd.ToString(), "");
+    }
+
     public void SetCollectionColour(string collectionId, string colour)
     {
         lock (_gate)
@@ -1090,6 +1224,7 @@ public sealed class LocalStore : IDisposable
                 Execute(_connection, tx, UpdateItemSql, ItemParameters(item));
             }
             RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
+            IndexItem(_connection, tx, item.Id);
             tx.Commit();
             return ServerChangeResult.Applied;
         }
@@ -1196,6 +1331,7 @@ public sealed class LocalStore : IDisposable
         Execute(_connection, tx, UpdateItemSql + " UPDATE items SET deleted = 0 WHERE id = $id;",
             ItemParameters(server with { Id = itemId, CollectionId = collectionId }));
         RebuildItemOccurrences(tx, itemId, OccurrenceWindow());
+        IndexItem(_connection, tx, itemId);
     }
 
     /// <summary>
@@ -1340,6 +1476,31 @@ public sealed class LocalStore : IDisposable
     {
         var today = new DateTimeOffset(_time.GetUtcNow().UtcDateTime.Date, TimeSpan.Zero);
         return (today, today.AddMonths(-3), today.AddMonths(12), _time.LocalTimeZone);
+    }
+
+    /// <summary>Replaces one item's row in the search index (search R1), in the transaction that wrote it.</summary>
+    private static void IndexItem(SqliteConnection connection, SqliteTransaction tx, string itemId)
+    {
+        long rowId;
+        string? title, location, calendar;
+        string payload;
+        using (var cmd = Command(connection, tx,
+            "SELECT i.rowid, i.summary, i.location, i.raw_payload, c.name FROM items i JOIN collections c ON c.id = i.collection_id WHERE i.id = $id;",
+            ("$id", itemId)))
+        using (var r = cmd.ExecuteReader())
+        {
+            if (!r.Read())
+            {
+                return;
+            }
+            (rowId, title, location, payload, calendar) = (r.GetInt64(0), NullableString(r, 1), NullableString(r, 2), r.GetString(3), r.GetString(4));
+        }
+        Execute(connection, tx,
+            """
+            DELETE FROM search_index WHERE rowid = $row;
+            INSERT INTO search_index (rowid, title, body, location, calendar) VALUES ($row, $title, $body, $location, $calendar);
+            """,
+            ("$row", rowId), ("$title", title), ("$body", SearchText.Body(payload)), ("$location", location), ("$calendar", calendar));
     }
 
     /// <summary>Replaces one item's rows in the occurrence index (R3).</summary>

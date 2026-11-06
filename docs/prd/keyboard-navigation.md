@@ -46,7 +46,7 @@ Every action in the app can be done from the keyboard, including the drag operat
 
 ## Interim (current build)
 
-- Built: F1-F4, T, PgUp / PgDn, Ctrl+G, Arrows, Enter, Esc, Del, Ctrl+D, Ctrl+J / Ctrl+Shift+J (branch `online-meeting-join`), Ctrl+Z, F5, Ctrl+, , Ctrl+B, ? and R3. Ctrl+N presses the toolbar New button (New event, or New task in the Tasks view) until quick add takes the key. Ctrl+F / Ctrl+E and Ctrl+1-9 come with their features.
+- Built: F1-F4, T, PgUp / PgDn, Ctrl+G, Arrows, Enter, Esc, Del, Ctrl+D, Ctrl+J / Ctrl+Shift+J (branch `online-meeting-join`), Ctrl+F / Ctrl+E (branch `search`), Ctrl+Z, F5, Ctrl+, , Ctrl+B, ? and R3. Ctrl+N presses the toolbar New button (New event, or New task in the Tasks view) until quick add takes the key. Ctrl+1-9 comes with its feature.
 - Selection (Week, Month, Agenda): the first arrow press selects the first item on today, else the first one from the day in view. Up/Down move within the day (all-day items first, then by start); Left/Right move to the item nearest in time on the previous / next day that has one. The selected card has an accent outline and is scrolled into view. Clicking a card selects it as well as opening it. Esc clears the selection when no panel is open. Enter opens the selected event or task.
 - Del deletes the selected event through the editor's Delete (its confirmation and repeating-event prompt; undo for deletes comes with [undo](undo.md)). Tasks are not deleted from the calendar.
 - R3 goes through the drag path: the same recurring scope prompt, Undo banner and rules; read-only events, invitations and tasks do not move. All-day events move only by day; resize needs a timed event and keeps at least 15 minutes.

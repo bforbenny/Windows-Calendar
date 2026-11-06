@@ -14,7 +14,7 @@ namespace WindowsCalendar;
 
 /// <summary>
 /// Keyboard shortcuts and the keyboard selection (keyboard-navigation interim): F1-F4 views, T today, F5 sync,
-/// Ctrl+G go to date, PgUp / PgDn, ? cheat sheet; Arrows select, Enter opens, Del deletes, Ctrl+D duplicates, Ctrl+J joins, Esc clears, and
+/// Ctrl+G go to date, Ctrl+F / Ctrl+E search, PgUp / PgDn, ? cheat sheet; Arrows select, Enter opens, Del deletes, Ctrl+D duplicates, Ctrl+J joins, Esc clears, and
 /// Alt(+Shift)+Arrows move or resize the selected event through the drag path (R3).
 /// </summary>
 public sealed partial class MainWindow
@@ -27,6 +27,7 @@ public sealed partial class MainWindow
         ("F1 / F2 / F3 / F4", "Week / Month / Agenda / Tasks"),
         ("T", "Go to today"),
         ("Ctrl+G", "Go to date"),
+        ("Ctrl+F / Ctrl+E", "Search events and tasks"),
         ("PgUp / PgDn", "Scroll back / forward one screen"),
         ("Arrows", "Select an event: Up/Down within the day, Left/Right across days"),
         ("Enter", "Open the selected event or task"),
@@ -78,6 +79,11 @@ public sealed partial class MainWindow
         if (ctrl && shift && !alt && key == VirtualKey.J)
         {
             JoinNext();
+            return true;
+        }
+        if (ctrl && !shift && !alt && key is VirtualKey.F or VirtualKey.E && SettingsHost.Visibility != Visibility.Visible)
+        {
+            FocusSearch();
             return true;
         }
         if (!SingleKeysAllowed())

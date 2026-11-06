@@ -173,6 +173,17 @@ internal static class Migrations
         ALTER TABLE items ADD COLUMN join_url TEXT;
         INSERT INTO meta (key, value) VALUES ('remap-join-url', '1');
         """,
+
+        // v13: full-text search (search R1). A row's rowid is its item's rowid (the app never runs VACUUM, which could
+        // renumber them); the store fills it from existing items once on open (LocalStore.BuildSearchIndex).
+        """
+        CREATE VIRTUAL TABLE search_index USING fts5(title, body, location, calendar,
+            tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3');
+        CREATE TRIGGER items_search_delete AFTER DELETE ON items BEGIN
+            DELETE FROM search_index WHERE rowid = old.rowid;
+        END;
+        INSERT INTO meta (key, value) VALUES ('build-search', '1');
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

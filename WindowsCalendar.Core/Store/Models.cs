@@ -129,5 +129,27 @@ public sealed record OccurrenceView(
     ShowAs ShowAs = ShowAs.Busy,
     string? JoinUrl = null);
 
+/// <summary>
+/// A search result (search R3, R5, R7): the item and occurrence to open, its date (null for an undated task), and its
+/// title and snippet with matches between <see cref="MarkStart"/> and <see cref="MarkEnd"/>. Snippet is null when it
+/// would only repeat the title.
+/// </summary>
+public sealed record SearchResult(
+    string ItemId,
+    string CollectionId,
+    ItemKind Kind,
+    string Title,
+    string? Snippet,
+    DateTimeOffset? StartUtc,
+    DateTimeOffset? EndUtc,
+    bool AllDay,
+    DateTimeOffset? RecurrenceUtc,
+    bool IsSeries,
+    bool Completed)
+{
+    public const char MarkStart = '\u0002';
+    public const char MarkEnd = '\u0003';
+}
+
 /// <summary>One expanded instance of an item in the occurrence index (local-store-offline R3).</summary>
 public sealed record ItemOccurrence(string ItemId, DateTimeOffset StartUtc, DateTimeOffset EndUtc);

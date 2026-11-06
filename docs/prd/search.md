@@ -2,7 +2,7 @@
 description: Offline full-text search across cached events and tasks from all accounts
 when-to-use: Before working on search UI or the full-text index
 tags: [search, fts, ui]
-status: pending
+status: in-progress
 ---
 
 # Search
@@ -21,6 +21,15 @@ A search box finds events and tasks across all accounts using a local SQLite FTS
 - R6. Scope: everything in the local store (the sync window for MS365; full collections for Radicale). Online server-side search beyond the window is out of scope. When MS365 accounts exist, results show "Microsoft 365 searched from <date>" so the window is visible. Declined events are included ([attendees-invitations](attendees-invitations.md) R4).
 - R7. Recurring series appear once (series result), with the next occurrence date. If the series has ended, the last occurrence is shown; if the match is only in an exception, that occurrence is shown.
 - R8. Search across ~10,000 items returns in < 100 ms.
+
+## Interim (first slice)
+
+- Built: R1, R2, R3, R5, R6, R7 and R8. R4 (filters) comes later, with [calendar-sets](calendar-sets.md) for its default chip.
+- The index is an FTS5 table keyed by the item's SQLite rowid, filled once from existing items when the store is first opened after the upgrade. The app never runs `VACUUM` (it can renumber rowids). If it ever does, the index must be rebuilt.
+- MS365 HTML descriptions are indexed as plain text.
+- Results drop down under the toolbar search box. Esc closes them. Up to 50 results are shown.
+- R7: a Radicale recurring event is one stored item, so a match only in an exception's text shows the series result, not that occurrence. MS365 exceptions are stored on their own and are shown as the occurrence.
+- Results from calendars hidden in the sidebar are included (R6: everything in the local store). Choosing one opens it in the editor, but the calendar does not draw it.
 
 ## Out of scope
 

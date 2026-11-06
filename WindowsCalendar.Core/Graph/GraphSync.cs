@@ -116,6 +116,9 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
         return found;
     }
 
+    /// <summary>The first day MS365 events are stored from (search R6).</summary>
+    public static DateOnly WindowStart(DateOnly today) => Chunks(today)[0];
+
     /// <summary>The chunk starts covering the window around <paramref name="today"/> (R2, R4).</summary>
     internal static IReadOnlyList<DateOnly> Chunks(DateOnly today)
     {

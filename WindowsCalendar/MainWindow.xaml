@@ -92,6 +92,15 @@
                         <SelectorBarItem Text="Tasks" Tag="Tasks" />
                     </SelectorBar>
                     <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4">
+                        <!-- Search (search R2): results drop down as you type; also Ctrl+F / Ctrl+E. -->
+                        <AutoSuggestBox x:Name="SearchBox" Width="240" Margin="0,0,4,0" VerticalAlignment="Center"
+                                        PlaceholderText="Search" UpdateTextOnSelect="False"
+                                        AutomationProperties.Name="Search events and tasks"
+                                        TextChanged="OnSearchTextChanged" QuerySubmitted="OnSearchSubmitted">
+                            <AutoSuggestBox.QueryIcon>
+                                <SymbolIcon Symbol="Find" />
+                            </AutoSuggestBox.QueryIcon>
+                        </AutoSuggestBox>
                         <Button x:Name="SyncButton" Click="OnSyncNow" VerticalAlignment="Center"
                                 ToolTipService.ToolTip="Sync now (F5)" AutomationProperties.Name="Sync now">
                             <FontIcon Glyph="&#xE895;" />
