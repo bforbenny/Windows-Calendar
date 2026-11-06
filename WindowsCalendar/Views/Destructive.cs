@@ -10,14 +10,7 @@ internal static class Destructive
 {
     public static ContentDialog Apply(ContentDialog dialog)
     {
-        // The accent button style, with its colours replaced for this dialog only (lightweight styling).
-        dialog.PrimaryButtonStyle = Theme.Style("AccentButtonStyle");
-        foreach (var (state, background) in new[] { ("", "DestructiveBrush"), ("PointerOver", "DestructiveHoverBrush"), ("Pressed", "DestructivePressedBrush") })
-        {
-            dialog.Resources["AccentButtonBackground" + state] = Theme.Brush(background);
-            dialog.Resources["AccentButtonBorderBrush" + state] = Theme.Brush(background);
-            dialog.Resources["AccentButtonForeground" + state] = Theme.Brush("TextOnDestructiveBrush");
-        }
+        dialog.PrimaryButtonStyle = Theme.Style("DestructiveButtonStyle");
         return dialog;
     }
 }
