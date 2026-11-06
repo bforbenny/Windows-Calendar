@@ -40,6 +40,20 @@ public sealed class LocalStoreTests : IDisposable
     }
 
     [Fact]
+    public void UiFlags_PersistAcrossReopenAndClear()
+    {
+        _store.SetUiFlag("sidebar-hidden", true);
+        _store.SetUiFlag("collapsed:Calendar", true);
+        _store.SetUiFlag("collapsed:Calendar", false);
+        _store.Dispose();
+
+        using var reopened = LocalStore.Open(DbPath);
+        Assert.True(reopened.GetUiFlag("sidebar-hidden"));
+        Assert.False(reopened.GetUiFlag("collapsed:Calendar"));
+        Assert.False(reopened.GetUiFlag("never-set"));
+    }
+
+    [Fact]
     public void ChangesPersistAcrossReopen()
     {
         _store.CreateItem(NewItem());

@@ -23,6 +23,13 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
   - the calendar set selector ([calendar-sets](calendar-sets.md));
   - two sections, Calendars and Task lists, each grouped by account; every calendar and task list has a visibility checkbox and colour swatch (its shape marker); the checkbox is the only per-calendar visibility control and works as an override of the active set ([calendar-sets](calendar-sets.md) R5);
   - a mini month navigator.
+- R2b. Sidebar layout:
+  - a hamburger button at the far left of the toolbar (and Ctrl+B, [keyboard-navigation](keyboard-navigation.md)) hides the sidebar fully, so the views take the whole width, and shows it again;
+  - the Calendars and Task lists section headings, and each account group within them, have a chevron to collapse and expand them;
+  - the sidebar's shown/hidden state and every collapsed section and account group persist across restarts (stored locally in the store's `meta` table);
+  - a collection's status follows its name as an icon in the secondary text colour, with a tooltip and screen-reader name giving the text: link icon for a subscribed feed, lock icon for a read-only calendar, warning icon for a feed that is not secure and so not synced;
+  - unticked calendars and task lists are not pulled from the server; ticking one syncs it straight away ([local-store-offline](local-store-offline.md) R10);
+  - while a calendar or task list is syncing, its name shows a hue wave moving left to right ([ui-states](ui-states.md) R1); with Windows animations off, the name is shown in the accent colour instead.
 - R2a. Calendar colours and shapes, per [ui-colour-theme](ui-colour-theme.md) R6–R9:
   - each calendar or task list has one of 24 colours (8 hues × 3 levels) and a shape marker (up triangle, down triangle, square, circle, pentagon), shown by default;
   - the initial colour is the server colour (Graph `hexColor` / `color`; CalDAV `calendar-color`) snapped to the nearest of the 24, or else an automatic assignment;
@@ -92,6 +99,11 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 ## Acceptance criteria
 
 - [ ] All views render events from both MS365 and Radicale in the correct calendar colours.
+- [ ] The hamburger button and Ctrl+B hide and show the sidebar; the state survives a restart.
+- [ ] Collapsing the Task lists section and one account group survives a restart.
+- [ ] Subscribed, read-only and not-secure collections show a link, lock or warning icon instead of a text label, with the text as a tooltip.
+- [ ] During Sync now, each calendar's name shows the hue wave only while that calendar syncs.
+- [ ] Sync now skips unticked calendars (no wave, no pull in the log); ticking one waves and syncs only that calendar.
 - [ ] A calendar colour or shape changed in the app persists across restarts and is not changed on the server.
 - [ ] Each event card shows its calendar's shape marker before the title.
 - [ ] A single click opens the editor panel; a small drag moves the event instead.

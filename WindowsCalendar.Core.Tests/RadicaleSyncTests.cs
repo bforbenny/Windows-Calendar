@@ -58,7 +58,23 @@ public sealed class RadicaleSyncTests : IDisposable
             _removed = [];
         }
 
+        private readonly SemaphoreSlim _gate = new(1, 1);
+
+        // Collections and feeds are pulled in parallel: one request at a time keeps the fake's lists consistent.
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await _gate.WaitAsync(cancellationToken);
+            try
+            {
+                return await HandleAsync(request, cancellationToken);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        private async Task<HttpResponseMessage> HandleAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Methods.Add(request.Method.Method);
             if (Unauthorized)
@@ -215,6 +231,41 @@ public sealed class RadicaleSyncTests : IDisposable
         Assert.Equal(_server.Token, _store.GetSyncState(_collections[0].Id, "sync-token"));
         Assert.All(_server.Methods, m => Assert.Contains(m, new[] { "PROPFIND", "REPORT" }));
         Assert.Equal(0, summary.CalendarListChanges);
+    }
+
+    [Fact]
+    public async Task Pull_ReportsEachCollectionSyncingThenDone()
+    {
+        _server.Put("e1.ics", Event("e1", "20261110T090000Z"));
+        var events = new List<(string Id, bool Active)>();
+        var sync = new RadicaleSync(_store, new HttpClient(_server), _time);
+        sync.CollectionSyncing += (id, on) =>
+        {
+            lock (events)
+            {
+                events.Add((id, on));
+            }
+        };
+
+        await sync.SyncAccountAsync(_account, "secret");
+
+        // Both collections share one URL, so they are pulled together.
+        var ids = _collections.Select(c => c.Id).ToHashSet();
+        Assert.Equal(ids, events.Take(2).Where(e => e.Active).Select(e => e.Id).ToHashSet());
+        Assert.Equal(ids, events.Skip(2).Where(e => !e.Active).Select(e => e.Id).ToHashSet());
+    }
+
+    [Fact]
+    public async Task CollectionNotAccepted_IsNotPulled()
+    {
+        _server.Put("e1.ics", Event("e1", "20261110T090000Z"));
+
+        var summary = await new RadicaleSync(_store, new HttpClient(_server), _time)
+            .SyncAccountAsync(_account, "secret", pull: _ => false, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, summary.Collections);
+        Assert.Empty(Cached());
+        Assert.DoesNotContain("REPORT", _server.Methods);
     }
 
     [Fact]

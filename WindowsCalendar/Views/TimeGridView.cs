@@ -263,14 +263,27 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragH
 
     private Grid BuildColumn(DateOnly date, bool isToday)
     {
+        var shade = ViewParts.DayShade(date, isToday);
         var column = new Grid
         {
             Width = _columnWidth,
             Height = _bodyCanvas.Height,
             BorderBrush = Theme.Brush("DividerBrush"),
             BorderThickness = new Thickness(1, 0, 0, 0),
-            Background = ViewParts.DayShade(date, isToday) ?? ViewParts.Clickable,
+            Background = shade ?? ViewParts.Clickable,
         };
+        if (shade is not null)
+        {
+            // A shaded background hides the shared hour lines below it, so the column draws its own under the events.
+            var lines = new Canvas { IsHitTestVisible = false };
+            for (var h = 0; h < 24; h++)
+            {
+                var line = new Rectangle { Height = 1, Width = _columnWidth, Fill = Theme.Brush("DividerBrush") };
+                ViewParts.Place(line, 0, DayColumnPanel.PixelsFor(h * 60));
+                lines.Children.Add(line);
+            }
+            column.Children.Add(lines);
+        }
         // A click on an empty slot creates a 1-hour event at that half hour (R5 interim).
         column.Tapped += (_, e) =>
         {

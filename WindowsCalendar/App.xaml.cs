@@ -43,8 +43,9 @@ public partial class App : Application
     private SyncScheduler? _scheduler;
     private bool _online;
 
-    /// <summary>Accounts skipped after a 401 or a missing password, until restart (sync-radicale R11 interim). Sync runs one at a time.</summary>
+    /// <summary>Accounts skipped after a 401 or a missing password, until restart (sync-radicale R11 interim). Guarded by _accountGate: accounts sync in parallel.</summary>
     private readonly HashSet<string> _pausedAccounts = [];
+    private readonly Lock _accountGate = new();
 
     /// <summary>
     /// Shared client for CalDAV. Redirects are followed by DavTransport itself, so the Authorization header stays
@@ -61,7 +62,7 @@ public partial class App : Application
     /// <summary>MS365 sign-in; null until ms365.json holds the app registration's ids (account-management R3).</summary>
     internal static Ms365Auth? Ms365 { get; } = Ms365Auth.Load();
 
-    /// <summary>MS365 accounts skipped until this time after a 429/503 (sync-ms365 R10).</summary>
+    /// <summary>MS365 accounts skipped until this time after a 429/503 (sync-ms365 R10). Guarded by _accountGate.</summary>
     private readonly Dictionary<string, DateTimeOffset> _backoffUntil = [];
 
     /// <summary>Kept alive for ColorValuesChanged (tray icon theme swap).</summary>
@@ -184,7 +185,7 @@ public partial class App : Application
     private static bool IsOnline() =>
         NetworkInformation.GetInternetConnectionProfile()?.GetNetworkConnectivityLevel() == NetworkConnectivityLevel.InternetAccess;
 
-    private async Task RunSync(string reason, CancellationToken cancellationToken)
+    private async Task RunSync(string reason, IReadOnlySet<string>? only, CancellationToken cancellationToken)
     {
         Log.Information("Sync requested ({Reason})", reason);
         if (Store is not { } store)
@@ -200,47 +201,24 @@ public partial class App : Application
             Log.Information("Occurrence index rebuilt for {Zone}", TimeZoneInfo.Local.Id);
         }
 
-        var radicale = new RadicaleSync(store, CalDavHttp);
-        foreach (var account in store.GetAccounts().Where(a => a.Type == AccountType.CalDAV))
+        // All accounts sync at once (local-store-offline R10); each catches its own errors. Hidden collections are
+        // not pulled; a run for a just-ticked collection syncs only its account and pulls only it.
+        var hidden = store.GetHiddenCollectionIds();
+        Func<Collection, bool> pull = c => !hidden.Contains(c.Id) && (only is null || only.Contains(c.Id));
+        var accounts = store.GetAccounts()
+            .Where(a => only is null || store.GetCollections(a.Id).Any(c => only.Contains(c.Id)));
+        var auth = Ms365;
+        var results = await Task.WhenAll(accounts.Select(account => account.Type switch
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (_pausedAccounts.Contains(account.Id))
-            {
-                continue;
-            }
-
-            // sync-radicale R10: the password comes from Credential Manager for this run only, and is never logged.
-            var password = CredentialVault.RetrievePassword(account.Id);
-            if (password is null)
-            {
-                Log.Warning("Account {AccountId} has no saved password; paused until restart", account.Id);
-                _pausedAccounts.Add(account.Id);
-                continue;
-            }
-            try
-            {
-                // Sync now also refetches subscribed feeds at once (sync-radicale R1a).
-                var summary = await radicale.SyncAccountAsync(account, password, forceFeeds: reason == "sync now", cancellationToken);
-                Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
-                changed |= summary.AnyChange;
-            }
-            catch (CalDavException ex) when (ex.Error == CalDavError.WrongCredentials)
-            {
-                // sync-radicale R11 interim: no retry loop; the Sign in bar comes with ui-states.
-                Log.Warning("Account {AccountId} rejected the saved password (401); paused until restart", account.Id);
-                _pausedAccounts.Add(account.Id);
-            }
-            catch (CalDavException ex)
-            {
-                Log.Warning("Account {AccountId} sync failed: {Error} {Status}", account.Id, ex.Error, (int?)ex.Status);
-            }
-            finally
-            {
-                password = null;
-            }
+            AccountType.CalDAV => SyncRadicaleAsync(store, account, reason, pull, cancellationToken),
+            AccountType.MS365 when auth is not null => SyncMs365Async(store, account, auth, pull, cancellationToken),
+            _ => Task.FromResult(false),
+        }));
+        if (auth is null && store.GetAccounts().Any(a => a.Type == AccountType.MS365))
+        {
+            Log.Warning("MS365 accounts not synced: ms365.json has no app registration ids");
         }
-
-        changed |= await SyncMs365Async(store, cancellationToken);
+        changed |= results.Any(c => c);
 
         if (changed && _window is { } window)
         {
@@ -248,85 +226,152 @@ public partial class App : Application
         }
     }
 
-    /// <summary>
-    /// Syncs each MS365 account: queued changes out, then calendars in (sync-ms365). The access token is fetched silently for this run only and never
-    /// logged. Needing sign-in pauses the account until restart (R11 interim); throttling backs it off (R10).
-    /// </summary>
-    private async Task<bool> SyncMs365Async(LocalStore store, CancellationToken cancellationToken)
+    /// <summary>Shows a collection's pull in the sidebar (ui-states R1); raised by the engines off the UI thread.</summary>
+    private void OnCollectionSyncing(string collectionId, bool active)
     {
-        var accounts = store.GetAccounts().Where(a => a.Type == AccountType.MS365).ToList();
-        if (accounts.Count == 0)
+        if (_window is { } window)
+        {
+            window.DispatcherQueue.TryEnqueue(() => window.SetCollectionSyncing(collectionId, active));
+        }
+    }
+
+    private bool IsPaused(string accountId)
+    {
+        lock (_accountGate)
+        {
+            return _pausedAccounts.Contains(accountId);
+        }
+    }
+
+    private void Pause(string accountId)
+    {
+        lock (_accountGate)
+        {
+            _pausedAccounts.Add(accountId);
+        }
+    }
+
+    /// <summary>Syncs one Radicale account. Returns whether the views may have changed.</summary>
+    private async Task<bool> SyncRadicaleAsync(LocalStore store, Account account, string reason, Func<Collection, bool> pull,
+        CancellationToken cancellationToken)
+    {
+        if (IsPaused(account.Id))
         {
             return false;
         }
-        if (Ms365 is not { } auth)
+
+        // sync-radicale R10: the password comes from Credential Manager for this run only, and is never logged.
+        var password = CredentialVault.RetrievePassword(account.Id);
+        if (password is null)
         {
-            Log.Warning("MS365 accounts not synced: ms365.json has no app registration ids");
+            Log.Warning("Account {AccountId} has no saved password; paused until restart", account.Id);
+            Pause(account.Id);
             return false;
+        }
+        var radicale = new RadicaleSync(store, CalDavHttp);
+        radicale.CollectionSyncing += OnCollectionSyncing;
+        try
+        {
+            // Sync now also refetches subscribed feeds at once (sync-radicale R1a).
+            var summary = await radicale.SyncAccountAsync(account, password, forceFeeds: reason == "sync now", pull, cancellationToken);
+            Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
+            return summary.AnyChange;
+        }
+        catch (CalDavException ex) when (ex.Error == CalDavError.WrongCredentials)
+        {
+            // sync-radicale R11 interim: no retry loop; the Sign in bar comes with ui-states.
+            Log.Warning("Account {AccountId} rejected the saved password (401); paused until restart", account.Id);
+            Pause(account.Id);
+        }
+        catch (CalDavException ex)
+        {
+            Log.Warning("Account {AccountId} sync failed: {Error} {Status}", account.Id, ex.Error, (int?)ex.Status);
+        }
+        finally
+        {
+            password = null;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Syncs one MS365 account: queued changes out, then calendars in (sync-ms365). The access token is fetched silently for this run only and never
+    /// logged. Needing sign-in pauses the account until restart (R11 interim); throttling backs it off (R10).
+    /// </summary>
+    private async Task<bool> SyncMs365Async(LocalStore store, Account account, Ms365Auth auth, Func<Collection, bool> pull,
+        CancellationToken cancellationToken)
+    {
+        lock (_accountGate)
+        {
+            if (_pausedAccounts.Contains(account.Id)
+                || (_backoffUntil.TryGetValue(account.Id, out var until) && DateTimeOffset.UtcNow < until))
+            {
+                return false;
+            }
         }
         var graph = new GraphSync(store, GraphHttp);
         graph.ChunkRestarted += (collectionId, chunk, why) =>
             Log.Warning("Calendar {CollectionId} chunk {Chunk} restarted: {Reason}", collectionId, chunk, why);
         graph.MastersFetched += (collectionId, count) =>
             Log.Information("Calendar {CollectionId}: {Count} series masters fetched by id", collectionId, count);
-        var changed = false;
-        foreach (var account in accounts)
+        graph.CollectionSyncing += OnCollectionSyncing;
+        string? token = null;
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (_pausedAccounts.Contains(account.Id)
-                || (_backoffUntil.TryGetValue(account.Id, out var until) && DateTimeOffset.UtcNow < until))
-            {
-                continue;
-            }
-            string? token = null;
-            try
-            {
-                token = await auth.GetTokenAsync(account.Username ?? "", cancellationToken);
-                var summary = await graph.SyncAccountAsync(account, token, cancellationToken);
-                Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
-                changed |= summary.AnyChange;
-            }
-            catch (MsalUiRequiredException ex)
-            {
-                Log.Warning("Account {AccountId} needs to sign in again ({Code}); paused until restart", account.Id, ex.ErrorCode);
-                _pausedAccounts.Add(account.Id);
-            }
-            catch (GraphException ex) when (ex.Error == GraphError.Unauthorized)
-            {
-                Log.Warning("Account {AccountId} was refused by Graph (401); paused until restart", account.Id);
-                _pausedAccounts.Add(account.Id);
-            }
-            catch (GraphException ex) when (ex.Error == GraphError.Throttled)
-            {
-                var wait = ex.RetryAfter ?? GraphClient.DefaultRetryAfter;
-                _backoffUntil[account.Id] = DateTimeOffset.UtcNow + wait;
-                Log.Warning("Account {AccountId} throttled ({Status}); retrying after {Seconds} s", account.Id, (int?)ex.Status, (int)wait.TotalSeconds);
-            }
-            catch (GraphException ex)
-            {
-                Log.Warning("Account {AccountId} sync failed: {Error} {Status}", account.Id, ex.Error, (int?)ex.Status);
-            }
-            catch (MsalException ex)
-            {
-                Log.Warning("Account {AccountId} token request failed: {Code}", account.Id, ex.ErrorCode);
-            }
-            finally
-            {
-                token = null;
-            }
+            token = await auth.GetTokenAsync(account.Username ?? "", cancellationToken);
+            var summary = await graph.SyncAccountAsync(account, token, pull, cancellationToken);
+            Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
+            return summary.AnyChange;
         }
-        return changed;
+        catch (MsalUiRequiredException ex)
+        {
+            Log.Warning("Account {AccountId} needs to sign in again ({Code}); paused until restart", account.Id, ex.ErrorCode);
+            Pause(account.Id);
+        }
+        catch (GraphException ex) when (ex.Error == GraphError.Unauthorized)
+        {
+            Log.Warning("Account {AccountId} was refused by Graph (401); paused until restart", account.Id);
+            Pause(account.Id);
+        }
+        catch (GraphException ex) when (ex.Error == GraphError.Throttled)
+        {
+            var wait = ex.RetryAfter ?? GraphClient.DefaultRetryAfter;
+            lock (_accountGate)
+            {
+                _backoffUntil[account.Id] = DateTimeOffset.UtcNow + wait;
+            }
+            Log.Warning("Account {AccountId} throttled ({Status}); retrying after {Seconds} s", account.Id, (int?)ex.Status, (int)wait.TotalSeconds);
+        }
+        catch (GraphException ex)
+        {
+            Log.Warning("Account {AccountId} sync failed: {Error} {Status}", account.Id, ex.Error, (int?)ex.Status);
+        }
+        catch (MsalException ex)
+        {
+            Log.Warning("Account {AccountId} token request failed: {Code}", account.Id, ex.ErrorCode);
+        }
+        finally
+        {
+            token = null;
+        }
+        return false;
     }
 
     /// <summary>After the user signed an account in again: it syncs again (sync-ms365 R11 interim).</summary>
     internal void ResumeAccount(string accountId)
     {
-        _pausedAccounts.Remove(accountId);
+        lock (_accountGate)
+        {
+            _pausedAccounts.Remove(accountId);
+        }
         _scheduler?.Request("signed in again");
     }
 
     /// <summary>Asks for a sync now, e.g. after an account is added (local-store-offline R10).</summary>
     internal void RequestSync(string reason) => _scheduler?.Request(reason);
+
+    /// <summary>A calendar or task list was ticked: sync just it, since hidden ones are not pulled (local-store-offline R10).</summary>
+    internal void SyncCollection(string collectionId) => _scheduler?.RequestCollection("calendar shown", collectionId);
 
     /// <summary>Tray and toolbar Sync now: retry failed changes immediately (local-store-offline R7, R10).</summary>
     internal void SyncNow()

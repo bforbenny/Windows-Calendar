@@ -68,8 +68,18 @@ public sealed class GraphSyncTests : IDisposable
         public List<(string Method, string Path, string? Body, string? IfMatch)> Writes { get; } = [];
 
         private int _created;
+        private readonly Lock _gate = new();
 
+        // Calendars are pulled in parallel: one request at a time keeps the fake's lists consistent.
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            lock (_gate)
+            {
+                return Handle(request);
+            }
+        }
+
+        private Task<HttpResponseMessage> Handle(HttpRequestMessage request)
         {
             var uri = request.RequestUri!;
             Requests.Add(uri.AbsolutePath + uri.Query);
@@ -385,6 +395,49 @@ public sealed class GraphSyncTests : IDisposable
 
         Assert.Equal(1, summary.CalendarListChanges);
         Assert.True(_store.GetCollections("a1").Single(c => c.RemoteRef == "cal2").ReadOnly);
+    }
+
+    [Fact]
+    public async Task Calendars_ReportSyncingAndRunAtMostFourAtATime()
+    {
+        for (var i = 2; i <= 7; i++)
+        {
+            _graph.Calendars.Add(($"cal{i}", $"Calendar {i}", true, false));
+        }
+        _graph.Put("e1", Nov10, Nov10.AddHours(1));
+        var events = new List<(string Id, bool Active)>();
+        int active = 0, peak = 0;
+        _sync.CollectionSyncing += (id, on) =>
+        {
+            lock (events)
+            {
+                events.Add((id, on));
+                active += on ? 1 : -1;
+                peak = Math.Max(peak, active);
+            }
+        };
+
+        var summary = await SyncAsync();
+
+        Assert.Equal(7, summary.Collections);
+        var ids = _store.GetCollections("a1").Select(c => c.Id).ToHashSet();
+        Assert.Equal(ids, events.Where(e => e.Active).Select(e => e.Id).ToHashSet());
+        Assert.Equal(ids, events.Where(e => !e.Active).Select(e => e.Id).ToHashSet());
+        Assert.Equal(0, active);
+        Assert.InRange(peak, 1, Sync.SyncSummary.MaxParallel);
+        Assert.All(ids, id => Assert.Single(_store.GetRemoteEtags([id])));
+    }
+
+    [Fact]
+    public async Task CalendarNotAccepted_IsNotPulled()
+    {
+        _graph.Put("e1", Nov10, Nov10.AddHours(1));
+
+        var summary = await _sync.SyncAccountAsync(_account, "token-1", pull: _ => false, TestContext.Current.CancellationToken);
+
+        Assert.Equal(0, summary.Collections);
+        Assert.Empty(Cached());
+        Assert.DoesNotContain(_graph.Requests, r => r.Contains("calendarView"));
     }
 
     [Fact]

@@ -34,6 +34,7 @@ Every action in the app can be done from the keyboard, including the drag operat
   | Ctrl+1 … Ctrl+9 | Switch calendar set ([calendar-sets](calendar-sets.md)) |
   | F5 | Sync now |
   | Ctrl+, | Settings |
+  | Ctrl+B | Hide / show the sidebar ([calendar-views](calendar-views.md) R2b) |
   | ? (Shift+/) | Show shortcut cheat sheet |
 
 - R3. Keyboard move/resize of the selected event (same rules as drag, including the recurring scope prompt):

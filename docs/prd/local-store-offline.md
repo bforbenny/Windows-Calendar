@@ -39,6 +39,9 @@ All synced data is held in a local SQLite database, so the app is fully usable o
   - R9 and R9a are built with [calendar-views](calendar-views.md) and [ui-states](ui-states.md); the store side (GetOutbox, RetryOutboxEntry) is in place.
 - R10. Sync scheduling: every 5 minutes; immediately after a local change; on app focus; on network reconnect; plus a manual "Sync now" button (UI toolbar and tray).
   - One sync runs at a time; a request during a run causes exactly one more run afterwards.
+  - Within a run, all accounts sync in parallel. Within an account, queued changes are sent first, in outbox order; then its collections (and subscribed feeds) are pulled in parallel, at most 4 at a time per account (Graph allows 4 concurrent requests per mailbox). A failure that stops an account (sign-in, throttling, unreachable) stops only that account.
+  - Each collection reports when its pull starts and ends, for the sidebar indicator ([ui-states](ui-states.md) R1).
+  - Hidden (unticked) calendars, task lists and feeds are not pulled; their queued changes are still sent. Ticking one requests a sync of just that collection: its account's queued changes are sent, then only it is pulled. A full sync requested before that run starts takes its place, so no full sync is lost.
   - Interim (until the sync engines exist): a sync only writes to the log.
 
 ## Out of scope

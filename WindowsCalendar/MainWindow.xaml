@@ -24,7 +24,7 @@
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260" />
+                <ColumnDefinition x:Name="SidebarColumn" Width="260" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
@@ -51,19 +51,25 @@
                 <Grid x:Name="Toolbar" Padding="12,8" ColumnSpacing="8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <Button Content="Today" Click="OnToday" VerticalAlignment="Center" />
-                    <TextBlock x:Name="PeriodTitle" Grid.Column="1" Style="{StaticResource SubtitleTextBlockStyle}"
+                    <!-- Hides and shows the sidebar, also Ctrl+B (calendar-views R2b). -->
+                    <Button Click="OnToggleSidebar" VerticalAlignment="Center"
+                            ToolTipService.ToolTip="Hide or show the sidebar (Ctrl+B)" AutomationProperties.Name="Hide or show the sidebar">
+                        <FontIcon Glyph="&#xE700;" />
+                    </Button>
+                    <Button Grid.Column="1" Content="Today" Click="OnToday" VerticalAlignment="Center" />
+                    <TextBlock x:Name="PeriodTitle" Grid.Column="2" Style="{StaticResource SubtitleTextBlockStyle}"
                                VerticalAlignment="Center" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" />
-                    <SelectorBar x:Name="ViewSwitcher" Grid.Column="2" SelectionChanged="OnViewChanged">
+                    <SelectorBar x:Name="ViewSwitcher" Grid.Column="3" SelectionChanged="OnViewChanged">
                         <SelectorBarItem Text="Week" Tag="Week" IsSelected="True" />
                         <SelectorBarItem Text="Month" Tag="Month" />
                         <SelectorBarItem Text="Agenda" Tag="Agenda" />
                     </SelectorBar>
-                    <Button Grid.Column="3" Click="OnSyncNow" VerticalAlignment="Center"
+                    <Button Grid.Column="4" Click="OnSyncNow" VerticalAlignment="Center"
                             ToolTipService.ToolTip="Sync now" AutomationProperties.Name="Sync now">
                         <FontIcon Glyph="&#xE895;" />
                     </Button>

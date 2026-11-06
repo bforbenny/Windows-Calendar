@@ -11,6 +11,17 @@ public sealed record SyncSummary(
 {
     /// <summary>Whether anything the views show may have changed.</summary>
     public bool AnyChange => Fetched + Removed + Sent + Conflicts + CalendarListChanges + FeedItems > 0;
+
+    public static readonly SyncSummary Empty = new(0, 0, 0, 0, 0, 0, 0);
+
+    public static SyncSummary operator +(SyncSummary a, SyncSummary b) => new(
+        a.Collections + b.Collections, a.Unchanged + b.Unchanged, a.FullResyncs + b.FullResyncs, a.Fetched + b.Fetched,
+        a.Removed + b.Removed, a.KeptLocal + b.KeptLocal, a.Unreadable + b.Unreadable,
+        a.Sent + b.Sent, a.Conflicts + b.Conflicts, a.Failed + b.Failed,
+        a.CalendarListChanges + b.CalendarListChanges, a.FeedItems + b.FeedItems, a.FeedFailures + b.FeedFailures);
+
+    /// <summary>Collections of one account pulled at the same time (local-store-offline R10; Graph allows 4 per mailbox).</summary>
+    public const int MaxParallel = 4;
 }
 
 /// <summary>
@@ -28,15 +39,20 @@ public sealed class RadicaleSync(LocalStore store, HttpClient http, TimeProvider
 
     private readonly TimeProvider _time = time ?? TimeProvider.System;
 
+    /// <summary>A collection's pull started (true) or ended (false), for the sidebar indicator (ui-states R1). Raised off the UI thread.</summary>
+    public event Action<string, bool>? CollectionSyncing;
+
     /// <summary>
     /// Syncs one account: re-reads its collection list (account-management R11), sends queued changes, pulls each
     /// CalDAV collection, then refreshes subscribed feeds (hourly, or now when <paramref name="forceFeeds"/>).
     /// Throws <see cref="CalDavException"/> on Radicale transport errors (e.g. WrongCredentials); work done before
-    /// the error keeps its progress. A failing feed is counted, not thrown.
+    /// the error keeps its progress. A failing feed is counted, not thrown. Only collections <paramref name="pull"/>
+    /// accepts are pulled (hidden ones are not, local-store-offline R10); queued changes are sent for all.
     /// </summary>
     public async Task<SyncSummary> SyncAccountAsync(Account account, string password, bool forceFeeds = false,
-        CancellationToken cancellationToken = default)
+        Func<Collection, bool>? pull = null, CancellationToken cancellationToken = default)
     {
+        pull ??= _ => true;
         var listChanges = 0;
         if (account.ServerUrl is { } server)
         {
@@ -57,27 +73,55 @@ public sealed class RadicaleSync(LocalStore store, HttpClient http, TimeProvider
         var all = store.GetCollections(account.Id);
         var collections = all.Where(c => c.SourceUrl is null).ToList();
         var summary = await PushAsync(client, collections, cancellationToken) with { CalendarListChanges = listChanges };
-        foreach (var group in collections.GroupBy(c => c.RemoteRef))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            summary = Add(summary, await SyncCollectionAsync(client, new Uri(group.Key), group.ToList(), cancellationToken));
-        }
 
-        // Feeds (sync-radicale R1a): fetched without the Radicale credentials.
+        // Once the queued changes are out, collection URLs are pulled in parallel (local-store-offline R10).
+        var groups = collections.GroupBy(c => c.RemoteRef).Select(g => g.ToList()).Where(g => g.Any(pull)).ToList();
+        var results = new SyncSummary[groups.Count];
+        await ForEachAsync(groups.Count, cancellationToken, async (i, token) =>
+            results[i] = await Syncing(groups[i], () => SyncCollectionAsync(client, new Uri(groups[i][0].RemoteRef), groups[i], token)));
+        summary = results.Aggregate(summary, (a, b) => a + b);
+
+        // Feeds (sync-radicale R1a): fetched without the Radicale credentials, also in parallel.
         var feeds = new FeedSync(store, http, _time);
+        var feedList = all.Where(c => c.SourceUrl is not null && pull(c)).ToList();
         int feedItems = 0, feedFailures = 0;
-        foreach (var feed in all.Where(c => c.SourceUrl is not null))
+        await ForEachAsync(feedList.Count, cancellationToken, async (i, token) =>
         {
             try
             {
-                feedItems += await feeds.RefreshAsync(feed, forceFeeds, cancellationToken);
+                var items = await Syncing([feedList[i]], () => feeds.RefreshAsync(feedList[i], forceFeeds, token));
+                Interlocked.Add(ref feedItems, items);
             }
             catch (CalDavException)
             {
-                feedFailures++;
+                Interlocked.Increment(ref feedFailures);
+            }
+        });
+        return summary with { FeedItems = feedItems, FeedFailures = feedFailures };
+    }
+
+    private static Task ForEachAsync(int count, CancellationToken cancellationToken, Func<int, CancellationToken, ValueTask> body) =>
+        Parallel.ForEachAsync(Enumerable.Range(0, count),
+            new ParallelOptions { MaxDegreeOfParallelism = SyncSummary.MaxParallel, CancellationToken = cancellationToken }, body);
+
+    /// <summary>Runs one pull with its collections marked as syncing.</summary>
+    private async Task<T> Syncing<T>(IReadOnlyList<Collection> group, Func<Task<T>> pull)
+    {
+        foreach (var c in group)
+        {
+            CollectionSyncing?.Invoke(c.Id, true);
+        }
+        try
+        {
+            return await pull();
+        }
+        finally
+        {
+            foreach (var c in group)
+            {
+                CollectionSyncing?.Invoke(c.Id, false);
             }
         }
-        return summary with { FeedItems = feedItems, FeedFailures = feedFailures };
     }
 
     /// <summary>
@@ -244,10 +288,4 @@ public sealed class RadicaleSync(LocalStore store, HttpClient http, TimeProvider
         }
         return new SyncSummary(1, 0, full ? 1 : 0, fetched, removed, kept, unreadable, Conflicts: conflicts);
     }
-
-    private static SyncSummary Add(SyncSummary a, SyncSummary b) => new(
-        a.Collections + b.Collections, a.Unchanged + b.Unchanged, a.FullResyncs + b.FullResyncs, a.Fetched + b.Fetched,
-        a.Removed + b.Removed, a.KeptLocal + b.KeptLocal, a.Unreadable + b.Unreadable,
-        a.Sent + b.Sent, a.Conflicts + b.Conflicts, a.Failed + b.Failed,
-        a.CalendarListChanges + b.CalendarListChanges, a.FeedItems + b.FeedItems, a.FeedFailures + b.FeedFailures);
 }

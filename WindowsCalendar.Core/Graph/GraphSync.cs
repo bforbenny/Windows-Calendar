@@ -35,21 +35,40 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
     /// <summary>Series masters fetched by id for a calendar (R6): calendar's local id, count. For the log.</summary>
     public event Action<string, int>? MastersFetched;
 
-    /// <summary>Syncs one account with an access token obtained for this run.</summary>
-    public async Task<SyncSummary> SyncAccountAsync(Account account, string accessToken, CancellationToken cancellationToken = default)
+    /// <summary>A calendar's pull started (true) or ended (false), for the sidebar indicator (ui-states R1). Raised off the UI thread.</summary>
+    public event Action<string, bool>? CollectionSyncing;
+
+    /// <summary>
+    /// Syncs one account with an access token obtained for this run. Only calendars <paramref name="pull"/> accepts are
+    /// pulled (hidden ones are not, local-store-offline R10); queued changes are sent for all.
+    /// </summary>
+    public async Task<SyncSummary> SyncAccountAsync(Account account, string accessToken, Func<Collection, bool>? pull = null,
+        CancellationToken cancellationToken = default)
     {
         var client = new GraphClient(http, accessToken);
         var changes = store.SyncCollections(account.Id, await DiscoverAsync(client, cancellationToken));
         var calendars = store.GetCollections(account.Id).Where(c => c.Kind == CollectionKind.Calendar).ToList();
         var (sent, conflicts, failed) = await PushAsync(client, calendars, cancellationToken);
+        calendars = pull is null ? calendars : calendars.Where(pull).ToList();
         var summary = new SyncSummary(calendars.Count, 0, 0, 0, 0, 0, 0, sent, conflicts, failed,
             CalendarListChanges: changes.Added + changes.Updated + changes.Removed);
-        foreach (var calendar in calendars)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            summary = await SyncCalendarAsync(client, calendar, summary, cancellationToken);
-        }
-        return summary;
+        // Calendars are pulled in parallel once the queued changes are out (local-store-offline R10).
+        var results = new SyncSummary[calendars.Count];
+        await Parallel.ForEachAsync(Enumerable.Range(0, calendars.Count),
+            new ParallelOptions { MaxDegreeOfParallelism = SyncSummary.MaxParallel, CancellationToken = cancellationToken },
+            async (i, token) =>
+            {
+                CollectionSyncing?.Invoke(calendars[i].Id, true);
+                try
+                {
+                    results[i] = await SyncCalendarAsync(client, calendars[i], SyncSummary.Empty, token);
+                }
+                finally
+                {
+                    CollectionSyncing?.Invoke(calendars[i].Id, false);
+                }
+            });
+        return results.Aggregate(summary, (a, b) => a + b);
     }
 
     /// <summary>The account's calendars (R1): <c>canEdit</c> false is read-only, <c>isDefaultCalendar</c> the default.</summary>
@@ -108,11 +127,12 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
             cancellationToken.ThrowIfCancellationRequested();
             var key = Key(chunk);
             state.TryGetValue(key, out var old);
-            _series.Clear();
+            // Series masters referenced by this chunk's occurrences.
+            var series = new HashSet<string>();
             try
             {
-                var (next, applied, gone, restarted) = await PullChunkAsync(client, calendar, chunk, old, cancellationToken);
-                applied += await KeepMastersAsync(client, calendar, next.Ids, gone, cancellationToken);
+                var (next, applied, gone, restarted) = await PullChunkAsync(client, calendar, chunk, old, series, cancellationToken);
+                applied += await KeepMastersAsync(client, calendar, series, next.Ids, gone, cancellationToken);
                 state[key] = next;
                 candidates.UnionWith(gone);
                 fetched += applied;
@@ -150,7 +170,8 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
     /// applied, the ids the chunk no longer holds, and whether it had to restart (R3).
     /// </summary>
     private async Task<(ChunkState State, int Applied, HashSet<string> Gone, bool Restarted)> PullChunkAsync(
-        GraphClient client, Collection calendar, DateOnly chunk, ChunkState? old, CancellationToken cancellationToken)
+        GraphClient client, Collection calendar, DateOnly chunk, ChunkState? old, HashSet<string> seriesIds,
+        CancellationToken cancellationToken)
     {
         var restarted = false;
         while (true)
@@ -202,7 +223,7 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
                             gone.Remove(id);
                             if (item.SeriesId is { } series)
                             {
-                                _series.Add(series);
+                                seriesIds.Add(series);
                             }
                             // The echo of the app's own write keeps the local version (and its Undo).
                             if (store.FindItemByRemoteId(calendar.Id, id) is { } local && local.Etag == item.Etag
@@ -247,18 +268,15 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
         }
     }
 
-    // Series masters referenced by the chunk being pulled.
-    private readonly HashSet<string> _series = [];
-
     /// <summary>
     /// After a chunk's round: the masters its occurrences reference stay held by the chunk, and any not stored yet are
     /// fetched by id (R6). Returns how many were fetched.
     /// </summary>
-    private async Task<int> KeepMastersAsync(GraphClient client, Collection calendar, HashSet<string> ids, HashSet<string> gone,
-        CancellationToken cancellationToken)
+    private async Task<int> KeepMastersAsync(GraphClient client, Collection calendar, HashSet<string> seriesIds,
+        HashSet<string> ids, HashSet<string> gone, CancellationToken cancellationToken)
     {
         var fetched = 0;
-        foreach (var series in _series)
+        foreach (var series in seriesIds)
         {
             ids.Add(series);
             gone.Remove(series);
@@ -272,7 +290,6 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
                 fetched++;
             }
         }
-        _series.Clear();
         if (fetched > 0)
         {
             MastersFetched?.Invoke(calendar.Id, fetched);

@@ -566,6 +566,32 @@ public sealed class LocalStore : IDisposable
         }
     }
 
+    // ---- Sidebar layout (calendar-views R2b): local UI state in meta under "ui:" ----
+
+    /// <summary>A UI flag (e.g. sidebar hidden, a section collapsed); false when never set.</summary>
+    public bool GetUiFlag(string name)
+    {
+        lock (_gate)
+        {
+            return GetMeta(null, "ui:" + name) is not null;
+        }
+    }
+
+    public void SetUiFlag(string name, bool on)
+    {
+        lock (_gate)
+        {
+            if (on)
+            {
+                SetMeta(null, "ui:" + name, "1");
+            }
+            else
+            {
+                Execute(_connection, null, "DELETE FROM meta WHERE key = $key;", ("$key", "ui:" + name));
+            }
+        }
+    }
+
     /// <summary>
     /// Rebuilds the whole index if the day or the Windows timezone changed since the last full build (rolling
     /// window; timezone-handling R6). Returns true if it rebuilt. Call TimeZoneInfo.ClearCachedData first so a

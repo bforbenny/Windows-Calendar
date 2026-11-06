@@ -41,6 +41,9 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherQueueTimer _undoTimer;
     private (string ItemId, string PayloadBefore, string PayloadAfter, Item? Following)? _lastChange;
     private bool _renderPending;
+    // Sidebar names of the collections being pulled now, for the hue wave (ui-states R1).
+    private readonly HashSet<string> _syncing = [];
+    private readonly Dictionary<string, TextBlock> _names = [];
 
     public MainWindow()
     {
@@ -89,6 +92,11 @@ public sealed partial class MainWindow : Window
             {
                 e.Handled = true;
             }
+            else if (e.Key == Windows.System.VirtualKey.B && IsControlDown())
+            {
+                e.Handled = true;
+                ToggleSidebar();
+            }
             else if (e.Key == Windows.System.VirtualKey.Z && IsControlDown()
                 && FocusManager.GetFocusedElement(Content.XamlRoot) is not TextBox && _lastChange is not null)
             {
@@ -135,11 +143,14 @@ public sealed partial class MainWindow : Window
         };
         _minuteTimer.Start();
 
+        ShowSidebar(Store?.GetUiFlag(SidebarHiddenFlag) != true);
         ShowAccounts();
         RenderView();
         ShowConflicts();
         ScrollToToday();
     }
+
+    private const string SidebarHiddenFlag = "sidebar-hidden";
 
     private static LocalStore? Store => ((App)Application.Current).Store;
 
@@ -408,6 +419,80 @@ public sealed partial class MainWindow : Window
 
     private void OnSyncNow(object sender, RoutedEventArgs e) => ((App)Application.Current).SyncNow();
 
+    private void OnToggleSidebar(object sender, RoutedEventArgs e) => ToggleSidebar();
+
+    /// <summary>The hamburger and Ctrl+B hide the sidebar fully; the state is kept across restarts (calendar-views R2b).</summary>
+    private void ToggleSidebar()
+    {
+        var show = Sidebar.Visibility != Visibility.Visible;
+        ShowSidebar(show);
+        Store?.SetUiFlag(SidebarHiddenFlag, !show);
+    }
+
+    private void ShowSidebar(bool show)
+    {
+        Sidebar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        SidebarColumn.Width = new GridLength(show ? 260 : 0);
+    }
+
+    /// <summary>A collection's pull started or ended (ui-states R1): its sidebar name shows the hue wave meanwhile.</summary>
+    public void SetCollectionSyncing(string collectionId, bool active)
+    {
+        if (active ? !_syncing.Add(collectionId) : !_syncing.Remove(collectionId))
+        {
+            return;
+        }
+        if (_names.TryGetValue(collectionId, out var name))
+        {
+            ShowSyncing(name, active);
+        }
+    }
+
+    /// <summary>
+    /// A band of the accent colour sweeps the name left to right; with Windows animations off the name is in the
+    /// accent colour instead (calendar-views R2b). The storyboard is kept in Tag so it can be stopped.
+    /// </summary>
+    private static void ShowSyncing(TextBlock name, bool syncing)
+    {
+        (name.Tag as Microsoft.UI.Xaml.Media.Animation.Storyboard)?.Stop();
+        name.Tag = null;
+        if (!syncing)
+        {
+            name.ClearValue(TextBlock.ForegroundProperty);
+            return;
+        }
+        var accent = ((SolidColorBrush)Theme.Brush("TodayChipBrush")).Color;
+        if (!new Windows.UI.ViewManagement.UISettings().AnimationsEnabled)
+        {
+            name.Foreground = new SolidColorBrush(accent);
+            return;
+        }
+        var text = ((SolidColorBrush)Theme.Brush("TextPrimaryBrush")).Color;
+        var brush = new LinearGradientBrush { StartPoint = new(-1, 0), EndPoint = new(0, 0) };
+        brush.GradientStops.Add(new GradientStop { Color = text, Offset = 0 });
+        brush.GradientStops.Add(new GradientStop { Color = accent, Offset = 0.5 });
+        brush.GradientStops.Add(new GradientStop { Color = text, Offset = 1 });
+        name.Foreground = brush;
+
+        // Moving the gradient from left of the text to right of it; outside it the ends pad with the text colour.
+        var wave = new Microsoft.UI.Xaml.Media.Animation.Storyboard { RepeatBehavior = Microsoft.UI.Xaml.Media.Animation.RepeatBehavior.Forever };
+        foreach (var (property, from, to) in new[] { ("StartPoint", -1.0, 1.0), ("EndPoint", 0.0, 2.0) })
+        {
+            var move = new Microsoft.UI.Xaml.Media.Animation.PointAnimation
+            {
+                From = new(from, 0),
+                To = new(to, 0),
+                Duration = TimeSpan.FromSeconds(1.6),
+                EnableDependentAnimation = true,
+            };
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTarget(move, brush);
+            Microsoft.UI.Xaml.Media.Animation.Storyboard.SetTargetProperty(move, property);
+            wave.Children.Add(move);
+        }
+        name.Tag = wave;
+        wave.Begin();
+    }
+
     /// <summary>
     /// Sidebar (calendar-views R2): a Calendars and a Task lists section, each grouped by account, with a visibility
     /// checkbox, colour and shape per collection. Hidden collections are remembered (interim until calendar-sets).
@@ -416,6 +501,11 @@ public sealed partial class MainWindow : Window
     private void ShowAccounts()
     {
         Theme.Current = ((FrameworkElement)Content).ActualTheme;
+        foreach (var name in _names.Values)
+        {
+            ShowSyncing(name, false);
+        }
+        _names.Clear();
         AccountList.Children.Clear();
         _collections.Clear();
         var accounts = Store?.GetAccounts() ?? [];
@@ -428,19 +518,23 @@ public sealed partial class MainWindow : Window
             _collections[collection.Id] = collection;
         }
 
-        // Two sections, each grouped by account (calendar-views R2).
+        // Two sections, each grouped by account (calendar-views R2); both levels collapse (R2b).
         foreach (var (kind, title) in new[] { (CollectionKind.Calendar, "Calendars"), (CollectionKind.TaskList, "Task lists") })
         {
             if (!byAccount.Values.Any(list => list.Any(c => c.Kind == kind)))
             {
                 continue;
             }
-            AccountList.Children.Add(new TextBlock
+            var section = new StackPanel { Spacing = 2 };
+            var heading = Collapser($"collapsed:{kind}", new TextBlock
             {
                 Text = title,
                 Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
-                Margin = new Thickness(0, AccountList.Children.Count == 0 ? 4 : 20, 0, 0),
-            });
+                TextTrimming = TextTrimming.CharacterEllipsis,
+            }, section);
+            heading.Margin = new Thickness(0, AccountList.Children.Count == 0 ? 4 : 20, 0, 0);
+            AccountList.Children.Add(heading);
+            AccountList.Children.Add(section);
 
             foreach (var account in accounts)
             {
@@ -449,10 +543,12 @@ public sealed partial class MainWindow : Window
                 {
                     continue;
                 }
-                AccountList.Children.Add(AccountHeader(account));
+                var group = new StackPanel { Spacing = 2 };
+                section.Children.Add(AccountHeader(account, $"collapsed:{kind}:{account.Id}", group));
+                section.Children.Add(group);
                 foreach (var collection in collections)
                 {
-                    AccountList.Children.Add(VisibilityCheckBox(collection, !hidden.Contains(collection.Id)));
+                    group.Children.Add(VisibilityCheckBox(collection, !hidden.Contains(collection.Id)));
                 }
             }
         }
@@ -463,8 +559,48 @@ public sealed partial class MainWindow : Window
         AddRadicaleButton.IsEnabled = AddMs365Button.IsEnabled = AddAccountLink.IsEnabled = Store is not null;
     }
 
-    /// <summary>Account name with its options menu (Remove account, account-management R8).</summary>
-    private Grid AccountHeader(Account account)
+    /// <summary>
+    /// A heading with a chevron that collapses and expands <paramref name="body"/>; the state is kept across restarts
+    /// (calendar-views R2b).
+    /// </summary>
+    private Button Collapser(string flag, TextBlock title, UIElement body)
+    {
+        var collapsed = Store?.GetUiFlag(flag) == true;
+        var chevron = new FontIcon { FontSize = 10, Foreground = Theme.Brush("TextSecondaryBrush"), VerticalAlignment = VerticalAlignment.Center };
+        var content = new Grid { ColumnSpacing = 6 };
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        title.VerticalAlignment = VerticalAlignment.Center;
+        Grid.SetColumn(title, 1);
+        content.Children.Add(chevron);
+        content.Children.Add(title);
+        var button = new Button
+        {
+            Content = content,
+            Padding = new Thickness(2, 4, 2, 4),
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+            BorderThickness = new Thickness(0),
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+        };
+        void Apply()
+        {
+            chevron.Glyph = collapsed ? "\uE76C" : "\uE70D";
+            body.Visibility = collapsed ? Visibility.Collapsed : Visibility.Visible;
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, $"{title.Text}, {(collapsed ? "collapsed" : "expanded")}");
+        }
+        button.Click += (_, _) =>
+        {
+            collapsed = !collapsed;
+            Store?.SetUiFlag(flag, collapsed);
+            Apply();
+        };
+        Apply();
+        return button;
+    }
+
+    /// <summary>Account name, collapsing its group, with its options menu (Remove account, account-management R8).</summary>
+    private Grid AccountHeader(Account account, string flag, UIElement group)
     {
         var more = new MenuFlyout();
         var remove = new MenuFlyoutItem { Text = "Remove account…", Icon = new SymbolIcon(Symbol.Delete) };
@@ -474,14 +610,14 @@ public sealed partial class MainWindow : Window
         var header = new Grid { Margin = new Thickness(0, 8, 0, 0) };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(new TextBlock
+        header.Children.Add(Collapser(flag, new TextBlock
         {
             Text = account.DisplayName,
             Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
             Foreground = Theme.Brush("TextSecondaryBrush"),
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
-        });
+        }, group));
         var moreButton = new Button
         {
             Content = new FontIcon { Glyph = "\uE712", FontSize = 14 },
@@ -497,23 +633,48 @@ public sealed partial class MainWindow : Window
         return header;
     }
 
-    /// <summary>Visibility checkbox with the collection's shape marker in its colour (ui-colour-theme R7).</summary>
+    /// <summary>
+    /// Visibility checkbox with the collection's shape marker in its colour (ui-colour-theme R7), and its status as an
+    /// icon after the name: subscribed, read-only, or not secure (calendar-views R2b).
+    /// </summary>
     private CheckBox VisibilityCheckBox(Collection collection, bool visible)
     {
-        var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var (glyph, status) = collection.SourceUrl is not null
+            ? Core.Sync.FeedSync.FetchUrl(collection.SourceUrl) is null ? ("\uE7BA", "not secure, not synced") : ("\uE71B", "subscribed")
+            : collection.ReadOnly ? ("\uE72E", "read-only") : ((string?)null, (string?)null);
+        var label = new Grid { ColumnSpacing = 8 };
+        label.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        label.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        label.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         label.Children.Add(ShapeMarker.Create(collection.Shape, Theme.Calendar(collection.Colour).Swatch));
-        label.Children.Add(new TextBlock
+        var name = new TextBlock { Text = collection.Name, TextTrimming = TextTrimming.CharacterEllipsis };
+        Grid.SetColumn(name, 1);
+        label.Children.Add(name);
+        _names[collection.Id] = name;
+        if (_syncing.Contains(collection.Id))
         {
-            Text = collection.SourceUrl is not null
-                ? Core.Sync.FeedSync.FetchUrl(collection.SourceUrl) is null ? $"{collection.Name} (not secure, not synced)" : $"{collection.Name} (subscribed)"
-                : collection.ReadOnly ? $"{collection.Name} (read-only)" : collection.Name,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
+            ShowSyncing(name, true);
+        }
+        if (glyph is not null)
+        {
+            var icon = new FontIcon { Glyph = glyph, FontSize = 12, Foreground = Theme.Brush("TextSecondaryBrush"), VerticalAlignment = VerticalAlignment.Center };
+            ToolTipService.SetToolTip(icon, char.ToUpperInvariant(status![0]) + status[1..]);
+            Grid.SetColumn(icon, 2);
+            label.Children.Add(icon);
+        }
         var check = new CheckBox { Content = label, IsChecked = visible, MinWidth = 0 };
+        if (status is not null)
+        {
+            Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(check, $"{collection.Name}, {status}");
+        }
         check.Click += (_, _) =>
         {
             Store?.SetCollectionHidden(collection.Id, check.IsChecked != true);
             RenderView();
+            if (check.IsChecked == true)
+            {
+                ((App)Application.Current).SyncCollection(collection.Id);
+            }
         };
         return check;
     }
