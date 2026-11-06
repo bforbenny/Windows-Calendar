@@ -147,6 +147,35 @@ internal sealed partial class TimeGridView : UserControl, IScrollingView, IDragH
         ApplyAnchor();
     }
 
+    public void Reveal(DateOnly day, DateTime? start) => DispatcherQueue.TryEnqueue(() =>
+    {
+        if (_columnWidth <= 0)
+        {
+            return;
+        }
+        var index = day.DayNumber - _first.DayNumber;
+        var left = (int)Math.Round(_bodyScroll.HorizontalOffset / _columnWidth);
+        double? x = index < left ? index * _columnWidth
+            : index > left + VisibleDays - 1 ? (index - VisibleDays + 1) * _columnWidth
+            : null;
+        double? y = null;
+        if (start is { } s)
+        {
+            var top = DayColumnPanel.PixelsFor(s.TimeOfDay.TotalMinutes);
+            if (top < _bodyScroll.VerticalOffset || top + 48 > _bodyScroll.VerticalOffset + _bodyScroll.ViewportHeight)
+            {
+                y = Math.Max(0, top - 48);
+            }
+        }
+        if (x is not null || y is not null)
+        {
+            _bodyScroll.ChangeView(x, y, null, true);
+        }
+    });
+
+    public void Page(int direction) =>
+        _bodyScroll.ChangeView(Math.Max(0, _bodyScroll.HorizontalOffset + direction * VisibleDays * _columnWidth), null, null);
+
     public bool UpdateNowLine()
     {
         var now = DateTime.Now;

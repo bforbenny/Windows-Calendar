@@ -162,7 +162,23 @@ internal sealed partial class EventEditor : UserControl
     /// Opens an event, at <paramref name="recurrence"/>'s occurrence if it repeats; the event being edited is saved first
     /// (R6d: switching needs no confirmation).
     /// </summary>
-    public async void OpenExisting(string itemId, DateTimeOffset? recurrence, IReadOnlyDictionary<string, Collection> collections)
+    public async void OpenExisting(string itemId, DateTimeOffset? recurrence, IReadOnlyDictionary<string, Collection> collections) =>
+        await OpenExistingAsync(itemId, recurrence, collections);
+
+    /// <summary>
+    /// Opens the event and runs its Delete, with the same confirmation and repeating-event prompt (Del on a selected
+    /// event, keyboard-navigation interim). Nothing happens if the event cannot be deleted here.
+    /// </summary>
+    public async void OpenAndDelete(string itemId, DateTimeOffset? recurrence, IReadOnlyDictionary<string, Collection> collections)
+    {
+        await OpenExistingAsync(itemId, recurrence, collections);
+        if (IsOpen && _itemId == itemId && _delete.Visibility == Visibility.Visible)
+        {
+            await DeleteAsync();
+        }
+    }
+
+    private async System.Threading.Tasks.Task OpenExistingAsync(string itemId, DateTimeOffset? recurrence, IReadOnlyDictionary<string, Collection> collections)
     {
         if (!await DiscardRuleAsync())
         {

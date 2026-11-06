@@ -15,7 +15,10 @@ public sealed partial class MainWindow
     // The day in the middle of the current view, from VisibleDayChanged.
     private DateOnly? _visibleDay;
 
-    private void OnNew(SplitButton sender, SplitButtonClickEventArgs args)
+    private void OnNew(SplitButton sender, SplitButtonClickEventArgs args) => NewDefault();
+
+    /// <summary>The New button's main action, also Ctrl+N: New task in the Tasks view, else New event.</summary>
+    private void NewDefault()
     {
         if (_view == ViewKind.Tasks)
         {

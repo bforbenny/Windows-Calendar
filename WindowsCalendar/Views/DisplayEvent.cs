@@ -21,6 +21,9 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
 {
     public bool InAllDayLane => AllDay || End - Start >= TimeSpan.FromHours(24);
 
+    /// <summary>Identifies the item and occurrence, for the keyboard selection.</summary>
+    public string Key => $"{ItemId}|{Recurrence?.UtcTicks}";
+
     public DateOnly FirstDay => DateOnly.FromDateTime(Start);
 
     /// <summary>Last day touched (inclusive); an event ending at midnight does not touch the next day.</summary>
@@ -63,6 +66,9 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
 /// </summary>
 internal static class EventCard
 {
+    /// <summary>The selected item's key (keyboard-navigation interim): its card gets an accent outline.</summary>
+    public static string? SelectedKey { get; set; }
+
     /// <summary>Raised when a task card's checkbox is ticked (tasks R6 interim).</summary>
     public static event Action<DisplayEvent>? TaskChecked;
 
@@ -96,6 +102,12 @@ internal static class EventCard
             Height = height,
             Margin = new Thickness(1, 0, 1, 0),
         };
+        if (e.Key == SelectedKey)
+        {
+            card.BorderBrush = Theme.Brush("TodayChipBrush");
+            card.BorderThickness = new Thickness(3, 2, 2, 2);
+            AutomationProperties.SetItemStatus(card, "Selected");
+        }
         ToolTipService.SetToolTip(card, e.Description());
         AutomationProperties.SetName(card, e.Description());
 

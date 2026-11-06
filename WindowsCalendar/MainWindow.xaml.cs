@@ -82,13 +82,9 @@ public sealed partial class MainWindow : Window
         {
             view.EventOpened += e =>
             {
-                if (e.IsTask)
-                {
-                    OpenTask(e.ItemId);
-                    return;
-                }
-                ShowEventEditor();
-                _editor.OpenExisting(e.ItemId, e.Recurrence, _collections);
+                // A click selects the card as well as opening it (keyboard-navigation interim).
+                Select(e, e.FirstDay, reveal: false);
+                OpenItem(e);
             };
             view.CreateRequested += (start, allDay) =>
             {
@@ -110,6 +106,16 @@ public sealed partial class MainWindow : Window
             {
                 e.Handled = true;
                 CloseSettings();
+            }
+            else if (e.Key == Windows.System.VirtualKey.N && IsControlDown())
+            {
+                // Ctrl+N: the New button, until quick add takes the key (keyboard-navigation interim).
+                e.Handled = true;
+                NewDefault();
+            }
+            else if (HandleShortcut(e.Key))
+            {
+                e.Handled = true;
             }
             else if (e.Key == (Windows.System.VirtualKey)188 && IsControlDown())
             {
@@ -151,6 +157,7 @@ public sealed partial class MainWindow : Window
         };
         _editor.OpenChanged += PlaceEditor;
         SetupTasks();
+        SetupKeyHints();
         ((FrameworkElement)Content).SizeChanged += (_, _) => PlaceEditor();
 
         // Redraw in the new theme when Windows switches light/dark (app-platform R2a).
@@ -428,6 +435,7 @@ public sealed partial class MainWindow : Window
             events.RemoveAll(e => isHoliday(e));
         }
 
+        _shownEvents = events;
         var view = (UIElement)CurrentView;
         CurrentView.SetData(first, days, events, holidays);
         if (ViewHost.Children.Count != 1 || ViewHost.Children[0] != view)

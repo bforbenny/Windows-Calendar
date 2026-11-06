@@ -61,7 +61,7 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <!-- Hides and shows the sidebar, also Ctrl+B (calendar-views R2b). -->
-                    <Button Click="OnToggleSidebar" VerticalAlignment="Center"
+                    <Button x:Name="SidebarButton" Click="OnToggleSidebar" VerticalAlignment="Center"
                             ToolTipService.ToolTip="Hide or show the sidebar (Ctrl+B)" AutomationProperties.Name="Hide or show the sidebar">
                         <FontIcon Glyph="&#xE700;" />
                     </Button>
@@ -80,7 +80,8 @@
                                 </MenuFlyout>
                             </SplitButton.Flyout>
                         </SplitButton>
-                        <Button Content="Today" Click="OnToday" VerticalAlignment="Center" />
+                        <Button x:Name="TodayButton" Content="Today" Click="OnToday" VerticalAlignment="Center"
+                                ToolTipService.ToolTip="Go to today (T)" />
                     </StackPanel>
                     <TextBlock x:Name="PeriodTitle" Grid.Column="2" Style="{StaticResource SubtitleTextBlockStyle}"
                                VerticalAlignment="Center" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" />
@@ -91,12 +92,12 @@
                         <SelectorBarItem Text="Tasks" Tag="Tasks" />
                     </SelectorBar>
                     <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4">
-                        <Button Click="OnSyncNow" VerticalAlignment="Center"
-                                ToolTipService.ToolTip="Sync now" AutomationProperties.Name="Sync now">
+                        <Button x:Name="SyncButton" Click="OnSyncNow" VerticalAlignment="Center"
+                                ToolTipService.ToolTip="Sync now (F5)" AutomationProperties.Name="Sync now">
                             <FontIcon Glyph="&#xE895;" />
                         </Button>
                         <!-- Settings page (settings-page R1 interim), also Ctrl+,. -->
-                        <Button Click="OnOpenSettings" VerticalAlignment="Center"
+                        <Button x:Name="SettingsButton" Click="OnOpenSettings" VerticalAlignment="Center"
                                 ToolTipService.ToolTip="Settings (Ctrl+,)" AutomationProperties.Name="Settings">
                             <FontIcon Glyph="&#xE713;" />
                         </Button>
@@ -152,5 +153,8 @@
                 </Grid>
             </Grid>
         </Grid>
+
+        <!-- Shortcut badges while Ctrl is held (keyboard-navigation interim); never takes clicks. -->
+        <Canvas x:Name="KeyHintLayer" Grid.Row="1" IsHitTestVisible="False" Canvas.ZIndex="10" />
     </Grid>
 </Window>

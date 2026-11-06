@@ -22,6 +22,15 @@ internal interface IScrollingView
     /// <summary>Moves the current-time line; false when the day has changed and the data needs refreshing.</summary>
     bool UpdateNowLine();
 
+    /// <summary>
+    /// Scrolls just enough to show <paramref name="day"/> (and, in Week, the time <paramref name="start"/>), for the
+    /// keyboard selection (keyboard-navigation interim). Runs after any pending anchor scroll.
+    /// </summary>
+    void Reveal(DateOnly day, DateTime? start);
+
+    /// <summary>Scrolls one screen back (-1) or forward (+1) (keyboard-navigation R2, PgUp / PgDn).</summary>
+    void Page(int direction);
+
     /// <summary>Raised with the day in the middle of the viewport, for the period title.</summary>
     event Action<DateOnly>? VisibleDayChanged;
 

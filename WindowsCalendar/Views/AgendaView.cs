@@ -94,6 +94,27 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
 
     public bool UpdateNowLine() => true;
 
+    public void Reveal(DateOnly day, DateTime? start) => DispatcherQueue.TryEnqueue(() =>
+    {
+        if (_columnWidth <= 0)
+        {
+            return;
+        }
+        var index = day.DayNumber - _first.DayNumber;
+        var left = (int)Math.Round(_bodyScroll.HorizontalOffset / _columnWidth);
+        if (index < left)
+        {
+            _bodyScroll.ChangeView(index * _columnWidth, null, null, true);
+        }
+        else if (index > left + VisibleDays - 1)
+        {
+            _bodyScroll.ChangeView((index - VisibleDays + 1) * _columnWidth, null, null, true);
+        }
+    });
+
+    public void Page(int direction) =>
+        _bodyScroll.ChangeView(Math.Max(0, _bodyScroll.HorizontalOffset + direction * VisibleDays * _columnWidth), null, null);
+
     private void Relayout(bool force = false)
     {
         var width = Math.Max(VisibleDays * 40, _bodyScroll.ActualWidth) / VisibleDays;

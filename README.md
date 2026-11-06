@@ -23,7 +23,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [quick-add](docs/prd/quick-add.md) | Typed quick add, offline rule-based parser | pending |
 | [duplicate-event](docs/prd/duplicate-event.md) | Duplicate an event | pending |
 | [undo](docs/prd/undo.md) | Undo recent changes | in-progress |
-| [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | pending |
+| [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | in-progress |
 | [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | pending |
 | [calendar-shading](docs/prd/calendar-shading.md) | Working hours, public holidays, week numbers | closed |
 | [app-updates](docs/prd/app-updates.md) | MSIX updates via App Installer, data across versions, new-PC install | pending |

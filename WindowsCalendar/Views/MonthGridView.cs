@@ -123,6 +123,26 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
 
     public bool UpdateNowLine() => true;
 
+    public void Reveal(DateOnly day, DateTime? start) => DispatcherQueue.TryEnqueue(() =>
+    {
+        if (_rowHeight <= 0)
+        {
+            return;
+        }
+        var top = (day.DayNumber - _first.DayNumber) / 7 * _rowHeight;
+        if (top < _scroll.VerticalOffset)
+        {
+            _scroll.ChangeView(null, top, null, true);
+        }
+        else if (top + _rowHeight > _scroll.VerticalOffset + _scroll.ViewportHeight)
+        {
+            _scroll.ChangeView(null, top + _rowHeight - _scroll.ViewportHeight, null, true);
+        }
+    });
+
+    public void Page(int direction) =>
+        _scroll.ChangeView(null, Math.Max(0, _scroll.VerticalOffset + direction * VisibleWeeks * _rowHeight), null);
+
     private void Relayout(bool force = false)
     {
         if (_scroll.ActualHeight <= 0)
