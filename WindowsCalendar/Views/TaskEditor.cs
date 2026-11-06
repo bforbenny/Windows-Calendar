@@ -229,7 +229,10 @@ internal sealed class TaskEditor : UserControl
         _due.Date = fields.Due is { } due ? new DateTimeOffset(due.ToDateTime(TimeOnly.MinValue)) : null;
         _importance.SelectedIndex = Array.IndexOf(Importances, fields.Importance);
         _notes.Text = (fields.Notes ?? "").Replace("\r\n", "\r").Replace("\n", "\r");
-        _list.Text = $"List: {list.Name}";
+        // With its source (calendar-views interim); the whole line is already muted.
+        _list.Text = Store?.GetAccounts().FirstOrDefault(a => a.Id == list.AccountId) is { } account
+            ? $"List: {list.Name}  {CollectionSource.For(account)}"
+            : $"List: {list.Name}";
 
         var editable = _writable && !_completeOnly;
         _title.IsReadOnly = _notes.IsReadOnly = !editable;

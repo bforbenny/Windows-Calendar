@@ -374,11 +374,17 @@ internal sealed partial class EventEditor : UserControl
         ShowFields(fields);
 
         _calendar.Items.Clear();
+        var accounts = Store?.GetAccounts() ?? [];
         foreach (var c in choices)
         {
             var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
             label.Children.Add(ShapeMarker.Create(c.Shape, Theme.Calendar(c.Colour).Swatch));
             label.Children.Add(new TextBlock { Text = c.Name });
+            // Its source, muted (calendar-views interim).
+            if (accounts.FirstOrDefault(a => a.Id == c.AccountId) is { } account)
+            {
+                label.Children.Add(new TextBlock { Text = CollectionSource.For(account), Foreground = Theme.Brush("TextSecondaryBrush") });
+            }
             _calendar.Items.Add(new ComboBoxItem { Content = label, Tag = c });
         }
         _calendar.SelectedIndex = choices.FindIndex(c => c.Id == selectedId);
