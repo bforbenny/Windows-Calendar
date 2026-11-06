@@ -8,7 +8,8 @@ namespace WindowsCalendar.Core.Store;
 /// Expands an item into the instances that fall inside a window (local-store-offline R3, recurring-events R2).
 /// CalDAV events are read from their iCalendar payload, so overrides, EXDATEs, floating and all-day times are
 /// applied with the given local timezone. MS365 events are read from their Graph JSON (one instance each, as
-/// calendarView lists occurrences). Everything else (tasks) uses the item's normalised columns.
+/// calendarView lists occurrences). Tasks sit on their due date (tasks interim): a date-only due date fills that
+/// day, a due time is a point in time. To Do due dates are read from the payload so they follow the Windows timezone.
 /// </summary>
 internal static class OccurrenceExpander
 {
@@ -33,6 +34,11 @@ internal static class OccurrenceExpander
             return t.End >= windowStart && t.Start < windowEnd ? [(t.Start, t.End, t.Start)] : [];
         }
 
+        if (item.Kind == ItemKind.Task)
+        {
+            return Task(item, accountType, windowStart, windowEnd, zone);
+        }
+
         var s = item.StartUtc ?? item.DueUtc;
         if (s is null)
         {
@@ -40,6 +46,33 @@ internal static class OccurrenceExpander
         }
         var en = item.EndUtc ?? s.Value;
         return en >= windowStart && s.Value < windowEnd ? [(s.Value, en, s.Value)] : [];
+    }
+
+    private static List<(DateTimeOffset Start, DateTimeOffset End, DateTimeOffset Recurrence)> Task(
+        Item item, AccountType accountType, DateTimeOffset windowStart, DateTimeOffset windowEnd, TimeZoneInfo zone)
+    {
+        DateTimeOffset start, end;
+        if (accountType == AccountType.MS365)
+        {
+            if (Graph.GraphTaskMapper.DueDate(item.RawPayload) is not { } due)
+            {
+                return [];
+            }
+            start = Graph.GraphEventMapper.Local(due.ToDateTime(TimeOnly.MinValue), zone);
+            end = Graph.GraphEventMapper.Local(due.AddDays(1).ToDateTime(TimeOnly.MinValue), zone);
+        }
+        else if (item.DueUtc is { } d)
+        {
+            var day = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(d, zone).DateTime);
+            (start, end) = item.AllDay
+                ? (d, Graph.GraphEventMapper.Local(day.AddDays(1).ToDateTime(TimeOnly.MinValue), zone))
+                : (d, d);
+        }
+        else
+        {
+            return [];
+        }
+        return end >= windowStart && start < windowEnd ? [(start, end, start)] : [];
     }
 
     /// <summary>The live (not cancelled) instances of an iCalendar object that start in [windowStart, windowEnd).</summary>

@@ -149,6 +149,11 @@ internal static class Migrations
         ALTER TABLE items ADD COLUMN unaccepted INTEGER NOT NULL DEFAULT 0;
         DELETE FROM sync_state WHERE key = 'graph-chunks';
         """,
+
+        // v9: tasks sit on their due date, not their start (tasks interim); forces a full index rebuild.
+        """
+        DELETE FROM meta WHERE key = 'occurrences_built';
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

@@ -1,6 +1,6 @@
 namespace WindowsCalendar.Core.Views;
 
-public enum ViewKind { Week, Month, Agenda }
+public enum ViewKind { Week, Month, Agenda, Tasks }
 
 /// <summary>The scrollable range and virtualisation maths for the views (calendar-views R1a).</summary>
 public static class ViewPeriod

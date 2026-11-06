@@ -69,7 +69,8 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 - Week, Month and Agenda with the toolbar (Today, view switcher, period title, Sync now). No editor, create, drag or delete yet.
 - The week starts on the Windows first day of week.
 - Sidebar: checkbox, swatch and shape per calendar and task list. Hidden collections are remembered in the store's `meta` table until [calendar-sets](calendar-sets.md) takes over.
-- Colours: automatic assignment only; server colour snapping, overrides and tasks in the views come later.
+- Colours: automatic assignment only; server colour snapping and overrides come later.
+- R1: the Tasks tab follows Agenda; open tasks with a due date show in Week, Month and Agenda per [tasks](tasks.md) interim.
 - Layout maths (overlap columns, periods) lives in `WindowsCalendar.Core` with tests; render time is logged for R12.
 
 ## Interim (second slice: editor)

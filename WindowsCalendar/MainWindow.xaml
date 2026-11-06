@@ -68,6 +68,7 @@
                         <SelectorBarItem Text="Week" Tag="Week" IsSelected="True" />
                         <SelectorBarItem Text="Month" Tag="Month" />
                         <SelectorBarItem Text="Agenda" Tag="Agenda" />
+                        <SelectorBarItem Text="Tasks" Tag="Tasks" />
                     </SelectorBar>
                     <Button Grid.Column="4" Click="OnSyncNow" VerticalAlignment="Center"
                             ToolTipService.ToolTip="Sync now" AutomationProperties.Name="Sync now">

@@ -21,7 +21,7 @@ namespace WindowsCalendar;
 
 /// <summary>
 /// The main window: sidebar with accounts and calendars, toolbar, and the Week/Month/Agenda views, which scroll
-/// naturally instead of paging (calendar-views R1a).
+/// naturally instead of paging (calendar-views R1a), and the Tasks view (MainWindow.Tasks.cs).
 /// </summary>
 public sealed partial class MainWindow : Window
 {
@@ -80,8 +80,21 @@ public sealed partial class MainWindow : Window
         // Clicking a card opens the editor; clicking an empty slot starts a new event (calendar-views R5, R6b).
         foreach (var view in new IScrollingView[] { _week, _month, _agenda })
         {
-            view.EventOpened += e => _editor.OpenExisting(e.ItemId, e.Recurrence, _collections);
-            view.CreateRequested += (start, allDay) => _editor.OpenNew(start, allDay, _collections);
+            view.EventOpened += e =>
+            {
+                if (e.IsTask)
+                {
+                    OpenTask(e.ItemId);
+                    return;
+                }
+                ShowEventEditor();
+                _editor.OpenExisting(e.ItemId, e.Recurrence, _collections);
+            };
+            view.CreateRequested += (start, allDay) =>
+            {
+                ShowEventEditor();
+                _editor.OpenNew(start, allDay, _collections);
+            };
             view.EventDropped += OnEventDropped;
         }
 
@@ -125,6 +138,7 @@ public sealed partial class MainWindow : Window
             ShowUndo(title, canUndo: true);
         };
         _editor.OpenChanged += PlaceEditor;
+        SetupTasks();
         ((FrameworkElement)Content).SizeChanged += (_, _) => PlaceEditor();
 
         // Redraw in the new theme when Windows switches light/dark (app-platform R2a).
@@ -169,10 +183,21 @@ public sealed partial class MainWindow : Window
         ShowAccounts();
         RenderView();
         ShowConflicts();
-        // The open event may have been deleted or moved by the sync.
+        // The open event or task may have been deleted or moved by the sync.
         if (_editor.ItemId is { } id && Store?.GetItem(id) is null)
         {
             _editor.Hide();
+        }
+        if (_taskEditor.ItemId is { } taskId)
+        {
+            if (Store?.GetItem(taskId) is null)
+            {
+                _taskEditor.Hide();
+            }
+            else
+            {
+                _taskEditor.Reload(taskId, _collections);
+            }
         }
     }
 
@@ -181,7 +206,7 @@ public sealed partial class MainWindow : Window
     /// </summary>
     private void PlaceEditor()
     {
-        EditorHost.Visibility = _editor.IsOpen ? Visibility.Visible : Visibility.Collapsed;
+        EditorHost.Visibility = _editor.IsOpen || _taskEditor.IsOpen ? Visibility.Visible : Visibility.Collapsed;
         var push = ((FrameworkElement)Content).ActualWidth >= 1200;
         Grid.SetColumn(EditorHost, push ? 1 : 0);
         Grid.SetColumnSpan(EditorHost, push ? 1 : 2);
@@ -364,14 +389,19 @@ public sealed partial class MainWindow : Window
         }
         _renderPending = false;
         Theme.Current = ((FrameworkElement)Content).ActualTheme;
+        if (_view == ViewKind.Tasks)
+        {
+            RenderTasks();
+            return;
+        }
         var (first, days) = ViewPeriod.Window(_today, WeekStart);
 
         var watch = Stopwatch.StartNew();
         var start = first.ToDateTime(TimeOnly.MinValue);
         var from = new DateTimeOffset(start, TimeZoneInfo.Local.GetUtcOffset(start));
         var events = (Store?.GetOccurrenceViews(from, from.AddDays(days + 1)) ?? [])
-            .Where(o => o.Kind == ItemKind.Event && _collections.ContainsKey(o.CollectionId))
-            .Select(o => DisplayEvent.From(o, _collections[o.CollectionId]))
+            .Where(o => (o.Kind == ItemKind.Event || !o.Completed) && _collections.ContainsKey(o.CollectionId))
+            .Select(o => o.Kind == ItemKind.Task ? TaskItem(o, _collections[o.CollectionId]) : DisplayEvent.From(o, _collections[o.CollectionId]))
             .ToList();
 
         var view = (UIElement)CurrentView;
@@ -405,6 +435,10 @@ public sealed partial class MainWindow : Window
         {
             _view = view;
             RenderView();
+            if (view == ViewKind.Tasks)
+            {
+                return;
+            }
             if (_pendingDay is { } day)
             {
                 CurrentView.ScrollTo(day, toNow: false);

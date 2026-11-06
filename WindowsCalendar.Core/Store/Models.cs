@@ -105,7 +105,7 @@ public sealed record CollectionChanges(int Added, int Updated, int Removed)
     public bool Any => Added + Updated + Removed > 0;
 }
 
-/// <summary>An occurrence with what the views need to draw it (calendar-views).</summary>
+/// <summary>An occurrence with what the views need to draw it (calendar-views). Completed is for tasks.</summary>
 public sealed record OccurrenceView(
     string ItemId,
     string CollectionId,
@@ -118,7 +118,8 @@ public sealed record OccurrenceView(
     bool IsRecurring = false,
     DateTimeOffset? RecurrenceUtc = null,
     bool ReadOnly = false,
-    bool Unaccepted = false);
+    bool Unaccepted = false,
+    bool Completed = false);
 
 /// <summary>One expanded instance of an item in the occurrence index (local-store-offline R3).</summary>
 public sealed record ItemOccurrence(string ItemId, DateTimeOffset StartUtc, DateTimeOffset EndUtc);

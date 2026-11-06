@@ -14,9 +14,10 @@ namespace WindowsCalendar.Core.Graph;
 /// each pulled with its own calendarView delta. Each chunk remembers the event ids it returned; an event leaves the
 /// store only when no chunk of its calendar holds it. A chunk that pages too long, repeats a page or loses its delta
 /// state restarts once from a fresh delta (R3). Throws <see cref="GraphException"/> for Unauthorized and Throttled
-/// (the caller pauses or backs off the account) and for errors before any calendar was pulled.
+/// (the caller pauses or backs off the account) and for errors before any calendar was pulled. To Do task lists are
+/// discovered, sent and pulled alongside (GraphSync.Tasks.cs, sync-ms365 third slice).
 /// </summary>
-public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? time = null)
+public sealed partial class GraphSync(LocalStore store, HttpClient http, TimeProvider? time = null)
 {
     public const int ChunkDays = 30;
     public const int MaxPages = 200;
@@ -35,37 +36,42 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
     /// <summary>Series masters fetched by id for a calendar (R6): calendar's local id, count. For the log.</summary>
     public event Action<string, int>? MastersFetched;
 
-    /// <summary>A calendar's pull started (true) or ended (false), for the sidebar indicator (ui-states R1). Raised off the UI thread.</summary>
+    /// <summary>A calendar or task list's pull started (true) or ended (false), for the sidebar indicator (ui-states R1). Raised off the UI thread.</summary>
     public event Action<string, bool>? CollectionSyncing;
 
     /// <summary>
-    /// Syncs one account with an access token obtained for this run. Only calendars <paramref name="pull"/> accepts are
-    /// pulled (hidden ones are not, local-store-offline R10); queued changes are sent for all.
+    /// Syncs one account with an access token obtained for this run. Only calendars and task lists <paramref name="pull"/>
+    /// accepts are pulled (hidden ones are not, local-store-offline R10); queued changes are sent for all.
     /// </summary>
     public async Task<SyncSummary> SyncAccountAsync(Account account, string accessToken, Func<Collection, bool>? pull = null,
         CancellationToken cancellationToken = default)
     {
         var client = new GraphClient(http, accessToken);
-        var changes = store.SyncCollections(account.Id, await DiscoverAsync(client, cancellationToken));
-        var calendars = store.GetCollections(account.Id).Where(c => c.Kind == CollectionKind.Calendar).ToList();
-        var (sent, conflicts, failed) = await PushAsync(client, calendars, cancellationToken);
-        calendars = pull is null ? calendars : calendars.Where(pull).ToList();
-        var summary = new SyncSummary(calendars.Count, 0, 0, 0, 0, 0, 0, sent, conflicts, failed,
+        var found = new List<DiscoveredCollection>(await DiscoverAsync(client, cancellationToken));
+        found.AddRange(await DiscoverListsAsync(client, account.Id, cancellationToken));
+        var changes = store.SyncCollections(account.Id, found);
+        var collections = store.GetCollections(account.Id);
+        var (sent, conflicts, failed) = await PushAsync(client, collections, cancellationToken);
+        collections = pull is null ? collections : collections.Where(pull).ToList();
+        var summary = new SyncSummary(collections.Count, 0, 0, 0, 0, 0, 0, sent, conflicts, failed,
             CalendarListChanges: changes.Added + changes.Updated + changes.Removed);
-        // Calendars are pulled in parallel once the queued changes are out (local-store-offline R10).
-        var results = new SyncSummary[calendars.Count];
-        await Parallel.ForEachAsync(Enumerable.Range(0, calendars.Count),
+        // Calendars and task lists are pulled in parallel once the queued changes are out (local-store-offline R10).
+        var results = new SyncSummary[collections.Count];
+        await Parallel.ForEachAsync(Enumerable.Range(0, collections.Count),
             new ParallelOptions { MaxDegreeOfParallelism = SyncSummary.MaxParallel, CancellationToken = cancellationToken },
             async (i, token) =>
             {
-                CollectionSyncing?.Invoke(calendars[i].Id, true);
+                var c = collections[i];
+                CollectionSyncing?.Invoke(c.Id, true);
                 try
                 {
-                    results[i] = await SyncCalendarAsync(client, calendars[i], SyncSummary.Empty, token);
+                    results[i] = c.Kind == CollectionKind.TaskList
+                        ? await SyncListAsync(client, c, token)
+                        : await SyncCalendarAsync(client, c, SyncSummary.Empty, token);
                 }
                 finally
                 {
-                    CollectionSyncing?.Invoke(calendars[i].Id, false);
+                    CollectionSyncing?.Invoke(c.Id, false);
                 }
             });
         return results.Aggregate(summary, (a, b) => a + b);
@@ -312,14 +318,15 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
     }
 
     /// <summary>
-    /// Sends the due outbox entries of these calendars in replay order (R7): POST to the calendar, PATCH of the changed
-    /// fields or DELETE, with If-Match. 412 or 404: the server version wins (conflict-resolution). Network, 401 and
-    /// throttling stop the account (thrown); 5xx and 408 retry later; other 4xx wait for the user.
+    /// Sends the due outbox entries of these calendars and task lists in replay order (R7, R9): POST to the calendar or
+    /// list, PATCH of the changed fields or DELETE, with If-Match. 412 or 404: the server version wins
+    /// (conflict-resolution). Network, 401 and throttling stop the account (thrown); 5xx and 408 retry later; other 4xx
+    /// wait for the user.
     /// </summary>
-    private async Task<(int Sent, int Conflicts, int Failed)> PushAsync(GraphClient client, IReadOnlyList<Collection> calendars,
+    private async Task<(int Sent, int Conflicts, int Failed)> PushAsync(GraphClient client, IReadOnlyList<Collection> collections,
         CancellationToken cancellationToken)
     {
-        var byId = calendars.ToDictionary(c => c.Id);
+        var byId = collections.ToDictionary(c => c.Id);
         int sent = 0, conflicts = 0, failed = 0;
         while (true)
         {
@@ -334,19 +341,24 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
             }
             var entry = next.Entry;
             var calendar = byId[item.CollectionId];
+            var isTask = calendar.Kind == CollectionKind.TaskList;
             store.MarkInFlight(entry.Id);
 
             HttpStatusCode status;
             string? etag, id;
             try
             {
-                var path = $"/me/events/{Uri.EscapeDataString(item.RemoteId ?? "")}";
+                var path = isTask ? TaskPath(calendar, item.RemoteId ?? "") : $"/me/events/{Uri.EscapeDataString(item.RemoteId ?? "")}";
+                var create = isTask
+                    ? $"/me/todo/lists/{Uri.EscapeDataString(calendar.RemoteRef)}/tasks"
+                    : $"/me/calendars/{Uri.EscapeDataString(calendar.RemoteRef)}/events";
+                // To Do keeps due dates in the zone they were written in (sync-ms365 third slice).
+                var utc = !isTask;
                 (status, etag, id) = entry.Operation switch
                 {
-                    OutboxOperation.Create => await client.SendAsync(HttpMethod.Post,
-                        $"/me/calendars/{Uri.EscapeDataString(calendar.RemoteRef)}/events", GraphEvents.CreateBody(entry.Payload!), null, cancellationToken),
-                    OutboxOperation.Update => await client.SendAsync(HttpMethod.Patch, path, GraphEvents.PatchBody(entry.Payload!), entry.BaseEtag, cancellationToken),
-                    _ => await client.SendAsync(HttpMethod.Delete, path, null, entry.BaseEtag, cancellationToken),
+                    OutboxOperation.Create => await client.SendAsync(HttpMethod.Post, create, GraphEvents.CreateBody(entry.Payload!), null, cancellationToken, utc),
+                    OutboxOperation.Update => await client.SendAsync(HttpMethod.Patch, path, GraphEvents.PatchBody(entry.Payload!), entry.BaseEtag, cancellationToken, utc),
+                    _ => await client.SendAsync(HttpMethod.Delete, path, null, entry.BaseEtag, cancellationToken, utc),
                 };
             }
             catch (GraphException ex)
@@ -373,7 +385,9 @@ public sealed class GraphSync(LocalStore store, HttpClient http, TimeProvider? t
             }
             else if (status is HttpStatusCode.PreconditionFailed or HttpStatusCode.NotFound && item.RemoteId is { } remoteId)
             {
-                var server = await FetchAsync(client, calendar, remoteId, cancellationToken);
+                var server = isTask
+                    ? await FetchTaskAsync(client, calendar, remoteId, cancellationToken)
+                    : await FetchAsync(client, calendar, remoteId, cancellationToken);
                 if (server is null && entry.Operation == OutboxOperation.Delete)
                 {
                     store.CompleteOutboxEntry(entry.Id);

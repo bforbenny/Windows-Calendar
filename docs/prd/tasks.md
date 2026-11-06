@@ -2,7 +2,7 @@
 description: Tasks/to-dos from Radicale (VTODO) and Microsoft To Do, shown and edited in one tasks UI
 when-to-use: Before working on task lists, task editing, or task sync mapping
 tags: [tasks, vtodo, todo, ui]
-status: pending
+status: closed
 ---
 
 # Tasks
@@ -37,6 +37,16 @@ Tasks from Radicale VTODO collections and Microsoft To Do lists appear in a unif
 - R7a. Special To Do lists such as Flagged emails are read-only ([sync-ms365](sync-ms365.md) R9).
 - R8. Subtasks/checklist items: displayed read-only in v1.
 - R9. Unknown VTODO properties are preserved on edit (see [sync-radicale](sync-radicale.md) R8).
+
+## Interim (first slice: Tasks view and Microsoft To Do writes)
+
+- R1: Tasks is the fourth view tab (Week | Month | Agenda | Tasks); the K shortcut comes with [keyboard-navigation](keyboard-navigation.md). Filters: **All** (open tasks; the default), **Today** (open, due today), **Due in 7 days** (open, due today to 6 days ahead), **Overdue** (open, due before today), **Completed**. The tasks of all visible task lists form one list (unticked task lists are not shown), sorted by due date, undated ones last, then by title. Each row: completed checkbox, title, the task list (its shape marker and name, with the account in the tooltip), due date (in the error colour when overdue) and a "!" glyph for high importance.
+- A "New task" box at the top of the view adds a task with that title to the default task list ([account-management](account-management.md) R9) when Enter is pressed. Quick add comes with [quick-add](quick-add.md).
+- R1, R2, R5: clicking a task opens the task editor in the event editor's place, with the same auto-save. Fields: title, completed, due date (date only for To Do), importance (Low / Normal / High) and notes. The task list is shown but cannot be changed. Delete asks for confirmation, like events.
+- View-only in the editor and calendar (the checkbox is disabled): Radicale tasks (their writes come later), Flagged emails tasks (R7a) and read-only lists. Recurring To Do tasks can only be completed or reopened (R7).
+- R6: open tasks with a due date show in Week (all-day lane, or at the due time for a Radicale task with one), Month and Agenda as an item with a checkbox before the title in the list colour. Ticking it completes a To Do task without opening the editor; clicking elsewhere on the item opens the editor. Likewise in the Tasks view, the checkbox only completes or reopens, and clicking the rest of the row opens the editor. Task items cannot be dragged. Completed tasks are hidden from these views. The settings toggle comes with [settings-page](settings-page.md); until then they are always shown.
+- Tasks are placed on their due date, not their start date.
+- Undo for task changes, reminders (R2), checklist items (R8) and Radicale task writes come later.
 
 ## Out of scope
 

@@ -14,9 +14,10 @@ namespace WindowsCalendar.Views;
 /// An occurrence in local wall-clock time, ready to draw (calendar-views). End is exclusive.
 /// All-day and 24-hour-or-longer events go in the all-day lane (R3). Editable events can be dragged (R7); read-only
 /// calendars, subscriptions and MS365 meetings (sync-ms365 second slice) cannot. <paramref name="Recurrence"/> names the occurrence of a repeating event.
+/// A task (tasks R6 interim) is never dragged; <paramref name="Checkable"/> lets its checkbox complete it.
 /// </summary>
 internal sealed record DisplayEvent(string ItemId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay,
-    Collection Collection, bool Editable, DateTimeOffset? Recurrence, bool Muted = false)
+    Collection Collection, bool Editable, DateTimeOffset? Recurrence, bool Muted = false, bool IsTask = false, bool Checkable = false)
 {
     public bool InAllDayLane => AllDay || End - Start >= TimeSpan.FromHours(24);
 
@@ -40,6 +41,10 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
     /// <summary>Times in the Windows region format (ui-style R7).</summary>
     public string TimeText()
     {
+        if (IsTask)
+        {
+            return AllDay ? "Due" : $"Due {Start:t}";
+        }
         if (AllDay)
         {
             return LastDay == FirstDay ? "All day" : $"{FirstDay:d} – {LastDay:d}";
@@ -58,6 +63,9 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
 /// </summary>
 internal static class EventCard
 {
+    /// <summary>Raised when a task card's checkbox is ticked (tasks R6 interim).</summary>
+    public static event Action<DisplayEvent>? TaskChecked;
+
     /// <summary>Below this height a timed card shows only its bar and fill (calendar-views R4a).</summary>
     public const double TextThreshold = 12;
 
@@ -122,7 +130,7 @@ internal static class EventCard
         var row = new Grid { ColumnSpacing = 4 };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var marker = ShapeMarker.Create(e.Collection.Shape, brushes.Swatch);
+        FrameworkElement marker = e.IsTask ? TaskBox(e, brushes) : ShapeMarker.Create(e.Collection.Shape, brushes.Swatch);
         if (fit)
         {
             // Beside the first line of a wrapped title.
@@ -148,6 +156,30 @@ internal static class EventCard
         stack.Children.Add(second);
         card.Child = stack;
         return card;
+    }
+
+    /// <summary>An empty checkbox in the list colour before a task's title; ticking it completes the task.</summary>
+    private static FrameworkElement TaskBox(DisplayEvent e, CalendarBrushes brushes)
+    {
+        var box = new FontIcon { Glyph = "", FontSize = 12, Foreground = brushes.Swatch, VerticalAlignment = VerticalAlignment.Center };
+        if (e.Checkable)
+        {
+            // A larger hit area than the glyph, so a click near it completes rather than opens.
+            var target = new Border { Background = ViewParts.Clickable, Child = box, Padding = new Thickness(4, 2, 4, 2), Margin = new Thickness(-4, -2, -4, -2) };
+            ToolTipService.SetToolTip(target, "Mark complete");
+            AutomationProperties.SetName(target, $"Mark complete: {e.Title}");
+            // Handled, so the card does not open as well.
+            // Pointer events handled too, so the card neither opens nor starts a drag.
+            target.PointerPressed += (_, args) => args.Handled = true;
+            target.PointerReleased += (_, args) => args.Handled = true;
+            target.Tapped += (_, args) =>
+            {
+                args.Handled = true;
+                TaskChecked?.Invoke(e);
+            };
+            return target;
+        }
+        return box;
     }
 
     private static TextBlock Caption(CalendarBrushes brushes, bool wrap) => new()

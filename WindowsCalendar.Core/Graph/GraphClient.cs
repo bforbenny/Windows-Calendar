@@ -40,11 +40,14 @@ public sealed class GraphClient(HttpClient http, string accessToken)
     public const string BaseUrl = "https://graph.microsoft.com/v1.0";
     public static readonly TimeSpan DefaultRetryAfter = TimeSpan.FromSeconds(60);
 
-    /// <summary>The JSON body of <paramref name="pathOrUrl"/>: a path under v1.0, or a nextLink / deltaLink.</summary>
-    public async Task<JsonDocument> GetAsync(string pathOrUrl, CancellationToken cancellationToken)
+    /// <summary>
+    /// The JSON body of <paramref name="pathOrUrl"/>: a path under v1.0, or a nextLink / deltaLink. To Do calls pass
+    /// <paramref name="utcTimes"/> false so due dates keep the zone they were written in (sync-ms365 third slice).
+    /// </summary>
+    public async Task<JsonDocument> GetAsync(string pathOrUrl, CancellationToken cancellationToken, bool utcTimes = true)
     {
         var url = pathOrUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ? pathOrUrl : BaseUrl + pathOrUrl;
-        using var request = Request(HttpMethod.Get, url);
+        using var request = Request(HttpMethod.Get, url, utcTimes);
         request.Headers.Add("Prefer", "odata.maxpagesize=50");
         using var response = await SendRawAsync(request, cancellationToken);
         if (response.IsSuccessStatusCode)
@@ -66,9 +69,9 @@ public sealed class GraphClient(HttpClient http, string accessToken)
     /// Network, Unauthorized and Throttled; other statuses are for the caller (412, 404, 4xx, 5xx).
     /// </summary>
     public async Task<(HttpStatusCode Status, string? Etag, string? Id)> SendAsync(HttpMethod method, string path, string? json,
-        string? ifMatch, CancellationToken cancellationToken)
+        string? ifMatch, CancellationToken cancellationToken, bool utcTimes = true)
     {
-        using var request = Request(method, BaseUrl + path);
+        using var request = Request(method, BaseUrl + path, utcTimes);
         if (json is not null)
         {
             request.Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
@@ -93,12 +96,15 @@ public sealed class GraphClient(HttpClient http, string accessToken)
         }
     }
 
-    /// <summary>Times in UTC (R8) and bodies as plain text (sync-ms365 second slice).</summary>
-    private HttpRequestMessage Request(HttpMethod method, string url)
+    /// <summary>Times in UTC (R8) unless <paramref name="utcTimes"/> is false, and bodies as plain text (sync-ms365 second slice).</summary>
+    private HttpRequestMessage Request(HttpMethod method, string url, bool utcTimes)
     {
         var request = new HttpRequestMessage(method, url);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
-        request.Headers.Add("Prefer", "outlook.timezone=\"UTC\"");
+        if (utcTimes)
+        {
+            request.Headers.Add("Prefer", "outlook.timezone=\"UTC\"");
+        }
         request.Headers.Add("Prefer", "outlook.body-content-type=\"text\"");
         return request;
     }

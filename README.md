@@ -34,7 +34,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [ui-states](docs/prd/ui-states.md) | Loading, empty, offline, error and first-launch states | pending |
 | [floating-banners](docs/prd/floating-banners.md) | Banners float over the calendar and never push the layout | closed |
 | [settings-page](docs/prd/settings-page.md) | Settings page layout and contents | pending |
-| [tasks](docs/prd/tasks.md) | VTODO and Microsoft To Do tasks | pending |
+| [tasks](docs/prd/tasks.md) | VTODO and Microsoft To Do tasks | closed |
 | [event-location](docs/prd/event-location.md) | Plain-text location/address on events | pending |
 | [reminders-notifications](docs/prd/reminders-notifications.md) | Windows toast reminders | pending |
 | [search](docs/prd/search.md) | Full-text search over cached items | pending |

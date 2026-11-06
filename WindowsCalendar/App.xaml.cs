@@ -314,6 +314,8 @@ public partial class App : Application
             Log.Warning("Calendar {CollectionId} chunk {Chunk} restarted: {Reason}", collectionId, chunk, why);
         graph.MastersFetched += (collectionId, count) =>
             Log.Information("Calendar {CollectionId}: {Count} series masters fetched by id", collectionId, count);
+        graph.ListsUnavailable += accountId =>
+            Log.Warning("Account {AccountId}: To Do lists could not be read; task lists kept as they were", accountId);
         graph.CollectionSyncing += OnCollectionSyncing;
         string? token = null;
         try
