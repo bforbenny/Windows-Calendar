@@ -2,11 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
+using System.Windows;
+using System.Windows.Controls;
 using Serilog;
 using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Store;
+using ContentDialog = Wpf.Ui.Controls.ContentDialog;
+using ContentDialogButton = Wpf.Ui.Controls.ContentDialogButton;
+using ContentDialogResult = Wpf.Ui.Controls.ContentDialogResult;
+using InfoBar = Wpf.Ui.Controls.InfoBar;
+using InfoBarSeverity = Wpf.Ui.Controls.InfoBarSeverity;
 using WindowsCalendar.Core.Sync;
 
 namespace WindowsCalendar.Views;
@@ -82,7 +87,7 @@ internal sealed partial class EventEditor
         }
 
         var account = store.GetAccounts().FirstOrDefault(a => a.Id == target.AccountId)?.DisplayName ?? "the other account";
-        var content = new StackPanel { Spacing = 8 };
+        var content = new SpacedStack { Spacing = 8 };
         content.Children.Add(new TextBlock
         {
             Text = $"The event is copied to {target.Name} in {account}, then deleted from {from.Name}.",
@@ -96,9 +101,8 @@ internal sealed partial class EventEditor
         _asking = true;
         try
         {
-            var dialog = new ContentDialog
+            var dialog = new ContentDialog(ViewParts.DialogHost)
             {
-                XamlRoot = XamlRoot,
                 Title = $"Move to {target.Name}?",
                 Content = content,
                 PrimaryButtonText = "Move",

@@ -1,10 +1,13 @@
 using System;
 using System.Globalization;
 using System.Linq;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using WindowsCalendar.Core.CalDav;
+using NumberBox = Wpf.Ui.Controls.NumberBox;
+using NumberBoxSpinButtonPlacementMode = Wpf.Ui.Controls.NumberBoxSpinButtonPlacementMode;
 
 namespace WindowsCalendar.Views;
 
@@ -13,35 +16,41 @@ namespace WindowsCalendar.Views;
 /// toggles (Weekly), day or weekday of the month (Monthly) and the end. It only shows and reads a
 /// <see cref="RepeatRule"/>; the editor decides when to save.
 /// </summary>
-internal sealed partial class RepeatPanel : StackPanel
+internal sealed partial class RepeatPanel : SpacedStack
 {
-    private readonly ComboBox _repeat = new() { Header = "Repeat", HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox _repeat = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly NumberBox _interval = new()
     {
-        Header = "Every",
         Minimum = 1,
         Maximum = 99,
         Value = 1,
-        SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
+        MaxDecimalPlaces = 0,
+        SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
         MinWidth = 120,
     };
     private readonly TextBlock _unit = new() { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 6) };
-    private readonly StackPanel _weekdayRow = new() { Orientation = Orientation.Horizontal, Spacing = 4 };
+    private readonly SpacedStack _weekdayRow = new() { Orientation = Orientation.Horizontal, Spacing = 4 };
     private readonly ToggleButton[] _weekdays;
     private readonly ComboBox _monthly = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly ComboBox _ends = new() { Header = "Ends", MinWidth = 140 };
+    private readonly ComboBox _ends = new() { MinWidth = 140 };
     private readonly NumberBox _count = new()
     {
         Minimum = 1,
         Maximum = 999,
         Value = 10,
-        SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
+        MaxDecimalPlaces = 0,
+        SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
         VerticalAlignment = VerticalAlignment.Bottom,
     };
     private readonly TextBlock _times = new() { Text = "times", VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(0, 0, 0, 6) };
-    private readonly CalendarDatePicker _until = new() { VerticalAlignment = VerticalAlignment.Bottom };
-    private readonly StackPanel _detail = new() { Spacing = 8 };
-    private readonly Button _apply = new() { Content = "Apply", HorizontalAlignment = HorizontalAlignment.Right };
+    private readonly DatePicker _until = new() { VerticalAlignment = VerticalAlignment.Bottom };
+    private readonly SpacedStack _detail = new() { Spacing = 8 };
+    private readonly Button _apply = new Wpf.Ui.Controls.Button
+    {
+        Content = "Apply",
+        HorizontalAlignment = HorizontalAlignment.Right,
+        Appearance = Wpf.Ui.Controls.ControlAppearance.Primary,
+    };
 
     private DateOnly _start;
     private bool _loading;
@@ -57,7 +66,6 @@ internal sealed partial class RepeatPanel : StackPanel
         {
             _ends.Items.Add(label);
         }
-        _apply.Style = Theme.Style("AccentButtonStyle");
 
         // Weekdays in the culture's week order, e.g. M T W T F S S.
         var format = CultureInfo.CurrentCulture.DateTimeFormat;
@@ -65,9 +73,15 @@ internal sealed partial class RepeatPanel : StackPanel
             .Select(i => (DayOfWeek)(((int)format.FirstDayOfWeek + i) % 7))
             .Select(day =>
             {
-                var toggle = new ToggleButton { Content = format.GetShortestDayName(day), Tag = day, Width = 40, Padding = new Thickness(0, 5, 0, 6) };
-                ToolTipService.SetToolTip(toggle, format.GetDayName(day));
-                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(toggle, format.GetDayName(day));
+                var toggle = new ToggleButton
+                {
+                    Content = format.GetShortestDayName(day),
+                    Tag = day,
+                    Width = 40,
+                    Padding = new Thickness(0, 5, 0, 6),
+                    ToolTip = format.GetDayName(day),
+                };
+                AutomationProperties.SetName(toggle, format.GetDayName(day));
                 toggle.Click += (_, _) =>
                 {
                     // At least one weekday stays selected.
@@ -82,11 +96,11 @@ internal sealed partial class RepeatPanel : StackPanel
             })
             .ToArray();
 
-        var every = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        every.Children.Add(_interval);
+        var every = new SpacedStack { Orientation = Orientation.Horizontal, Spacing = 8 };
+        every.Children.Add(ViewParts.Field("Every", _interval));
         every.Children.Add(_unit);
-        var ends = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        ends.Children.Add(_ends);
+        var ends = new SpacedStack { Orientation = Orientation.Horizontal, Spacing = 8 };
+        ends.Children.Add(ViewParts.Field("Ends", _ends));
         ends.Children.Add(_count);
         ends.Children.Add(_times);
         ends.Children.Add(_until);
@@ -94,7 +108,7 @@ internal sealed partial class RepeatPanel : StackPanel
         _detail.Children.Add(_weekdayRow);
         _detail.Children.Add(_monthly);
         _detail.Children.Add(ends);
-        Children.Add(_repeat);
+        Children.Add(ViewParts.Field("Repeat", _repeat));
         Children.Add(_detail);
         Children.Add(_apply);
 
@@ -110,7 +124,7 @@ internal sealed partial class RepeatPanel : StackPanel
         _monthly.SelectionChanged += (_, _) => Changed();
         _ends.SelectionChanged += (_, _) => Changed();
         _count.ValueChanged += (_, _) => Changed();
-        _until.DateChanged += (_, _) => Changed();
+        _until.SelectedDateChanged += (_, _) => Changed();
         _apply.Click += (_, _) => ApplyClicked?.Invoke();
         ApplyVisible = false;
     }
@@ -140,7 +154,7 @@ internal sealed partial class RepeatPanel : StackPanel
         BuildMonthly(rule.MonthlyWeek);
         _ends.SelectedIndex = rule.Count is not null ? 1 : rule.Until is not null ? 2 : 0;
         _count.Value = rule.Count ?? 10;
-        _until.Date = (rule.Until ?? start.AddMonths(3)).ToDateTime(TimeOnly.MinValue);
+        _until.SelectedDate = (rule.Until ?? start.AddMonths(3)).ToDateTime(TimeOnly.MinValue);
         ApplyVisible = false;
         ShowDetail();
         _loading = false;
@@ -183,7 +197,7 @@ internal sealed partial class RepeatPanel : StackPanel
             : [];
         int? week = frequency == RepeatFrequency.Monthly && _monthly.SelectedItem is ComboBoxItem { Tag: int t } && t != 0 ? t : null;
         int? count = _ends.SelectedIndex == 1 ? Whole(_count.Value) : null;
-        DateOnly? until = _ends.SelectedIndex == 2 && _until.Date is { } date ? DateOnly.FromDateTime(date.Date) : null;
+        DateOnly? until = _ends.SelectedIndex == 2 && _until.SelectedDate is { } date ? DateOnly.FromDateTime(date.Date) : null;
         return new RepeatRule(frequency, Whole(_interval.Value), days, week, count, until);
     }
 
@@ -197,7 +211,7 @@ internal sealed partial class RepeatPanel : StackPanel
 
     private RepeatFrequency Frequency => (RepeatFrequency)Math.Max(0, _repeat.SelectedIndex);
 
-    private static int Whole(double value) => double.IsNaN(value) ? 1 : Math.Max(1, (int)value);
+    private static int Whole(double? value) => value is not { } v || double.IsNaN(v) ? 1 : Math.Max(1, (int)v);
 
     private ToggleButton Toggle(DayOfWeek day) => _weekdays.First(t => (DayOfWeek)t.Tag == day);
 

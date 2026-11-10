@@ -15,6 +15,7 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Serilog;
 using Windows.System.UserProfile;
+using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Core.Views;
 using WindowsCalendar.Views;
@@ -23,9 +24,9 @@ namespace WindowsCalendar;
 
 /// <summary>
 /// The main window: sidebar with accounts and calendars, toolbar, and the Week/Month/Agenda views, which scroll
-/// naturally instead of paging (calendar-views R1a).
-/// WPF port, first slice (app-platform interim): read-only views; the editor, dialogs, search, keyboard, banners,
-/// settings and account adding follow in later slices.
+/// naturally instead of paging (calendar-views R1a), and the Tasks view (MainWindow.Tasks.cs).
+/// WPF port, second slice (app-platform interim): search, key hints, settings, colour and icon overrides and account
+/// adding follow in the third.
 /// </summary>
 public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
@@ -35,15 +36,20 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private readonly TimeGridView _week = new();
     private readonly MonthGridView _month = new();
     private readonly AgendaView _agenda = new();
+    private readonly EventEditor _editor = new();
     private readonly DispatcherTimer _minuteTimer = new();
     private readonly Dictionary<string, Collection> _collections = [];
+    // MS365 accounts: their events are edited as Graph JSON (sync-ms365 second slice).
+    private readonly HashSet<string> _graphAccounts = [];
     private ViewKind _view = ViewKind.Week;
     private DateOnly _today = DateOnly.FromDateTime(DateTime.Now);
     private DateOnly? _pendingDay;
     private bool _quitting;
     private bool _renderPending;
-    private IReadOnlyList<DisplayEvent> _shownEvents = [];
-    private HashSet<string> _joinShown = [];
+    private int _conflictsDismissed;
+    private readonly DispatcherTimer _undoTimer = new() { Interval = TimeSpan.FromSeconds(8) };
+    // PayloadBefore is null for a created copy, which undo deletes.
+    private (string ItemId, string? PayloadBefore, string PayloadAfter, Item? Following)? _lastChange;
     // Sidebar names of the collections being pulled now, for the hue wave (ui-states R1).
     private readonly HashSet<string> _syncing = [];
     private readonly Dictionary<string, TextBlock> _names = [];
@@ -52,6 +58,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         InitializeComponent();
         ViewParts.Root = (UIElement)Content;
+        ViewParts.DialogHost = DialogHost;
         Theme.Apply(Theme.SystemTheme());
         Icon = BitmapFrame.Create(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico")));
 
@@ -77,19 +84,74 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             SwitchView(ViewKind.Agenda);
         };
 
-        // Esc cancels a drag; Ctrl+B hides the sidebar (calendar-views R2b).
+        // Clicking a card opens the editor; clicking an empty slot starts a new event (calendar-views R5, R6b).
+        foreach (var view in new IScrollingView[] { _week, _month, _agenda })
+        {
+            view.EventOpened += e =>
+            {
+                // A click selects the card as well as opening it (keyboard-navigation interim).
+                Select(e, e.FirstDay, reveal: false);
+                OpenItem(e);
+            };
+            view.CreateRequested += (start, allDay) =>
+            {
+                ShowEventEditor();
+                _editor.CanSwitchToTask = NewTaskList() is not null;
+                _editor.OpenNew(start, allDay, _collections);
+            };
+            view.EventDropped += OnEventDropped;
+        }
+        EventDrag.DuplicateRequested += e => Duplicate(e, null);
+
+        // Esc cancels a drag; Ctrl+Z undoes the latest move unless a text box is being typed in (undo R3). Alt+key
+        // arrives as a system key.
         PreviewKeyDown += (_, e) =>
         {
-            if (e.Key == Key.Escape && EventDrag.CancelActive())
+            var key = e.Key == Key.System ? e.SystemKey : e.Key;
+            if (key == Key.Escape && EventDrag.CancelActive())
             {
                 e.Handled = true;
             }
-            else if (e.Key == Key.B && Keyboard.Modifiers == ModifierKeys.Control)
+            else if (DialogHost.Content is not null)
+            {
+                // A content dialog is open: its own keys only.
+            }
+            else if (key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                // Ctrl+N: the New button, until quick add takes the key (keyboard-navigation interim).
+                e.Handled = true;
+                NewDefault();
+            }
+            else if (HandleShortcut(key))
+            {
+                e.Handled = true;
+            }
+            else if (key == Key.B && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 e.Handled = true;
                 ToggleSidebar();
             }
+            else if (key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control
+                && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase && _lastChange is not null)
+            {
+                e.Handled = true;
+                Undo();
+            }
         };
+        _undoTimer.Tick += (_, _) =>
+        {
+            _undoTimer.Stop();
+            UndoBar.IsOpen = false;
+        };
+        // Closing the conflicts banner hides it for the session, until the count grows (conflict-resolution R5).
+        System.ComponentModel.DependencyPropertyDescriptor.FromProperty(Wpf.Ui.Controls.InfoBar.IsOpenProperty, typeof(Wpf.Ui.Controls.InfoBar))
+            .AddValueChanged(ConflictBar, (_, _) =>
+            {
+                if (!ConflictBar.IsOpen)
+                {
+                    _conflictsDismissed = Store?.GetConflictCount() ?? 0;
+                }
+            });
         EventDrag.Ended += () =>
         {
             if (_renderPending)
@@ -97,6 +159,16 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 RenderView();
             }
         };
+        EditorHost.Child = _editor;
+        _editor.Changed += RenderView;
+        _editor.OccurrenceDeleted += (title, id, before, after) =>
+        {
+            _lastChange = (id, before, after, null);
+            ShowUndo(title, canUndo: true);
+        };
+        _editor.OpenChanged += PlaceEditor;
+        SetupTasks();
+        SizeChanged += (_, _) => PlaceEditor();
 
         // Redraw in the new theme when Windows switches light/dark or high contrast (app-platform R2a).
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += (_, e) =>
@@ -130,6 +202,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         ShowSidebar(Store?.GetUiFlag(SidebarHiddenFlag) != true);
         ShowAccounts();
         RenderView();
+        ShowConflicts();
         ScrollToToday();
     }
 
@@ -156,6 +229,200 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         ShowAccounts();
         RenderView();
+        ShowConflicts();
+        // The open event or task may have been deleted or moved by the sync.
+        if (_editor.ItemId is { } id && Store?.GetItem(id) is null)
+        {
+            _editor.Hide();
+        }
+        if (_taskEditor.ItemId is { } taskId)
+        {
+            if (Store?.GetItem(taskId) is null)
+            {
+                _taskEditor.Hide();
+            }
+            else
+            {
+                _taskEditor.Reload(taskId, _collections);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The editor pushes the views narrower at 1200 epx and wider, and slides over them below that (calendar-views R6c).
+    /// </summary>
+    private void PlaceEditor()
+    {
+        EditorHost.Visibility = _editor.IsOpen || _taskEditor.IsOpen ? Visibility.Visible : Visibility.Collapsed;
+        var push = ((FrameworkElement)Content).ActualWidth >= 1200;
+        Grid.SetColumn(EditorHost, push ? 1 : 0);
+        Grid.SetColumnSpan(EditorHost, push ? 1 : 2);
+        EditorHost.HorizontalAlignment = push ? HorizontalAlignment.Stretch : HorizontalAlignment.Right;
+    }
+
+    /// <summary>
+    /// "N conflicts" banner (conflict-resolution R5, interim): closable for the session, shown again when the count grows.
+    /// </summary>
+    private void ShowConflicts()
+    {
+        var count = Store?.GetConflictCount() ?? 0;
+        ConflictBar.Title = count == 1 ? "1 conflict" : $"{count} conflicts";
+        ConflictBar.Message = "Changed both here and on the server: the server version was kept, and your version is saved.";
+        ConflictBar.IsOpen = count > _conflictsDismissed;
+    }
+
+    /// <summary>
+    /// A drop saves the new times like an editor change and offers Undo (calendar-views R7, undo interim). A repeating
+    /// event first asks This event / Entire series (recurring-events interim).
+    /// </summary>
+    private async void OnEventDropped(DisplayEvent e, DragTarget target)
+    {
+        if (target.Copy)
+        {
+            Duplicate(e, target);
+            return;
+        }
+        if (IsGraph(e.Collection))
+        {
+            await DropGraphAsync(e, target);
+            return;
+        }
+        var scope = (EditScope?)null;
+        if (e.Recurrence is not null)
+        {
+            var allowFollowing = Store?.GetItem(e.ItemId) is { } series && !CalDavRecurrence.IsOrganisedMeeting(series,
+                Store.GetAccounts().FirstOrDefault(a => a.Id == e.Collection.AccountId)?.Email);
+            scope = await ScopeDialog.AskAsync("Move a repeating event", allowFollowing);
+            if (scope is null)
+            {
+                return;
+            }
+        }
+        var to = e.Recurrence;
+        try
+        {
+            if (Store?.GetItem(e.ItemId) is not { } item)
+            {
+                return;
+            }
+            var zone = TimeZoneInfo.Local;
+            var now = DateTimeOffset.UtcNow;
+            Item? edited;
+            Item? following = null;
+            if (e.Recurrence is { } recurrence)
+            {
+                var fields = CalDavRecurrence.ReadOccurrence(item, recurrence, zone) with { AllDay = target.AllDay, Start = target.Start, End = target.End };
+                if (scope == EditScope.Following)
+                {
+                    var split = CalDavRecurrence.SplitSeries(item, recurrence, fields, e.Collection, zone, now);
+                    (edited, following, to) = (split?.Original, split?.Following, split?.Recurrence ?? to);
+                }
+                else if (scope == EditScope.Series)
+                {
+                    to = CalDavRecurrence.MovedRecurrence(item, recurrence, fields, zone);
+                    edited = CalDavRecurrence.EditSeries(item, recurrence, fields, zone, now);
+                }
+                else
+                {
+                    edited = CalDavRecurrence.EditOccurrence(item, recurrence, fields, zone, now);
+                }
+            }
+            else
+            {
+                var before = CalDavEvents.Read(item, zone);
+                edited = CalDavEvents.Edit(item, before with { AllDay = target.AllDay, Start = target.Start, End = target.End }, zone, now);
+            }
+            if (edited is null)
+            {
+                return;
+            }
+            if (following is not null)
+            {
+                Store.SplitItem(edited, following);
+            }
+            else
+            {
+                Store.UpdateItem(edited);
+            }
+            _lastChange = (item.Id, item.RawPayload, edited.RawPayload, following);
+            ShowUndo(scope switch
+            {
+                EditScope.Series => "Series moved",
+                EditScope.Following => "Following events moved",
+                _ => "Event moved",
+            }, canUndo: true);
+            Log.Information("Event {ItemId} moved by drag ({Scope})", item.Id, scope?.ToString() ?? "single");
+        }
+        catch (EditRefusedException ex)
+        {
+            ShowUndo("Can't move this event", canUndo: false, ex.Message);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Moving event {ItemId} failed", e.ItemId);
+        }
+        RenderView();
+        _editor.Reload(e.ItemId, e.Recurrence, to);
+    }
+
+    /// <summary>
+    /// Puts the previous version of the event back (undo R4). Refused if the server changed the event since (R6): its
+    /// payload is no longer the one the action wrote.
+    /// </summary>
+    private void Undo()
+    {
+        if (_lastChange is not { } change || Store is not { } store)
+        {
+            return;
+        }
+        _lastChange = null;
+        if (change.PayloadBefore is null)
+        {
+            UndoDuplicate(store, change.ItemId);
+            return;
+        }
+        try
+        {
+            if (store.GetItem(change.ItemId) is not { } item || item.RawPayload != change.PayloadAfter
+                || (change.Following is { } split && store.GetItem(split.Id)?.RawPayload != split.RawPayload))
+            {
+                ShowUndo("This item changed on the server; can't undo", canUndo: false);
+                return;
+            }
+            var restored = _collections.TryGetValue(item.CollectionId, out var collection) && IsGraph(collection)
+                ? Core.Graph.GraphEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local)
+                : CalDavEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local);
+            if (change.Following is { } following)
+            {
+                // Undo of a split (undo R5): the original back and the new series deleted, one linked group.
+                store.UndoSplit(restored, following.Id);
+            }
+            else
+            {
+                store.UpdateItem(restored);
+            }
+            UndoBar.IsOpen = false;
+            Log.Information("Change to event {ItemId} undone", change.ItemId);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Undoing change to event {ItemId} failed", change.ItemId);
+        }
+        RenderView();
+        _editor.Reload(change.ItemId);
+    }
+
+    private void OnUndo(object sender, RoutedEventArgs e) => Undo();
+
+    private void ShowUndo(string title, bool canUndo, string message = "")
+    {
+        UndoBar.Title = title;
+        UndoBar.Message = message;
+        UndoBar.Severity = canUndo ? Wpf.Ui.Controls.InfoBarSeverity.Informational : Wpf.Ui.Controls.InfoBarSeverity.Warning;
+        UndoButton.Visibility = canUndo ? Visibility.Visible : Visibility.Collapsed;
+        UndoBar.IsOpen = true;
+        _undoTimer.Stop();
+        _undoTimer.Start();
     }
 
     /// <summary>
@@ -173,6 +440,11 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _renderPending = false;
         ViewParts.Working = Store?.GetWorkingHours() ?? WorkingHours.Default;
         ViewParts.ShowWeekNumbers = Store?.GetUiFlag(WeekNumbersFlag) == true;
+        if (_view == ViewKind.Tasks)
+        {
+            RenderTasks();
+            return;
+        }
         var (first, days) = ViewPeriod.Window(_today, WeekStart);
 
         var watch = Stopwatch.StartNew();
@@ -194,7 +466,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
 
         _shownEvents = events;
-        _joinShown = JoinableNow();
+        RememberJoinShown();
         var view = (UIElement)CurrentView;
         if (ViewHost.Children.Count != 1 || ViewHost.Children[0] != view)
         {
@@ -205,22 +477,6 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         Log.Information("{View} view loaded in {Ms} ms ({Count} occurrences)", _view, watch.ElapsedMilliseconds, events.Count);
     }
 
-    /// <summary>A task with a due date on the calendar (tasks R6 interim); it is never dragged.</summary>
-    private static DisplayEvent TaskItem(OccurrenceView o, Collection list)
-    {
-        var e = DisplayEvent.From(o, list) with { Editable = false, IsTask = true };
-        return e.AllDay || e.End > e.Start ? e : e with { End = e.Start.AddMinutes(30) };
-    }
-
-    /// <summary>Whether an event entered or left its Join window since the last render (online-meeting-join R4).</summary>
-    private bool JoinChanged() => !JoinableNow().SetEquals(_joinShown);
-
-    private HashSet<string> JoinableNow()
-    {
-        var now = DateTime.Now;
-        return _shownEvents.Where(e => e.JoinNow(now)).Select(e => e.Key).ToHashSet();
-    }
-
     /// <summary>Week opens on the current week at the current time; Month on the current week; Agenda on today.</summary>
     private void ScrollToToday() =>
         CurrentView.ScrollTo(_view == ViewKind.Week ? ViewPeriod.StartOfWeek(_today, WeekStart) : _today, toNow: true);
@@ -229,6 +485,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     {
         if (view == _view)
         {
+            _visibleDay = day;
             PeriodTitle.Text = day.ToString(CultureInfo.CurrentCulture.DateTimeFormat.YearMonthPattern);
         }
     }
@@ -254,7 +511,12 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             return;
         }
         _view = view;
+        NewButtonText.Text = view == ViewKind.Tasks ? "New task" : "New event";
         RenderView();
+        if (view == ViewKind.Tasks)
+        {
+            return;
+        }
         if (_pendingDay is { } day)
         {
             CurrentView.ScrollTo(day, toNow: false);
@@ -342,6 +604,8 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var accounts = Store?.GetAccounts() ?? [];
         var hidden = Store?.GetHiddenCollectionIds() ?? new HashSet<string>();
         var byAccount = accounts.ToDictionary(a => a.Id, a => Store!.GetCollections(a.Id));
+        _graphAccounts.Clear();
+        _graphAccounts.UnionWith(accounts.Where(a => a.Type == AccountType.MS365).Select(a => a.Id));
         foreach (var collection in byAccount.Values.SelectMany(c => c))
         {
             _collections[collection.Id] = collection;

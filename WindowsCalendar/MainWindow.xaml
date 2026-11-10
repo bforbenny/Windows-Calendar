@@ -54,15 +54,32 @@
                                ToolTip="Hide or show the sidebar (Ctrl+B)" AutomationProperties.Name="Hide or show the sidebar">
                         <TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE700;" FontSize="16" />
                     </ui:Button>
-                    <ui:Button x:Name="TodayButton" Grid.Column="1" Content="Today" Click="OnToday" VerticalAlignment="Center"
-                               ToolTip="Go to today (T)" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <!-- New event, or New task in the Tasks view; the drop-down offers both (calendar-views interim). -->
+                        <ui:SplitButton x:Name="NewButton" Click="OnNew" VerticalAlignment="Center" Margin="0,0,8,0">
+                            <TextBlock x:Name="NewButtonText" Text="New event" />
+                            <ui:SplitButton.Flyout>
+                                <ContextMenu Opened="OnNewMenuOpening">
+                                    <MenuItem Header="New event" Click="OnNewEvent">
+                                        <MenuItem.Icon><TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE787;" /></MenuItem.Icon>
+                                    </MenuItem>
+                                    <MenuItem x:Name="NewTaskItem" Header="New task" Click="OnNewTask">
+                                        <MenuItem.Icon><TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE73E;" /></MenuItem.Icon>
+                                    </MenuItem>
+                                </ContextMenu>
+                            </ui:SplitButton.Flyout>
+                        </ui:SplitButton>
+                        <ui:Button x:Name="TodayButton" Content="Today" Click="OnToday" VerticalAlignment="Center"
+                                   ToolTip="Go to today (T)" />
+                    </StackPanel>
                     <TextBlock x:Name="PeriodTitle" Grid.Column="2" Style="{StaticResource SubtitleTextBlockStyle}"
                                Foreground="{DynamicResource TextPrimaryBrush}"
                                VerticalAlignment="Center" Margin="16,0,0,0" TextTrimming="CharacterEllipsis" />
                     <StackPanel x:Name="ViewSwitcher" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
                         <ToggleButton Content="Week" Tag="Week" IsChecked="True" Click="OnViewClicked" Margin="0,0,4,0" />
                         <ToggleButton Content="Month" Tag="Month" Click="OnViewClicked" Margin="0,0,4,0" />
-                        <ToggleButton Content="Agenda" Tag="Agenda" Click="OnViewClicked" />
+                        <ToggleButton Content="Agenda" Tag="Agenda" Click="OnViewClicked" Margin="0,0,4,0" />
+                        <ToggleButton Content="Tasks" Tag="Tasks" Click="OnViewClicked" />
                     </StackPanel>
                     <ui:Button x:Name="SyncButton" Grid.Column="4" Click="OnSyncNow" VerticalAlignment="Center"
                                ToolTip="Sync now (F5)" AutomationProperties.Name="Sync now">
@@ -71,14 +88,47 @@
                 </Grid>
 
                 <Grid x:Name="Body" Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
                     <Grid x:Name="ViewHost" />
 
                     <!-- First launch, no accounts (ui-states R5). Adding accounts comes with the WPF port's third slice. -->
                     <TextBlock x:Name="EmptyPanel" Text="Add an account to get started" Style="{StaticResource SubtitleTextBlockStyle}"
                                Foreground="{DynamicResource TextPrimaryBrush}"
                                HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+
+                    <!-- Event and task editor (calendar-views R6c): pushes the views at 1200 epx and wider, slides over them below. -->
+                    <Border x:Name="EditorHost" Grid.Column="1" Visibility="Collapsed"
+                            Background="{DynamicResource SurfaceBaseBrush}" BorderBrush="{DynamicResource DividerBrush}"
+                            BorderThickness="1,0,0,0" />
+
+                    <!-- Banners float over the views and editor, bottom centre, so nothing moves (floating-banners R1-R4).
+                         Lasting conditions above, passing ones (undo) below. Only the cards take clicks. -->
+                    <StackPanel x:Name="BannerStack" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                                Margin="24" MinWidth="320" MaxWidth="520">
+                        <!-- Conflicts (conflict-resolution R5, interim: banner only). -->
+                        <ui:InfoBar x:Name="ConflictBar" Severity="Warning" IsClosable="True" Margin="0,0,0,8"
+                                    Background="{DynamicResource SurfaceBaseBrush}">
+                            <ui:InfoBar.Effect>
+                                <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.25" />
+                            </ui:InfoBar.Effect>
+                        </ui:InfoBar>
+                        <!-- "Event moved · Undo" for 8 seconds (undo R3). -->
+                        <ui:InfoBar x:Name="UndoBar" IsClosable="True" Background="{DynamicResource SurfaceBaseBrush}">
+                            <ui:InfoBar.Effect>
+                                <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.25" />
+                            </ui:InfoBar.Effect>
+                            <ui:Button x:Name="UndoButton" Content="Undo" Click="OnUndo" />
+                        </ui:InfoBar>
+                    </StackPanel>
                 </Grid>
             </Grid>
         </Grid>
+
+        <!-- Content dialogs (WPF-UI) cover the whole window while open. -->
+        <ui:ContentDialogHost x:Name="DialogHost" Grid.RowSpan="2" />
     </Grid>
 </ui:FluentWindow>

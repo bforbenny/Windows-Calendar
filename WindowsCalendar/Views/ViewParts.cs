@@ -155,6 +155,77 @@ internal static class ViewParts
         return stack;
     }
 
+    /// <summary>Where the window's content dialogs show (WPF-UI); set by the main window.</summary>
+    public static Wpf.Ui.Controls.ContentDialogHost? DialogHost { get; set; }
+
+    /// <summary>A form field: its label as a caption above the control (WPF controls have no Header).</summary>
+    public static StackPanel Field(string header, UIElement control)
+    {
+        var field = new StackPanel();
+        var label = new Label { Content = header, Padding = new Thickness(0, 0, 0, 4), Target = control as FrameworkElement };
+        label.SetResourceReference(Control.ForegroundProperty, "TextPrimaryBrush");
+        field.Children.Add(label);
+        field.Children.Add(control);
+        if (control is FrameworkElement element)
+        {
+            AutomationProperties.SetName(element, header);
+        }
+        return field;
+    }
+
+    /// <summary>A borderless button showing a glyph, with its name as tooltip and for screen readers.</summary>
+    public static Button IconButton(string glyph, string name)
+    {
+        var button = new Button
+        {
+            Content = Icon(glyph, 14),
+            Padding = new Thickness(8),
+            Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            ToolTip = name,
+        };
+        AutomationProperties.SetName(button, name);
+        return button;
+    }
+
+    /// <summary>
+    /// A new item's heading as a drop-down: <paramref name="current"/>, with <paramref name="other"/> in its menu to
+    /// switch kind (calendar-views and tasks interim). Starts collapsed.
+    /// </summary>
+    public static Button KindSwitch(string current, string other, Action onSwitch, out MenuItem otherItem)
+    {
+        var item = new MenuItem { Header = other };
+        item.Click += (_, _) => onSwitch();
+        var menu = new ContextMenu();
+        menu.Items.Add(item);
+        otherItem = item;
+        var chevron = Icon("", 10);
+        chevron.Margin = new Thickness(8, 4, 0, 0);
+        var content = new StackPanel { Orientation = Orientation.Horizontal };
+        content.Children.Add(new TextBlock { Text = current, Style = Theme.Style("SubtitleTextBlockStyle") });
+        content.Children.Add(chevron);
+        var button = new Button
+        {
+            Content = content,
+            ContextMenu = menu,
+            Focusable = false,
+            Background = Clickable,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0, 0, 8, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Visibility = Visibility.Collapsed,
+        };
+        button.Click += (_, _) =>
+        {
+            menu.PlacementTarget = button;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        };
+        AutomationProperties.SetName(button, $"{current}; switch to {other}");
+        return button;
+    }
+
     public static void Place(UIElement element, double left, double top)
     {
         Canvas.SetLeft(element, left);

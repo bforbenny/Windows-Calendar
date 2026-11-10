@@ -1,7 +1,9 @@
-using System;
+using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
+using System.Windows.Controls;
+using ContentDialog = Wpf.Ui.Controls.ContentDialog;
+using ContentDialogButton = Wpf.Ui.Controls.ContentDialogButton;
+using ContentDialogResult = Wpf.Ui.Controls.ContentDialogResult;
 
 namespace WindowsCalendar.Views;
 
@@ -20,24 +22,23 @@ internal static class ScopeDialog
     /// (a rule change, R3). A <paramref name="delete"/> asks with a red Delete button instead of OK (ui-colour-theme R3), and
     /// Cancel is the default.
     /// </summary>
-    public static async Task<EditScope?> AskAsync(XamlRoot root, string title, bool allowFollowing, bool allowOccurrence = true,
-        bool delete = false)
+    public static async Task<EditScope?> AskAsync(string title, bool allowFollowing, bool allowOccurrence = true, bool delete = false)
     {
-        var options = new RadioButtons();
+        var options = new SpacedStack { Spacing = 4 };
+        void Add(string text, EditScope scope) =>
+            options.Children.Add(new RadioButton { Content = text, Tag = scope, GroupName = "scope", IsChecked = options.Children.Count == 0 });
         if (allowOccurrence)
         {
-            options.Items.Add(new RadioButton { Content = "This event", Tag = EditScope.Occurrence });
+            Add("This event", EditScope.Occurrence);
         }
         if (allowFollowing)
         {
-            options.Items.Add(new RadioButton { Content = "This and following events", Tag = EditScope.Following });
+            Add("This and following events", EditScope.Following);
         }
-        options.Items.Add(new RadioButton { Content = "All events in the series", Tag = EditScope.Series });
-        options.SelectedIndex = 0;
+        Add("All events in the series", EditScope.Series);
 
-        var dialog = new ContentDialog
+        var dialog = new ContentDialog(ViewParts.DialogHost)
         {
-            XamlRoot = root,
             Title = title,
             Content = options,
             PrimaryButtonText = delete ? "Delete" : "OK",
@@ -48,7 +49,8 @@ internal static class ScopeDialog
         {
             Destructive.Apply(dialog);
         }
-        return await dialog.ShowAsync() == ContentDialogResult.Primary && options.SelectedItem is RadioButton { Tag: EditScope scope }
+        return await dialog.ShowAsync() == ContentDialogResult.Primary
+            && options.Children.OfType<RadioButton>().FirstOrDefault(r => r.IsChecked == true) is { Tag: EditScope scope }
             ? scope
             : null;
     }

@@ -1,7 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.UI.Xaml.Controls;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Views;
 
@@ -43,15 +44,15 @@ public sealed partial class MainWindow
             MeetingJoin.Launch(candidates[0].Join!);
             return;
         }
-        var picker = new MenuFlyout();
+        var picker = new ContextMenu { PlacementTarget = ViewHost, Placement = PlacementMode.Center };
         foreach (var e in candidates)
         {
-            var item = new MenuFlyoutItem { Text = $"{e.Title} · {e.TimeText()} · {e.Join!.Provider}" };
+            var item = new MenuItem { Header = $"{e.Title} · {e.TimeText()} · {e.Join!.Provider}" };
             var link = e.Join;
             item.Click += (_, _) => MeetingJoin.Launch(link);
             picker.Items.Add(item);
         }
-        picker.ShowAt(ViewHost);
+        picker.IsOpen = true;
     }
 
     /// <summary>Remembers which shown events have Join now (called after each render).</summary>

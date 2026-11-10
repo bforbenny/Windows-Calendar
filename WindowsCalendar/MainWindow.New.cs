@@ -1,6 +1,5 @@
 using System;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
+using System.Windows;
 using Serilog;
 using WindowsCalendar.Core.Views;
 
@@ -15,7 +14,7 @@ public sealed partial class MainWindow
     // The day in the middle of the current view, from VisibleDayChanged.
     private DateOnly? _visibleDay;
 
-    private void OnNew(SplitButton sender, SplitButtonClickEventArgs args) => NewDefault();
+    private void OnNew(object sender, RoutedEventArgs e) => NewDefault();
 
     /// <summary>The New button's main action, also Ctrl+N: New task in the Tasks view, else New event.</summary>
     private void NewDefault()
@@ -49,7 +48,7 @@ public sealed partial class MainWindow
 
     private void OnNewTask(object sender, RoutedEventArgs e) => NewTask();
 
-    private void OnNewMenuOpening(object? sender, object e) => NewTaskItem.IsEnabled = NewTaskList() is not null;
+    private void OnNewMenuOpening(object sender, RoutedEventArgs e) => NewTaskItem.IsEnabled = NewTaskList() is not null;
 
     /// <summary>A 1-hour event at the next full hour, on today when it is in view, else on the day in the middle.</summary>
     private void NewEvent(string title = "")

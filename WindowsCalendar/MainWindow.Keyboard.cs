@@ -1,12 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Windows.System;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
 using WindowsCalendar.Core.Views;
 using WindowsCalendar.Views;
 
@@ -19,7 +18,8 @@ namespace WindowsCalendar;
 /// </summary>
 public sealed partial class MainWindow
 {
-    private const VirtualKey QuestionKey = (VirtualKey)191; // VK_OEM_2: "/" and, with Shift, "?"
+    /// <summary>F1-F4, in the view switcher's order.</summary>
+    private static readonly ViewKind[] ViewKeys = [ViewKind.Week, ViewKind.Month, ViewKind.Agenda, ViewKind.Tasks];
 
     /// <summary>Shown in the cheat sheet, in this order.</summary>
     private static readonly (string Keys, string Action)[] Shortcuts =
@@ -54,36 +54,31 @@ public sealed partial class MainWindow
     private DateOnly _selectedDay;
 
     /// <summary>Handles a shortcut key; false when the key is not one, or not available where focus is.</summary>
-    private bool HandleShortcut(VirtualKey key)
+    private bool HandleShortcut(Key key)
     {
-        var ctrl = IsControlDown();
-        var shift = IsDown(VirtualKey.Shift);
-        var alt = IsDown(VirtualKey.Menu);
+        var ctrl = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
+        var alt = Keyboard.Modifiers.HasFlag(ModifierKeys.Alt);
         var plain = !ctrl && !shift && !alt;
 
-        if (plain && key is >= VirtualKey.F1 and <= VirtualKey.F4)
+        if (plain && key is >= Key.F1 and <= Key.F4)
         {
-            ViewSwitcher.SelectedItem = ViewSwitcher.Items[key - VirtualKey.F1];
+            SwitchView(ViewKeys[key - Key.F1]);
             return true;
         }
-        if (plain && key == VirtualKey.F5)
+        if (plain && key == Key.F5)
         {
             ((App)Application.Current).SyncNow();
             return true;
         }
-        if (ctrl && !alt && key == VirtualKey.G)
+        if (ctrl && !alt && key == Key.G)
         {
             ShowGoToDate();
             return true;
         }
-        if (ctrl && shift && !alt && key == VirtualKey.J)
+        if (ctrl && shift && !alt && key == Key.J)
         {
             JoinNext();
-            return true;
-        }
-        if (ctrl && !shift && !alt && key is VirtualKey.F or VirtualKey.E && SettingsHost.Visibility != Visibility.Visible)
-        {
-            FocusSearch();
             return true;
         }
         if (!SingleKeysAllowed())
@@ -93,16 +88,16 @@ public sealed partial class MainWindow
         var calendar = _view != ViewKind.Tasks;
         switch (key)
         {
-            case VirtualKey.T when plain && calendar:
+            case Key.T when plain && calendar:
                 ScrollToToday();
                 return true;
-            case QuestionKey when shift && !ctrl && !alt:
+            case Key.OemQuestion when shift && !ctrl && !alt:
                 ShowCheatSheet();
                 return true;
-            case VirtualKey.PageUp or VirtualKey.PageDown when plain && calendar:
-                CurrentView.Page(key == VirtualKey.PageUp ? -1 : 1);
+            case Key.PageUp or Key.PageDown when plain && calendar:
+                CurrentView.Page(key == Key.PageUp ? -1 : 1);
                 return true;
-            case VirtualKey.Up or VirtualKey.Down or VirtualKey.Left or VirtualKey.Right when calendar && !ctrl:
+            case Key.Up or Key.Down or Key.Left or Key.Right when calendar && !ctrl:
                 if (alt)
                 {
                     MoveSelected(key, shift);
@@ -115,21 +110,20 @@ public sealed partial class MainWindow
                 }
                 return false;
             // A focused button or checkbox keeps its own Enter.
-            case VirtualKey.Enter when plain && FocusManager.GetFocusedElement(Content.XamlRoot) is not ButtonBase
-                && Selected() is { } open:
+            case Key.Enter when plain && Keyboard.FocusedElement is not ButtonBase && Selected() is { } open:
                 OpenItem(open);
                 return true;
-            case VirtualKey.D when ctrl && !shift && !alt && calendar && Selected() is { CanDuplicate: true } original:
+            case Key.D when ctrl && !shift && !alt && calendar && Selected() is { CanDuplicate: true } original:
                 Duplicate(original, null);
                 return true;
-            case VirtualKey.J when ctrl && !shift && !alt && calendar && Selected() is { Join: not null }:
+            case Key.J when ctrl && !shift && !alt && calendar && Selected() is { Join: not null }:
                 JoinSelected();
                 return true;
-            case VirtualKey.Delete when plain && Selected() is { IsTask: false } doomed:
+            case Key.Delete when plain && Selected() is { IsTask: false } doomed:
                 ShowEventEditor();
                 _editor.OpenAndDelete(doomed.ItemId, doomed.Recurrence, _collections);
                 return true;
-            case VirtualKey.Escape when !_editor.IsOpen && !_taskEditor.IsOpen && _selectedKey is not null:
+            case Key.Escape when !_editor.IsOpen && !_taskEditor.IsOpen && _selectedKey is not null:
                 _selectedKey = EventCard.SelectedKey = null;
                 RenderView();
                 return true;
@@ -138,24 +132,16 @@ public sealed partial class MainWindow
         }
     }
 
-    private static bool IsDown(VirtualKey key) =>
-        Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
-
     /// <summary>
     /// R4: single keys, arrows, Enter and Del are left alone while typing or in a drop-down, and inside the editor
-    /// panel or Settings. The view tabs do not keep their arrow keys: F1-F4 switch views.
+    /// panel. The view tabs do not keep their arrow keys: F1-F4 switch views.
     /// </summary>
     private bool SingleKeysAllowed()
     {
-        if (SettingsHost.Visibility == Visibility.Visible)
+        for (var e = Keyboard.FocusedElement as DependencyObject; e is not null;
+            e = (e is Visual ? VisualTreeHelper.GetParent(e) : null) ?? LogicalTreeHelper.GetParent(e))
         {
-            return false;
-        }
-        var focused = FocusManager.GetFocusedElement(Content.XamlRoot) as DependencyObject;
-        for (var e = focused; e is not null; e = VisualTreeHelper.GetParent(e))
-        {
-            if (e is TextBox or PasswordBox or RichEditBox or AutoSuggestBox or ComboBox or CalendarDatePicker or TimePicker
-                or DatePicker || e == EditorHost)
+            if (e is TextBoxBase or PasswordBox or ComboBox or DatePicker or Calendar || e == EditorHost)
             {
                 return false;
             }
@@ -179,16 +165,16 @@ public sealed partial class MainWindow
     }
 
     /// <summary>Arrows: the first press selects (today's first item, else the first from the day in view).</summary>
-    private void MoveSelection(VirtualKey key)
+    private void MoveSelection(Key key)
     {
         var nav = new SelectionNav(_shownEvents.Select(e => new Selectable(e.Key, e.FirstDay, e.LastDay, e.InAllDayLane, e.Start)));
         var day = _selectedKey is { } current ? nav.DayOf(current, _selectedDay) : null;
         var next = day is { } d
             ? nav.Move(_selectedKey!, d, key switch
             {
-                VirtualKey.Up => SelectionMove.Up,
-                VirtualKey.Down => SelectionMove.Down,
-                VirtualKey.Left => SelectionMove.Left,
+                Key.Up => SelectionMove.Up,
+                Key.Down => SelectionMove.Down,
+                Key.Left => SelectionMove.Left,
                 _ => SelectionMove.Right,
             })
             : nav.Initial(_today, _visibleDay ?? _today);
@@ -218,7 +204,7 @@ public sealed partial class MainWindow
     /// R3: Alt+Up/Down move 15 minutes, Alt+Left/Right one day, Alt+Shift+Up/Down shorten / lengthen by 15 minutes
     /// (at least 15 minutes long). All-day events only move by day. Goes through the drag path.
     /// </summary>
-    private void MoveSelected(VirtualKey key, bool shift)
+    private void MoveSelected(Key key, bool shift)
     {
         if (Selected() is not { } e || !e.Editable || e.IsTask)
         {
@@ -226,12 +212,12 @@ public sealed partial class MainWindow
         }
         var step = TimeSpan.FromMinutes(15);
         var (start, end) = (e.Start, e.End);
-        var vertical = key is VirtualKey.Up or VirtualKey.Down;
+        var vertical = key is Key.Up or Key.Down;
         if (vertical && e.AllDay || !vertical && shift)
         {
             return;
         }
-        var sign = key is VirtualKey.Up or VirtualKey.Left ? -1 : 1;
+        var sign = key is Key.Up or Key.Left ? -1 : 1;
         if (!vertical)
         {
             (start, end) = (start.AddDays(sign), end.AddDays(sign));
@@ -261,55 +247,68 @@ public sealed partial class MainWindow
     private void ShowGoToDate()
     {
         var shown = _visibleDay ?? _today;
-        var calendar = new CalendarView { SelectionMode = CalendarViewSelectionMode.Single };
-        calendar.SetDisplayDate(new DateTimeOffset(shown.ToDateTime(TimeOnly.MinValue)));
-        var flyout = new Flyout { Content = calendar, Placement = FlyoutPlacementMode.BottomEdgeAlignedLeft };
+        var calendar = new Calendar { SelectionMode = CalendarSelectionMode.SingleDate, DisplayDate = shown.ToDateTime(TimeOnly.MinValue) };
+        var popup = new Popup
+        {
+            Child = new Border
+            {
+                Child = calendar,
+                Background = Theme.Brush("SurfaceBaseBrush"),
+                BorderBrush = Theme.Brush("DividerBrush"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(4),
+            },
+            PlacementTarget = PeriodTitle,
+            Placement = PlacementMode.Bottom,
+            StaysOpen = false,
+            AllowsTransparency = true,
+        };
         calendar.SelectedDatesChanged += (_, args) =>
         {
-            if (args.AddedDates.Count == 0)
+            if (args.AddedItems.Count == 0 || args.AddedItems[0] is not DateTime picked)
             {
                 return;
             }
-            flyout.Hide();
-            var day = DateOnly.FromDateTime(args.AddedDates[0].Date);
+            popup.IsOpen = false;
+            var day = DateOnly.FromDateTime(picked);
             if (_view == ViewKind.Tasks)
             {
                 _pendingDay = day;
-                ViewSwitcher.SelectedItem = ViewSwitcher.Items[0];
+                SwitchView(ViewKind.Week);
             }
             else
             {
                 CurrentView.ScrollTo(day, toNow: false);
             }
         };
-        flyout.Opened += (_, _) => calendar.Focus(FocusState.Keyboard);
-        flyout.ShowAt(PeriodTitle);
+        popup.Opened += (_, _) => calendar.Focus();
+        popup.IsOpen = true;
     }
 
     /// <summary>?: the shortcuts that are built, in a dialog.</summary>
     private async void ShowCheatSheet()
     {
-        var grid = new Grid { ColumnSpacing = 24, RowSpacing = 6 };
+        var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         for (var i = 0; i < Shortcuts.Length; i++)
         {
             grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-            var keys = new TextBlock { Text = Shortcuts[i].Keys, Style = Theme.Style("BodyStrongTextBlockStyle") };
-            var action = new TextBlock { Text = Shortcuts[i].Action, TextWrapping = TextWrapping.Wrap };
+            var keys = new TextBlock { Text = Shortcuts[i].Keys, Style = Theme.Style("BodyStrongTextBlockStyle"), Margin = new Thickness(0, 0, 24, 6) };
+            var action = new TextBlock { Text = Shortcuts[i].Action, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 6) };
             Grid.SetRow(keys, i);
             Grid.SetRow(action, i);
             Grid.SetColumn(action, 1);
             grid.Children.Add(keys);
             grid.Children.Add(action);
         }
-        var dialog = new ContentDialog
+        var dialog = new Wpf.Ui.Controls.ContentDialog(DialogHost)
         {
-            XamlRoot = Content.XamlRoot,
             Title = "Keyboard shortcuts",
-            Content = new ScrollViewer { Content = grid },
+            Content = new ScrollViewer { Content = grid, VerticalScrollBarVisibility = ScrollBarVisibility.Auto },
             CloseButtonText = "Close",
-            DefaultButton = ContentDialogButton.Close,
+            DefaultButton = Wpf.Ui.Controls.ContentDialogButton.Close,
         };
         try
         {

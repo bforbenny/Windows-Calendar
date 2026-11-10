@@ -1,6 +1,11 @@
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
+using System.Windows;
+using System.Windows.Controls;
 using WindowsCalendar.Core.Store;
+using ContentDialog = Wpf.Ui.Controls.ContentDialog;
+using ContentDialogButton = Wpf.Ui.Controls.ContentDialogButton;
+using ContentDialogResult = Wpf.Ui.Controls.ContentDialogResult;
+using InfoBar = Wpf.Ui.Controls.InfoBar;
+using InfoBarSeverity = Wpf.Ui.Controls.InfoBarSeverity;
 
 namespace WindowsCalendar.Views;
 
@@ -10,7 +15,11 @@ namespace WindowsCalendar.Views;
 /// </summary>
 internal sealed partial class EventEditor
 {
-    private readonly Button _join = new() { Style = Theme.Style("AccentButtonStyle"), Visibility = Visibility.Collapsed };
+    private readonly Button _join = new Wpf.Ui.Controls.Button
+    {
+        Appearance = Wpf.Ui.Controls.ControlAppearance.Primary,
+        Visibility = Visibility.Collapsed,
+    };
     private JoinLink? _joinLink;
 
     private void RefreshJoin()
@@ -22,7 +31,7 @@ internal sealed partial class EventEditor
         if (_joinLink is { } link)
         {
             _join.Content = $"Join {link.Provider} meeting";
-            ToolTipService.SetToolTip(_join, "Ctrl+J");
+            _join.ToolTip = "Ctrl+J";
         }
     }
 

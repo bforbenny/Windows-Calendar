@@ -1,13 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 using Serilog;
-using Windows.System;
 using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Store;
+using ContentDialog = Wpf.Ui.Controls.ContentDialog;
+using ContentDialogButton = Wpf.Ui.Controls.ContentDialogButton;
+using ContentDialogResult = Wpf.Ui.Controls.ContentDialogResult;
+using InfoBar = Wpf.Ui.Controls.InfoBar;
+using InfoBarSeverity = Wpf.Ui.Controls.InfoBarSeverity;
 using WindowsCalendar.Core.Views;
 
 namespace WindowsCalendar.Views;
@@ -21,15 +26,15 @@ namespace WindowsCalendar.Views;
 internal sealed class TaskEditor : UserControl
 {
     private readonly TextBlock _heading = new() { Text = "Task", Style = Theme.Style("SubtitleTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center };
-    private readonly Button _delete = IconButton("", "Delete");
+    private readonly Button _delete = ViewParts.IconButton("", "Delete");
     private readonly InfoBar _notice = new() { IsClosable = false, Severity = InfoBarSeverity.Informational };
-    private readonly TextBox _title = new() { PlaceholderText = "Add a title", Header = "Title" };
+    private readonly TextBox _title = new Wpf.Ui.Controls.TextBox { PlaceholderText = "Add a title" };
     private readonly CheckBox _completed = new() { Content = "Completed" };
-    private readonly CalendarDatePicker _due = new() { Header = "Due", PlaceholderText = "No due date", HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly DatePicker _due = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Button _clearDue = new() { Content = "Clear", VerticalAlignment = VerticalAlignment.Bottom };
-    private readonly ComboBox _importance = new() { Header = "Importance", HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox _importance = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBlock _list = new() { Foreground = Theme.Brush("TextSecondaryBrush") };
-    private readonly TextBox _notes = new() { Header = "Notes", AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 120 };
+    private readonly TextBox _notes = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 120 };
 
     private static readonly string[] Importances = ["low", "normal", "high"];
 
@@ -40,16 +45,16 @@ internal sealed class TaskEditor : UserControl
     private bool _completeOnly;
     private bool _loading;
 
-    private readonly DropDownButton _switch;
+    private readonly Button _switch;
 
     public TaskEditor()
     {
         _switch = ViewParts.KindSwitch("New task", "New event", () => SwitchRequested?.Invoke(_title.Text), out _);
-        var close = IconButton("", "Close (Esc)");
+        var close = ViewParts.IconButton("", "Close (Esc)");
         close.Click += (_, _) => Close();
         _delete.Click += async (_, _) => await DeleteAsync();
 
-        var header = new Grid { ColumnSpacing = 4, Margin = new Thickness(16, 12, 8, 0) };
+        var header = new Grid { Margin = new Thickness(16, 12, 8, 8) };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -57,6 +62,8 @@ internal sealed class TaskEditor : UserControl
         header.Children.Add(_switch);
         Grid.SetColumn(_delete, 1);
         Grid.SetColumn(close, 2);
+        _delete.Margin = close.Margin = new Thickness(4, 0, 0, 0);
+        _delete.Margin = close.Margin = new Thickness(4, 0, 0, 0);
         header.Children.Add(_delete);
         header.Children.Add(close);
 
@@ -64,26 +71,27 @@ internal sealed class TaskEditor : UserControl
         {
             _importance.Items.Add(name);
         }
-        var dueRow = new Grid { ColumnSpacing = 8 };
+        var dueRow = new Grid();
+        _clearDue.Margin = new Thickness(8, 0, 0, 0);
         dueRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         dueRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         Grid.SetColumn(_clearDue, 1);
         dueRow.Children.Add(_due);
         dueRow.Children.Add(_clearDue);
 
-        var form = new StackPanel { Spacing = 12, Padding = new Thickness(16, 0, 16, 16) };
+        var form = new SpacedStack { Spacing = 12, Margin = new Thickness(16, 0, 16, 16) };
         form.Children.Add(_notice);
-        form.Children.Add(_title);
+        form.Children.Add(ViewParts.Field("Title", _title));
         form.Children.Add(_completed);
-        form.Children.Add(dueRow);
-        form.Children.Add(_importance);
+        form.Children.Add(ViewParts.Field("Due", dueRow));
+        form.Children.Add(ViewParts.Field("Importance", _importance));
         form.Children.Add(_list);
-        form.Children.Add(_notes);
+        form.Children.Add(ViewParts.Field("Notes", _notes));
 
-        var root = new Grid { RowSpacing = 8 };
+        var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        var scroll = new ScrollViewer { Content = form };
+        var scroll = new ScrollViewer { Content = form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Grid.SetRow(scroll, 1);
         root.Children.Add(header);
         root.Children.Add(scroll);
@@ -95,26 +103,25 @@ internal sealed class TaskEditor : UserControl
         _notes.LostFocus += (_, _) => Save();
         _title.KeyDown += (_, e) =>
         {
-            if (e.Key == VirtualKey.Enter)
+            if (e.Key == Key.Enter)
             {
                 Save();
             }
         };
         _completed.Click += (_, _) => Save();
-        _due.DateChanged += (_, _) => Save();
-        _clearDue.Click += (_, _) => _due.Date = null;
+        _due.SelectedDateChanged += (_, _) => Save();
+        _clearDue.Click += (_, _) => _due.SelectedDate = null;
         _importance.SelectionChanged += (_, _) => Save();
 
-        var escape = new KeyboardAccelerator { Key = VirtualKey.Escape };
-        escape.Invoked += (_, e) =>
+        // Esc closes; an open drop-down closes first, as it handles its own Esc.
+        KeyDown += (_, e) =>
         {
-            if (IsOpen)
+            if (e.Key == Key.Escape && IsOpen)
             {
                 e.Handled = true;
                 Close();
             }
         };
-        KeyboardAccelerators.Add(escape);
     }
 
     /// <summary>Raised after a change is saved to the store, so the views redraw.</summary>
@@ -181,7 +188,7 @@ internal sealed class TaskEditor : UserControl
             Visibility = Visibility.Visible;
             OpenChanged?.Invoke();
         }
-        _title.Focus(FocusState.Programmatic);
+        Dispatcher.BeginInvoke(DispatcherPriority.Input, () => _title.Focus());
     }
 
     /// <summary>After a change made outside the panel (a tick in the list or calendar, a sync): shows the stored task.</summary>
@@ -226,9 +233,9 @@ internal sealed class TaskEditor : UserControl
         _loading = true;
         _title.Text = fields.Title;
         _completed.IsChecked = fields.Completed;
-        _due.Date = fields.Due is { } due ? new DateTimeOffset(due.ToDateTime(TimeOnly.MinValue)) : null;
+        _due.SelectedDate = fields.Due?.ToDateTime(TimeOnly.MinValue);
         _importance.SelectedIndex = Array.IndexOf(Importances, fields.Importance);
-        _notes.Text = (fields.Notes ?? "").Replace("\r\n", "\r").Replace("\n", "\r");
+        _notes.Text = (fields.Notes ?? "").Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
         // With its source (calendar-views interim); the whole line is already muted.
         _list.Text = Store?.GetAccounts().FirstOrDefault(a => a.Id == list.AccountId) is { } account
             ? $"List: {list.Name}  {CollectionSource.For(account)}"
@@ -248,7 +255,7 @@ internal sealed class TaskEditor : UserControl
         return new TaskFields(
             title.Length > 0 ? title : old.Title,
             _completed.IsChecked == true,
-            _due.Date is { } d ? DateOnly.FromDateTime(d.Date) : null,
+            _due.SelectedDate is { } d ? DateOnly.FromDateTime(d.Date) : null,
             _importance.SelectedIndex >= 0 ? Importances[_importance.SelectedIndex] : old.Importance,
             _notes.Text.Replace("\r\n", "\n").Replace("\r", "\n"));
     }
@@ -312,9 +319,8 @@ internal sealed class TaskEditor : UserControl
         {
             return;
         }
-        var dialog = Destructive.Apply(new ContentDialog
+        var dialog = Destructive.Apply(new ContentDialog(ViewParts.DialogHost)
         {
-            XamlRoot = XamlRoot,
             Title = "Delete this task?",
             Content = string.IsNullOrWhiteSpace(_title.Text) ? "(No title)" : _title.Text,
             PrimaryButtonText = "Delete",
@@ -338,17 +344,4 @@ internal sealed class TaskEditor : UserControl
         Changed?.Invoke();
     }
 
-    private static Button IconButton(string glyph, string name)
-    {
-        var button = new Button
-        {
-            Content = new FontIcon { Glyph = glyph, FontSize = 14 },
-            Padding = new Thickness(8),
-            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0),
-        };
-        ToolTipService.SetToolTip(button, name);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, name);
-        return button;
-    }
 }

@@ -1,7 +1,5 @@
-using System;
 using System.Threading.Tasks;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
+using Wpf.Ui.Controls;
 
 namespace WindowsCalendar.Views;
 
@@ -11,15 +9,14 @@ namespace WindowsCalendar.Views;
 /// </summary>
 internal static class LostDialog
 {
-    public static async Task<bool> ConfirmAsync(XamlRoot root, string title, string action, int lost)
+    public static async Task<bool> ConfirmAsync(string title, string action, int lost)
     {
         if (lost <= 0)
         {
             return true;
         }
-        var dialog = Destructive.Apply(new ContentDialog
+        var dialog = Destructive.Apply(new ContentDialog(ViewParts.DialogHost)
         {
-            XamlRoot = root,
             Title = title,
             Content = lost == 1 ? "1 changed occurrence will be lost." : $"{lost} changed occurrences will be lost.",
             PrimaryButtonText = action,

@@ -36,8 +36,8 @@ A native Windows 11 desktop app built with C# / .NET 10 and WPF, styled with the
 The WinUI 3 project is converted to WPF in place, on branch `wpf`, in three slices. `WindowsCalendar.Core` and its tests are unchanged. The WinUI build on `main` stays the working app until the port is merged.
 
 1. Window shell, theme (Light / Dark / Windows, high contrast), sidebar, toolbar and the Month, Week and Agenda views, read-only. Month is a virtualizing list of fixed-height week rows; Week and Agenda are virtualizing lists of fixed-width day columns, with headers and hour labels kept in step on the UI thread. Check: scrolling all three views, locally and over Remote Desktop, never dims. This is the go/no-go point for the port.
-2. Editing: event and task editors, dialogs (with the Destructive button), drag, create, delete and undo.
-3. The rest: search, keyboard and key hints, banners, settings, tray (H.NotifyIcon.Wpf), accounts and Microsoft sign-in, single instance, start with Windows, icons and MSIX packaging; then the WinUI packages are removed. Single instance and packaging use the lightest option that works; any new package is asked for first.
+2. Editing: event and task editors, the Tasks view, dialogs (with the Destructive button), drag, create, delete and undo, with the undo and conflicts banners and the keyboard selection and shortcuts that editing relies on.
+3. The rest: search, key hints, the banner fade, settings, colour and icon overrides, tray (H.NotifyIcon.Wpf), accounts and Microsoft sign-in, single instance, start with Windows, icons and MSIX packaging; then the WinUI packages are removed. Single instance and packaging use the lightest option that works; any new package is asked for first.
 
 ## Out of scope
 

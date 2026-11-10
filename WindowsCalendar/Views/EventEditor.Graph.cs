@@ -2,8 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
+using InfoBarSeverity = Wpf.Ui.Controls.InfoBarSeverity;
 using Serilog;
 using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
@@ -125,7 +124,7 @@ internal sealed partial class EventEditor
                     return;
                 }
                 _asking = true;
-                var scope = await ScopeDialog.AskAsync(XamlRoot, "Change a repeating event", _allowFollowing);
+                var scope = await ScopeDialog.AskAsync("Change a repeating event", _allowFollowing);
                 _asking = false;
                 if (_itemId != master.Id || _recurrence != recurrence)
                 {
@@ -161,7 +160,7 @@ internal sealed partial class EventEditor
                 && GraphRecurrence.SplitSeries(master, recurrence, fields, collection, zone) is { } split)
             {
                 var lost = GraphRecurrence.Exceptions(series, TimeZoneInfo.ConvertTime(recurrence, zone).DateTime, zone);
-                if (!await LostDialog.ConfirmAsync(XamlRoot, "Change the following events?", "Change", lost) || _itemId != master.Id)
+                if (!await LostDialog.ConfirmAsync("Change the following events?", "Change", lost) || _itemId != master.Id)
                 {
                     ShowFields(current);
                     return;
@@ -175,7 +174,7 @@ internal sealed partial class EventEditor
             }
             else
             {
-                if (moved && !await LostDialog.ConfirmAsync(XamlRoot, "Change the series?", "Change", GraphRecurrence.Exceptions(series, null, zone)))
+                if (moved && !await LostDialog.ConfirmAsync("Change the series?", "Change", GraphRecurrence.Exceptions(series, null, zone)))
                 {
                     ShowFields(current);
                     return;
@@ -223,7 +222,7 @@ internal sealed partial class EventEditor
     private async Task ApplyGraphRuleAsync(LocalStore store, Item master, DateTimeOffset recurrence, Collection target)
     {
         var rule = _repeat.Read();
-        var scope = await ScopeDialog.AskAsync(XamlRoot, "Change the repeat pattern", true, allowOccurrence: false);
+        var scope = await ScopeDialog.AskAsync("Change the repeat pattern", true, allowOccurrence: false);
         if (scope is null || _itemId != master.Id)
         {
             return;
@@ -236,7 +235,7 @@ internal sealed partial class EventEditor
             _repeat.ApplyVisible = false;
             return;
         }
-        if (!await LostDialog.ConfirmAsync(XamlRoot, "Change the repeat pattern?", "Change", change.Lost) || _itemId != master.Id)
+        if (!await LostDialog.ConfirmAsync("Change the repeat pattern?", "Change", change.Lost) || _itemId != master.Id)
         {
             return;
         }

@@ -29,7 +29,7 @@ public sealed partial class MainWindow
         var scope = (EditScope?)null;
         if (master is not null)
         {
-            scope = await ScopeDialog.AskAsync(Content.XamlRoot, "Move a repeating event", allowFollowing: true);
+            scope = await ScopeDialog.AskAsync("Move a repeating event", allowFollowing: true);
             if (scope is null)
             {
                 return;
@@ -52,7 +52,7 @@ public sealed partial class MainWindow
                 var split = scope == EditScope.Following ? GraphRecurrence.SplitSeries(master, recurrence, fields, e.Collection, zone) : null;
                 var lost = GraphRecurrence.Exceptions(store.GetSeriesItems(item.CollectionId, master.RemoteId!),
                     split is null ? null : TimeZoneInfo.ConvertTime(recurrence, zone).DateTime, zone);
-                if (!await LostDialog.ConfirmAsync(Content.XamlRoot, "Move the series?", "Move", lost))
+                if (!await LostDialog.ConfirmAsync("Move the series?", "Move", lost))
                 {
                     return;
                 }

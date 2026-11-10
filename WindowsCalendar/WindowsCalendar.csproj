@@ -52,10 +52,10 @@
 
   <!-- WPF port (app-platform interim): WinUI files not yet ported stay out of the build until their slice. -->
   <ItemGroup>
-    <Compile Remove="AddRadicaleDialog.xaml.cs;MainWindow.Duplicate.cs;MainWindow.Graph.cs;MainWindow.Join.cs;MainWindow.KeyHints.cs;MainWindow.Keyboard.cs;MainWindow.New.cs;MainWindow.Search.cs;MainWindow.Settings.cs;MainWindow.Style.cs;MainWindow.Tasks.cs" />
-    <Compile Remove="Views/EventEditor*.cs;Views/TaskEditor.cs;Views/RepeatPanel.cs;Views/ScopeDialog.cs;Views/LostDialog.cs;Views/SettingsPage.cs;Views/TasksView.cs;Views/Destructive.cs" />
-    <Page Remove="AddRadicaleDialog.xaml;Views/NeutralDefaultButton.xaml" />
-    <None Include="AddRadicaleDialog.xaml;Views/NeutralDefaultButton.xaml" />
+    <Compile Remove="AddRadicaleDialog.xaml.cs;MainWindow.KeyHints.cs;MainWindow.Search.cs;MainWindow.Settings.cs;MainWindow.Style.cs" />
+    <Compile Remove="Views/SettingsPage.cs" />
+    <Page Remove="AddRadicaleDialog.xaml" />
+    <None Include="AddRadicaleDialog.xaml" />
   </ItemGroup>
 
   <!--

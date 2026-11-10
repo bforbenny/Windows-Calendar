@@ -1,14 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 using Serilog;
-using Windows.System;
 using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Store;
+using ContentDialog = Wpf.Ui.Controls.ContentDialog;
+using ContentDialogButton = Wpf.Ui.Controls.ContentDialogButton;
+using ContentDialogResult = Wpf.Ui.Controls.ContentDialogResult;
+using InfoBar = Wpf.Ui.Controls.InfoBar;
+using InfoBarSeverity = Wpf.Ui.Controls.InfoBarSeverity;
 
 namespace WindowsCalendar.Views;
 
@@ -24,20 +29,19 @@ internal sealed partial class EventEditor : UserControl
     public const double PanelWidth = 400;
 
     private readonly TextBlock _heading = new() { Style = Theme.Style("SubtitleTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center };
-    private readonly Button _delete = IconButton("", "Delete");
+    private readonly Button _delete = ViewParts.IconButton("", "Delete");
     private readonly InfoBar _notice = new() { IsClosable = false, Severity = InfoBarSeverity.Informational };
-    private readonly TextBox _title = new() { PlaceholderText = "Add a title", Header = "Title" };
+    private readonly TextBox _title = new Wpf.Ui.Controls.TextBox { PlaceholderText = "Add a title" };
     private readonly CheckBox _allDay = new() { Content = "All day" };
-    private readonly CalendarDatePicker _startDate = new() { Header = "Start" };
-    private readonly TimePicker _startTime = new() { VerticalAlignment = VerticalAlignment.Bottom };
-    private readonly CalendarDatePicker _endDate = new() { Header = "End" };
-    private readonly TimePicker _endTime = new() { VerticalAlignment = VerticalAlignment.Bottom };
-    private readonly TextBox _location = new() { Header = "Location" };
-    private readonly ComboBox _calendar = new() { Header = "Calendar", HorizontalAlignment = HorizontalAlignment.Stretch };
-    private readonly ComboBox _showAs = new() { Header = "Show as", HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly DatePicker _startDate = new();
+    private readonly TimeBox _startTime = new() { VerticalAlignment = VerticalAlignment.Bottom };
+    private readonly DatePicker _endDate = new();
+    private readonly TimeBox _endTime = new() { VerticalAlignment = VerticalAlignment.Bottom };
+    private readonly TextBox _location = new();
+    private readonly ComboBox _calendar = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox _showAs = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBox _description = new()
     {
-        Header = "Description",
         AcceptsReturn = true,
         TextWrapping = TextWrapping.Wrap,
         MinHeight = 120,
@@ -61,17 +65,17 @@ internal sealed partial class EventEditor : UserControl
     // A new event whose show-as the user has not chosen: it follows all-day (event-show-as R4).
     private bool _defaultShowAs;
 
-    private readonly DropDownButton _switch;
-    private readonly MenuFlyoutItem _switchItem;
+    private readonly Button _switch;
+    private readonly MenuItem _switchItem;
 
     public EventEditor()
     {
         _switch = ViewParts.KindSwitch("New event", "New task", () => SwitchRequested?.Invoke(_title.Text), out _switchItem);
-        var close = IconButton("", "Close (Esc)");
+        var close = ViewParts.IconButton("", "Close (Esc)");
         close.Click += (_, _) => Close();
         _delete.Click += async (_, _) => await DeleteAsync();
 
-        var header = new Grid { ColumnSpacing = 4 };
+        var header = new Grid();
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -79,27 +83,28 @@ internal sealed partial class EventEditor : UserControl
         header.Children.Add(_switch);
         Grid.SetColumn(_delete, 1);
         Grid.SetColumn(close, 2);
+        _delete.Margin = close.Margin = new Thickness(4, 0, 0, 0);
         header.Children.Add(_delete);
         header.Children.Add(close);
 
-        var form = new StackPanel { Spacing = 12, Padding = new Thickness(16, 0, 16, 16) };
+        var form = new SpacedStack { Spacing = 12, Margin = new Thickness(16, 0, 16, 16) };
         form.Children.Add(_notice);
         form.Children.Add(_join);
-        form.Children.Add(_title);
+        form.Children.Add(ViewParts.Field("Title", _title));
         form.Children.Add(_allDay);
-        form.Children.Add(DateTimeRow(_startDate, _startTime));
-        form.Children.Add(DateTimeRow(_endDate, _endTime));
+        form.Children.Add(ViewParts.Field("Start", DateTimeRow(_startDate, _startTime)));
+        form.Children.Add(ViewParts.Field("End", DateTimeRow(_endDate, _endTime)));
         form.Children.Add(_repeat);
-        form.Children.Add(_location);
-        form.Children.Add(_showAs);
-        form.Children.Add(_calendar);
-        form.Children.Add(_description);
+        form.Children.Add(ViewParts.Field("Location", _location));
+        form.Children.Add(ViewParts.Field("Show as", _showAs));
+        form.Children.Add(ViewParts.Field("Calendar", _calendar));
+        form.Children.Add(ViewParts.Field("Description", _description));
 
-        var root = new Grid { RowSpacing = 8 };
+        var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        header.Margin = new Thickness(16, 12, 8, 0);
-        var scroll = new ScrollViewer { Content = form };
+        header.Margin = new Thickness(16, 12, 8, 8);
+        var scroll = new ScrollViewer { Content = form, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
         Grid.SetRow(scroll, 1);
         root.Children.Add(header);
         root.Children.Add(scroll);
@@ -120,7 +125,7 @@ internal sealed partial class EventEditor : UserControl
         _join.Click += (_, _) => Join();
         _title.KeyDown += (_, e) =>
         {
-            if (e.Key == VirtualKey.Enter)
+            if (e.Key == Key.Enter)
             {
                 Save();
             }
@@ -143,24 +148,23 @@ internal sealed partial class EventEditor : UserControl
                 Save();
             }
         };
-        _startDate.DateChanged += (_, _) => StartChanged();
-        _startTime.TimeChanged += (_, _) => StartChanged();
-        _endDate.DateChanged += (_, _) => Save();
-        _endTime.TimeChanged += (_, _) => Save();
+        _startDate.SelectedDateChanged += (_, _) => StartChanged();
+        _startTime.TimeChanged += StartChanged;
+        _endDate.SelectedDateChanged += (_, _) => Save();
+        _endTime.TimeChanged += Save;
         _calendar.SelectionChanged += (_, _) => CalendarChanged();
         _repeat.RuleChanged += RuleChanged;
         _repeat.ApplyClicked += async () => await ApplyRuleAsync();
 
-        var escape = new KeyboardAccelerator { Key = VirtualKey.Escape };
-        escape.Invoked += (_, e) =>
+        // Esc closes; an open drop-down closes first, as it handles its own Esc.
+        KeyDown += (_, e) =>
         {
-            if (IsOpen)
+            if (e.Key == Key.Escape && IsOpen)
             {
                 e.Handled = true;
                 Close();
             }
         };
-        KeyboardAccelerators.Add(escape);
     }
 
     /// <summary>Raised after a change is saved to the store, so the views redraw.</summary>
@@ -279,7 +283,7 @@ internal sealed partial class EventEditor : UserControl
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
         Show("New event", new EventFields(title, allDay, start, end, null, null, allDay ? ShowAs.Free : ShowAs.Busy), choices, defaultId);
         _notice.IsOpen = false;
-        _title.Focus(FocusState.Programmatic);
+        _ = Dispatcher.BeginInvoke(DispatcherPriority.Input, () => _title.Focus());
     }
 
     /// <summary>
@@ -341,9 +345,9 @@ internal sealed partial class EventEditor : UserControl
         }
         _loading = true;
         _allDay.IsChecked = fields.AllDay;
-        _startDate.Date = fields.Start.Date;
+        _startDate.SelectedDate = fields.Start.Date;
         _startTime.Time = fields.Start.TimeOfDay;
-        _endDate.Date = fields.AllDay ? fields.End.Date.AddDays(-1) : fields.End.Date;
+        _endDate.SelectedDate = fields.AllDay ? fields.End.Date.AddDays(-1) : fields.End.Date;
         _endTime.Time = fields.End.TimeOfDay;
         _shownStart = fields.Start;
         ShowTimePickers();
@@ -377,7 +381,7 @@ internal sealed partial class EventEditor : UserControl
         var accounts = Store?.GetAccounts() ?? [];
         foreach (var c in choices)
         {
-            var label = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var label = new SpacedStack { Orientation = Orientation.Horizontal, Spacing = 8 };
             label.Children.Add(ShapeMarker.Create(c.Shape, Theme.Calendar(c.Colour).Swatch));
             label.Children.Add(new TextBlock { Text = c.Name });
             // Its source, muted (calendar-views interim).
@@ -420,13 +424,13 @@ internal sealed partial class EventEditor : UserControl
         _loading = true;
         _title.Text = fields.Title;
         _allDay.IsChecked = fields.AllDay;
-        _startDate.Date = fields.Start.Date;
+        _startDate.SelectedDate = fields.Start.Date;
         _startTime.Time = fields.Start.TimeOfDay;
         // All-day end dates are shown inclusive.
-        _endDate.Date = fields.AllDay ? fields.End.Date.AddDays(-1) : fields.End.Date;
+        _endDate.SelectedDate = fields.AllDay ? fields.End.Date.AddDays(-1) : fields.End.Date;
         _endTime.Time = fields.End.TimeOfDay;
         _location.Text = fields.Location ?? "";
-        _description.Text = (fields.Description ?? "").Replace("\r\n", "\r").Replace("\n", "\r");
+        _description.Text = (fields.Description ?? "").Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
         _shownStart = fields.Start;
         ShowShowAs(fields.ShowAs);
         ShowTimePickers();
@@ -482,7 +486,7 @@ internal sealed partial class EventEditor : UserControl
         {
             var end = fields.End + shift;
             _loading = true;
-            _endDate.Date = fields.AllDay ? end.Date.AddDays(-1) : end.Date;
+            _endDate.SelectedDate = fields.AllDay ? end.Date.AddDays(-1) : end.Date;
             _endTime.Time = end.TimeOfDay;
             _loading = false;
         }
@@ -494,8 +498,8 @@ internal sealed partial class EventEditor : UserControl
     private EventFields ReadFields()
     {
         var allDay = _allDay.IsChecked == true;
-        var startDate = _startDate.Date?.Date ?? DateTime.Today;
-        var endDate = _endDate.Date?.Date ?? startDate;
+        var startDate = _startDate.SelectedDate?.Date ?? DateTime.Today;
+        var endDate = _endDate.SelectedDate?.Date ?? startDate;
         var start = allDay ? startDate : startDate + _startTime.Time;
         var end = allDay ? endDate.AddDays(1) : endDate + _endTime.Time;
         if (end <= start)
@@ -503,7 +507,7 @@ internal sealed partial class EventEditor : UserControl
             end = allDay ? start.AddDays(1) : start.AddHours(1);
             var loading = _loading;
             _loading = true;
-            _endDate.Date = allDay ? start.Date : end.Date;
+            _endDate.SelectedDate = allDay ? start.Date : end.Date;
             _endTime.Time = end.TimeOfDay;
             _loading = loading;
         }
@@ -620,7 +624,7 @@ internal sealed partial class EventEditor : UserControl
                     return;
                 }
                 _asking = true;
-                var scope = await ScopeDialog.AskAsync(XamlRoot, "Change a repeating event", _allowFollowing);
+                var scope = await ScopeDialog.AskAsync("Change a repeating event", _allowFollowing);
                 _asking = false;
                 if (_itemId != item.Id || _recurrence != recurrence)
                 {
@@ -732,7 +736,7 @@ internal sealed partial class EventEditor : UserControl
             return;
         }
         _repeat.Visibility = _savedRule is null ? Visibility.Collapsed : Visibility.Visible;
-        _repeat.Show(_savedRule ?? RepeatRule.None, DateOnly.FromDateTime(_startDate.Date?.Date ?? DateTime.Today));
+        _repeat.Show(_savedRule ?? RepeatRule.None, DateOnly.FromDateTime(_startDate.SelectedDate?.Date ?? DateTime.Today));
     }
 
     /// <summary>A new or single event: the rule saves at once. A new event without a title gets it when created.</summary>
@@ -790,7 +794,7 @@ internal sealed partial class EventEditor : UserControl
                 return;
             }
             var scope = _allowFollowing
-                ? await ScopeDialog.AskAsync(XamlRoot, "Change the repeat pattern", true, allowOccurrence: false)
+                ? await ScopeDialog.AskAsync("Change the repeat pattern", true, allowOccurrence: false)
                 : EditScope.Series;
             if (scope is null || _itemId != id || store.GetItem(id) is not { } item)
             {
@@ -805,9 +809,8 @@ internal sealed partial class EventEditor : UserControl
             }
             if (change.Lost > 0)
             {
-                var confirm = Destructive.Apply(new ContentDialog
+                var confirm = Destructive.Apply(new ContentDialog(ViewParts.DialogHost)
                 {
-                    XamlRoot = XamlRoot,
                     Title = "Change the repeat pattern?",
                     Content = change.Lost == 1 ? "1 changed occurrence will be lost." : $"{change.Lost} changed occurrences will be lost.",
                     PrimaryButtonText = "Change",
@@ -879,9 +882,8 @@ internal sealed partial class EventEditor : UserControl
         _asking = true;
         try
         {
-            var dialog = Destructive.Apply(new ContentDialog
+            var dialog = Destructive.Apply(new ContentDialog(ViewParts.DialogHost)
             {
-                XamlRoot = XamlRoot,
                 Title = "Discard repeat changes?",
                 Content = "The repeat pattern was changed but not applied.",
                 PrimaryButtonText = "Discard",
@@ -913,7 +915,7 @@ internal sealed partial class EventEditor : UserControl
         }
         if (_recurrence is { } recurrence)
         {
-            var scope = await ScopeDialog.AskAsync(XamlRoot, "Delete a repeating event", _allowFollowing, delete: true);
+            var scope = await ScopeDialog.AskAsync("Delete a repeating event", _allowFollowing, delete: true);
             if (scope is null)
             {
                 return;
@@ -959,9 +961,8 @@ internal sealed partial class EventEditor : UserControl
                 return;
             }
         }
-        var dialog = Destructive.Apply(new ContentDialog
+        var dialog = Destructive.Apply(new ContentDialog(ViewParts.DialogHost)
         {
-            XamlRoot = XamlRoot,
             Title = _recurrence is null ? "Delete this event?" : "Delete the entire series?",
             Content = string.IsNullOrWhiteSpace(_title.Text) ? "(No title)" : _title.Text,
             PrimaryButtonText = "Delete",
@@ -985,30 +986,17 @@ internal sealed partial class EventEditor : UserControl
         Changed?.Invoke();
     }
 
-    private static Grid DateTimeRow(CalendarDatePicker date, TimePicker time)
+    private static Grid DateTimeRow(DatePicker date, TimeBox time)
     {
-        var row = new Grid { ColumnSpacing = 8 };
+        var row = new Grid();
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         date.HorizontalAlignment = HorizontalAlignment.Stretch;
-        time.MinWidth = 0;
+        time.Margin = new Thickness(8, 0, 0, 0);
         Grid.SetColumn(time, 1);
         row.Children.Add(date);
         row.Children.Add(time);
         return row;
     }
 
-    private static Button IconButton(string glyph, string name)
-    {
-        var button = new Button
-        {
-            Content = new FontIcon { Glyph = glyph, FontSize = 14 },
-            Padding = new Thickness(8),
-            Background = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Transparent),
-            BorderThickness = new Thickness(0),
-        };
-        ToolTipService.SetToolTip(button, name);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(button, name);
-        return button;
-    }
 }
