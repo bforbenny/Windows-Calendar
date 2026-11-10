@@ -22,7 +22,7 @@ The app is used on two displays: an external 1920×1080 monitor at 100% scaling 
   | Framework 13 (2880×1920 panel) | 2880×1920 | 150% | 1920×1280 |
 
   The smallest target (1504×1003 epx) is the reference: every view must be fully usable when the window is maximised there.
-- R2. Per-monitor DPI awareness (WinUI 3 default). Moving the window between displays re-renders at the new scale with no blur and no layout break.
+- R2. Per-monitor DPI awareness (PerMonitorV2, declared in the app manifest). Moving the window between displays re-renders at the new scale with no blur and no layout break.
 - R3. Window size and position:
   - minimum window size 1000×640 epx;
   - the size, position and maximised state are restored on start;
@@ -33,7 +33,7 @@ The app is used on two displays: an external 1920×1080 monitor at 100% scaling 
   - hour height 64 epx (shows about 7–8 hours at 1504×1003 maximised); with the text thresholds of [calendar-views](calendar-views.md) R4a, a 15-minute event shows its title and events of 22.5 minutes or longer also show the time;
   - on open, on switching to Week, and on Today, the grid scrolls to one hour before the current time.
 - R6. Month view: each cell shows as many event chips as fit, then "+n more". At 1504×1003 at least 3 chips per cell are visible.
-- R7. Crisp rendering at 150%: layout rounding stays on (WinUI default), dividers are 1 epx, icons come from the Segoe Fluent Icons font, and shape markers ([ui-colour-theme](ui-colour-theme.md) R7) are vector-drawn. No bitmap icons in the UI.
+- R7. Crisp rendering at 150%: layout rounding on (`UseLayoutRounding`) and device-pixel snapping for lines, dividers are 1 epx, icons come from the Segoe Fluent Icons font, and shape markers ([ui-colour-theme](ui-colour-theme.md) R7) are vector-drawn. No bitmap icons in the UI.
 - R8. Text uses the Fluent type ramp (Body 14 epx, Caption 12 epx; nothing smaller than 12 epx). Windows "Text size" (Accessibility) is honoured: text grows without clipping; event cards truncate with an ellipsis and show the full title in a tooltip.
 - R9. The tray flyout ([tray-flyout](tray-flyout.md)) opens on the display that holds the taskbar being clicked, at that display's scale.
 

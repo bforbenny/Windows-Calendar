@@ -1,36 +1,23 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
 using H.NotifyIcon;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Controls.Primitives;
-using Microsoft.UI.Xaml.Data;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Navigation;
-using Microsoft.UI.Xaml.Shapes;
+using Microsoft.Identity.Client;
 using Microsoft.Windows.AppLifecycle;
 using Serilog;
 using Windows.ApplicationModel;
-using Windows.ApplicationModel.Activation;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
 using Windows.Networking.Connectivity;
-using Microsoft.Identity.Client;
 using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Core.Sync;
 using AppInstance = Microsoft.Windows.AppLifecycle.AppInstance;
-
-// To learn more about WinUI, the WinUI project structure,
-// and more about our project templates, see: http://aka.ms/winui-project-info.
 
 namespace WindowsCalendar;
 /// <summary>
@@ -77,7 +64,6 @@ public partial class App : Application
     /// </summary>
     public App()
     {
-        InitializeComponent();
         InitializeLogging();
         OpenStore();
     }
@@ -88,7 +74,7 @@ public partial class App : Application
     /// </summary>
     private void OpenStore()
     {
-        var path = System.IO.Path.Combine(Windows.Storage.ApplicationData.Current.LocalFolder.Path, "store.db");
+        var path = System.IO.Path.Combine(global::Windows.Storage.ApplicationData.Current.LocalFolder.Path, "store.db");
         try
         {
             Store = LocalStore.Open(path);
@@ -110,12 +96,12 @@ public partial class App : Application
     /// </summary>
     private void InitializeLogging()
     {
-        var logPath = System.IO.Path.Combine(Windows.Storage.ApplicationData.Current.LocalFolder.Path, "Logs", "app-.log");
+        var logPath = System.IO.Path.Combine(global::Windows.Storage.ApplicationData.Current.LocalFolder.Path, "Logs", "app-.log");
         Log.Logger = new LoggerConfiguration()
             .WriteTo.File(logPath, rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14)
             .CreateLogger();
 
-        UnhandledException += (_, e) => Log.Fatal(e.Exception, "Unhandled UI exception");
+        DispatcherUnhandledException += (_, e) => Log.Fatal(e.Exception, "Unhandled UI exception");
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
             Log.Fatal(e.ExceptionObject as Exception, "Unhandled exception");
@@ -130,14 +116,15 @@ public partial class App : Application
     /// Invoked when the application is launched.
     /// </summary>
     /// <param name="args">Details about the launch request and process.</param>
-    protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+    protected override void OnStartup(StartupEventArgs e)
     {
+        base.OnStartup(e);
         _window = new MainWindow();
         _trayIcon = CreateTrayIcon();
         StartSyncScheduling();
 
         // A second launch is redirected here by Program.Main (app-platform R4).
-        AppInstance.GetCurrent().Activated += (_, _) => _window.DispatcherQueue.TryEnqueue(ShowMainWindow);
+        AppInstance.GetCurrent().Activated += (_, _) => Dispatcher.BeginInvoke(ShowMainWindow);
 
         // Launched by the Start with Windows task: stay hidden in the tray (app-platform R6).
         if (AppInstance.GetCurrent().GetActivatedEventArgs().Kind == ExtendedActivationKind.StartupTask)
@@ -146,7 +133,7 @@ public partial class App : Application
             return;
         }
 
-        _window.Activate();
+        _window.Show();
     }
 
     /// <summary>
@@ -162,13 +149,7 @@ public partial class App : Application
             Store.LocalChanged += () => _scheduler.Request("local change");
         }
 
-        _window!.Activated += (_, e) =>
-        {
-            if (e.WindowActivationState != WindowActivationState.Deactivated)
-            {
-                _scheduler.Request("focus");
-            }
-        };
+        _window!.Activated += (_, _) => _scheduler.Request("focus");
 
         _online = IsOnline();
         NetworkInformation.NetworkStatusChanged += _ =>
@@ -222,7 +203,7 @@ public partial class App : Application
 
         if (changed && _window is { } window)
         {
-            window.DispatcherQueue.TryEnqueue(window.RefreshView);
+            _ = window.Dispatcher.BeginInvoke(window.RefreshView);
         }
     }
 
@@ -231,7 +212,7 @@ public partial class App : Application
     {
         if (_window is { } window)
         {
-            window.DispatcherQueue.TryEnqueue(() => window.SetCollectionSyncing(collectionId, active));
+            _ = window.Dispatcher.BeginInvoke(() => window.SetCollectionSyncing(collectionId, active));
         }
     }
 
@@ -387,34 +368,24 @@ public partial class App : Application
     /// </summary>
     private TaskbarIcon CreateTrayIcon()
     {
-        var open = new XamlUICommand();
-        open.ExecuteRequested += (_, _) => ShowMainWindow();
-        var syncNow = new XamlUICommand();
-        syncNow.ExecuteRequested += (_, _) => SyncNow();
-        var quit = new XamlUICommand();
-        quit.ExecuteRequested += (_, _) => Quit();
-
-        var menu = new MenuFlyout();
-        menu.Items.Add(new MenuFlyoutItem { Text = "Open", Command = open });
-        menu.Items.Add(new MenuFlyoutItem { Text = "Sync now", Command = syncNow });
-        menu.Items.Add(new MenuFlyoutSeparator());
-        menu.Items.Add(new MenuFlyoutItem { Text = "Quit", Command = quit });
+        var menu = new ContextMenu();
+        menu.Items.Add(MenuItem("Open", ShowMainWindow));
+        menu.Items.Add(MenuItem("Sync now", SyncNow));
+        menu.Items.Add(new Separator());
+        menu.Items.Add(MenuItem("Quit", Quit));
 
         var icon = new TaskbarIcon
         {
             ToolTipText = "WindowsCalendar",
-            // A .ico via Icon, not IconSource: H.NotifyIcon's BitmapImage conversion crashes on Windows App SDK 2.6.
             Icon = LoadTrayIcon(),
-            ContextMenuMode = ContextMenuMode.PopupMenu,
-            ContextFlyout = menu,
-            LeftClickCommand = open,
+            ContextMenu = menu,
+            LeftClickCommand = new Command(ShowMainWindow),
             NoLeftClickDelay = true,
         };
         icon.ForceCreate(false);
 
         // Swap the tray icon live when the Windows mode changes (app-platform R10).
-        var dispatcher = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
-        _uiSettings.ColorValuesChanged += (_, _) => dispatcher.TryEnqueue(() =>
+        _uiSettings.ColorValuesChanged += (_, _) => Dispatcher.BeginInvoke(() =>
         {
             if (_trayIcon is null) return;
             var old = _trayIcon.Icon;
@@ -422,6 +393,23 @@ public partial class App : Application
             old?.Dispose();
         });
         return icon;
+    }
+
+    private static MenuItem MenuItem(string header, Action action)
+    {
+        var item = new MenuItem { Header = header };
+        item.Click += (_, _) => action();
+        return item;
+    }
+
+    /// <summary>An ICommand for the tray's left click.</summary>
+    private sealed class Command(Action action) : ICommand
+    {
+        public event EventHandler? CanExecuteChanged { add { } remove { } }
+
+        public bool CanExecute(object? parameter) => true;
+
+        public void Execute(object? parameter) => action();
     }
 
     /// <summary>
@@ -446,6 +434,6 @@ public partial class App : Application
         Log.CloseAndFlush();
         _trayIcon?.Dispose();
         _window?.CloseForQuit();
-        Exit();
+        Shutdown();
     }
 }

@@ -1,13 +1,11 @@
 using System;
 using System.Linq;
-using Microsoft.UI.Text;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Documents;
-using Microsoft.UI;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Shapes;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Media;
+using System.Windows.Shapes;
 using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar.Views;
@@ -127,7 +125,7 @@ internal static class EventCard
             card.BorderThickness = new Thickness(3, 2, 2, 2);
             AutomationProperties.SetItemStatus(card, "Selected");
         }
-        ToolTipService.SetToolTip(card, e.Description());
+        card.ToolTip = e.Description();
         AutomationProperties.SetName(card, e.Description());
 
         if (!chip && height < TextThreshold)
@@ -163,18 +161,19 @@ internal static class EventCard
         }
 
         // Grid, not a horizontal StackPanel, so the text gets a width and trims with an ellipsis.
-        var row = new Grid { ColumnSpacing = 4 };
+        var row = new Grid();
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         // On a surface card the marker sits on the surface, not the fill.
         var markerBrush = surface ? brushes.Swatch : brushes.CardMarker;
         FrameworkElement marker = e.IsTask ? TaskBox(e, markerBrush) : ShapeMarker.Create(e.Collection.Shape, markerBrush);
+        marker.Margin = new Thickness(marker.Margin.Left, marker.Margin.Top, marker.Margin.Right + 4, marker.Margin.Bottom);
         if (fit)
         {
             // Beside the first line of a wrapped title.
             card.Padding = new Thickness(4, 3, 4, 3);
             marker.VerticalAlignment = VerticalAlignment.Top;
-            marker.Margin = new Thickness(0, 3, 0, 0);
+            marker.Margin = new Thickness(marker.Margin.Left, 3, marker.Margin.Right, marker.Margin.Bottom);
         }
         row.Children.Add(marker);
         Grid.SetColumn(line, 1);
@@ -184,6 +183,7 @@ internal static class EventCard
         {
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var join = JoinButton(e);
+            join.Margin = new Thickness(4, 0, 0, 0);
             Grid.SetColumn(join, 2);
             row.Children.Add(join);
         }
@@ -244,8 +244,8 @@ internal static class EventCard
         var brush = new LinearGradientBrush
         {
             MappingMode = BrushMappingMode.Absolute,
-            StartPoint = new Windows.Foundation.Point(0, 0),
-            EndPoint = new Windows.Foundation.Point(4, 4),
+            StartPoint = new Point(0, 0),
+            EndPoint = new Point(4, 4),
             SpreadMethod = GradientSpreadMethod.Repeat,
         };
         brush.GradientStops.Add(new GradientStop { Color = solid.Color, Offset = 0 });
@@ -256,25 +256,23 @@ internal static class EventCard
     }
 
     /// <summary>A small Join button; pressing it neither opens nor drags the card.</summary>
-    private static Button JoinButton(DisplayEvent e)
+    private static Wpf.Ui.Controls.Button JoinButton(DisplayEvent e)
     {
         var link = e.Join!;
-        var button = new Button
+        var button = new Wpf.Ui.Controls.Button
         {
             Content = "Join",
             // Filled in the accent colour, so it stands out on the tinted card (high contrast keeps its own colours).
-            Style = Theme.Style("AccentButtonStyle"),
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Primary,
             FontSize = 12,
             Padding = new Thickness(6, 0, 6, 1),
             MinHeight = 0,
             MinWidth = 0,
             VerticalAlignment = VerticalAlignment.Top,
+            ToolTip = $"Join {link.Provider} meeting (Ctrl+J when selected)",
         };
-        ToolTipService.SetToolTip(button, $"Join {link.Provider} meeting (Ctrl+J when selected)");
         AutomationProperties.SetName(button, $"Join {link.Provider} meeting: {e.Title}");
-        button.PointerPressed += (_, args) => args.Handled = true;
-        button.Tapped += (_, args) => args.Handled = true;
-        button.DoubleTapped += (_, args) => args.Handled = true;
+        // The button handles the mouse itself, so pressing it neither opens nor drags the card.
         button.Click += (_, _) => MeetingJoin.Launch(link);
         return button;
     }
@@ -282,18 +280,20 @@ internal static class EventCard
     /// <summary>An empty checkbox in the list colour before a task's title; ticking it completes the task.</summary>
     private static FrameworkElement TaskBox(DisplayEvent e, Brush colour)
     {
-        var box = new FontIcon { Glyph = "", FontSize = 12, Foreground = colour, VerticalAlignment = VerticalAlignment.Center };
+        var box = ViewParts.Icon("\uE739", 12);
+        box.Foreground = colour;
         if (e.Checkable)
         {
             // A larger hit area than the glyph, so a click near it completes rather than opens.
-            var target = new Border { Background = ViewParts.Clickable, Child = box, Padding = new Thickness(4, 2, 4, 2), Margin = new Thickness(-4, -2, -4, -2) };
-            ToolTipService.SetToolTip(target, "Mark complete");
+            var target = new Border
+            {
+                Background = ViewParts.Clickable, Child = box, Padding = new Thickness(4, 2, 4, 2), Margin = new Thickness(-4, -2, -4, -2),
+                ToolTip = "Mark complete",
+            };
             AutomationProperties.SetName(target, $"Mark complete: {e.Title}");
-            // Handled, so the card does not open as well.
-            // Pointer events handled too, so the card neither opens nor starts a drag.
-            target.PointerPressed += (_, args) => args.Handled = true;
-            target.PointerReleased += (_, args) => args.Handled = true;
-            target.Tapped += (_, args) =>
+            // Mouse events handled, so the card neither opens nor starts a drag.
+            target.MouseLeftButtonDown += (_, args) => args.Handled = true;
+            target.MouseLeftButtonUp += (_, args) =>
             {
                 args.Handled = true;
                 TaskChecked?.Invoke(e);
@@ -306,9 +306,9 @@ internal static class EventCard
     private static TextBlock Caption(CalendarBrushes brushes, bool wrap) => new()
     {
         Foreground = brushes.Text,
-        Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+        Style = Theme.Style("CaptionTextBlockStyle"),
         TextTrimming = wrap ? TextTrimming.None : TextTrimming.CharacterEllipsis,
-        TextWrapping = wrap ? TextWrapping.WrapWholeWords : TextWrapping.NoWrap,
+        TextWrapping = wrap ? TextWrapping.Wrap : TextWrapping.NoWrap,
         VerticalAlignment = VerticalAlignment.Center,
     };
 }

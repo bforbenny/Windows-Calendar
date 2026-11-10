@@ -1,9 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
-using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.UI.Dispatching;
-using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
 
 namespace WindowsCalendar;
@@ -31,13 +28,9 @@ public static class Program
             return 0;
         }
 
-        Application.Start(p =>
-        {
-            var context = new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread());
-            SynchronizationContext.SetSynchronizationContext(context);
-            _ = new App();
-        });
-        return 0;
+        var app = new App();
+        app.InitializeComponent();
+        return app.Run();
     }
 
     [DllImport("user32.dll")]

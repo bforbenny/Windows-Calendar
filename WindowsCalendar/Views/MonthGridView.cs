@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Threading;
 using WindowsCalendar.Core.Views;
 
 namespace WindowsCalendar.Views;
@@ -10,31 +12,20 @@ namespace WindowsCalendar.Views;
 /// <summary>
 /// Month view (calendar-views R1a, R3; display-scaling R6): a continuous column of weeks, about five filling the
 /// height, scrolling vertically. Events are chips or multi-day bars in rows per week, as many as fit, then
-/// "+n more", which opens that day in Agenda. Only weeks near the viewport are built.
+/// "+n more", which opens that day in Agenda. The weeks are fixed-height rows in a <see cref="VirtualStrip"/>.
 /// </summary>
-internal sealed partial class MonthGridView : UserControl, IScrollingView, IDragHost
+internal sealed class MonthGridView : UserControl, IScrollingView, IDragHost
 {
     private const int VisibleWeeks = 5;
-    private const int Buffer = 2;
     private const double DayNumberHeight = 28;
     private const double ChipHeight = 20;
     private const double ChipSpacing = 2;
+    // Week numbers left of the rows, inside each row (calendar-shading R7 interim).
+    private const double WeekColumnWidth = 36;
 
     private readonly Grid _weekdays = new() { Height = 24 };
-    private readonly ScrollViewer _scroll = new()
-    {
-        HorizontalScrollMode = ScrollMode.Disabled,
-        HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        ZoomMode = ZoomMode.Disabled,
-    };
-    private readonly Canvas _canvas = new();
-    // Week numbers left of the rows, scrolled with them (calendar-shading R7 interim).
-    private const double WeekColumnWidth = 36;
-    private readonly ScrollViewer _weekStrip = ViewParts.FollowerStrip(horizontal: false);
-    private readonly Canvas _weekCanvas = new() { Width = WeekColumnWidth };
     private readonly ColumnDefinition _weekColumn = new() { Width = new GridLength(0) };
-    private readonly Dictionary<int, UIElement> _weeks = [];
+    private readonly VirtualStrip _strip;
 
     private DateOnly _first;
     private int _weekCount;
@@ -45,7 +36,6 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
     private int _capacity;
     private DateOnly? _anchor;
     private int _grabIndex;
-    private bool _dragging;
 
     public MonthGridView()
     {
@@ -53,33 +43,35 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
         {
             _weekdays.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         }
+        _strip = new VirtualStrip(Orientation.Vertical, scrollBars: true, () => new WeekRow(this), (row, index) => ((WeekRow)row).Bind(index));
+
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         root.ColumnDefinitions.Add(_weekColumn);
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        _scroll.Content = _canvas;
-        _weekStrip.Content = _weekCanvas;
-        Grid.SetRow(_scroll, 1);
-        Grid.SetColumn(_scroll, 1);
         Grid.SetColumn(_weekdays, 1);
-        Grid.SetRow(_weekStrip, 1);
+        Grid.SetRow(_strip, 1);
+        Grid.SetColumnSpan(_strip, 2);
         root.Children.Add(_weekdays);
-        root.Children.Add(_weekStrip);
-        root.Children.Add(_scroll);
+        root.Children.Add(_strip);
         Overlay = ViewParts.Overlay(root, 2, 2);
-        _scroll.ViewChanging += (_, e) => _weekStrip.ChangeView(null, e.NextView.VerticalOffset, null, true);
         Content = root;
 
-        _scroll.ViewChanged += (_, _) =>
+        Scroll.ScrollChanged += (_, e) =>
         {
+            if (e.ViewportHeightChange != 0 || e.ViewportWidthChange != 0)
+            {
+                Relayout();
+            }
             if (_rowHeight > 0)
             {
-                _anchor = _first.AddDays(7 * (int)Math.Round(_scroll.VerticalOffset / _rowHeight));
+                _anchor = _first.AddDays(7 * (int)Math.Round(Scroll.VerticalOffset / _rowHeight));
+                // The title follows the week in the middle of the viewport.
+                var middleWeek = (int)((Scroll.VerticalOffset + Scroll.ViewportHeight / 2) / _rowHeight);
+                VisibleDayChanged?.Invoke(_first.AddDays(middleWeek * 7 + 3));
             }
-            Realize();
         };
-        _scroll.SizeChanged += (_, _) => Relayout();
     }
 
     /// <summary>Raised when "+n more" is clicked.</summary>
@@ -95,10 +87,14 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
 
     public Canvas Overlay { get; }
 
+    private ScrollViewer Scroll => _strip.Scroll;
+
+    private double WeekColumn => ViewParts.ShowWeekNumbers ? WeekColumnWidth : 0;
+
     public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events, IReadOnlyDictionary<DateOnly, string> holidays)
     {
         (_first, _weekCount, _events, _holidays) = (first, days / 7, events, holidays);
-        _weekColumn.Width = new GridLength(ViewParts.ShowWeekNumbers ? WeekColumnWidth : 0);
+        _weekColumn.Width = new GridLength(WeekColumn);
         _weekdays.Children.Clear();
         for (var c = 0; c < 7; c++)
         {
@@ -123,48 +119,43 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
 
     public bool UpdateNowLine() => true;
 
-    public void Reveal(DateOnly day, DateTime? start) => DispatcherQueue.TryEnqueue(() =>
+    public void Reveal(DateOnly day, DateTime? start) => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
     {
         if (_rowHeight <= 0)
         {
             return;
         }
         var top = (day.DayNumber - _first.DayNumber) / 7 * _rowHeight;
-        if (top < _scroll.VerticalOffset)
+        if (top < Scroll.VerticalOffset)
         {
-            _scroll.ChangeView(null, top, null, true);
+            Scroll.ScrollToVerticalOffset(top);
         }
-        else if (top + _rowHeight > _scroll.VerticalOffset + _scroll.ViewportHeight)
+        else if (top + _rowHeight > Scroll.VerticalOffset + Scroll.ViewportHeight)
         {
-            _scroll.ChangeView(null, top + _rowHeight - _scroll.ViewportHeight, null, true);
+            Scroll.ScrollToVerticalOffset(top + _rowHeight - Scroll.ViewportHeight);
         }
     });
 
     public void Page(int direction) =>
-        _scroll.ChangeView(null, Math.Max(0, _scroll.VerticalOffset + direction * VisibleWeeks * _rowHeight), null);
+        Scroll.ScrollToVerticalOffset(Math.Max(0, Scroll.VerticalOffset + direction * VisibleWeeks * _rowHeight));
 
+    /// <summary>Row height from the viewport; the rows are rebound with the new size, capacity and data.</summary>
     private void Relayout(bool force = false)
     {
-        if (_scroll.ActualHeight <= 0)
+        var height = Scroll.ViewportHeight > 0 ? Scroll.ViewportHeight : _strip.ActualHeight;
+        if (height <= 0)
         {
             return;
         }
-        var rowHeight = Math.Max(100, _scroll.ActualHeight / VisibleWeeks);
-        var width = _scroll.ActualWidth;
+        var rowHeight = Math.Max(100, height / VisibleWeeks);
+        var width = Scroll.ViewportWidth > 0 ? Scroll.ViewportWidth : _strip.ActualWidth;
         if (!force && Math.Abs(rowHeight - _rowHeight) < 0.5 && Math.Abs(width - _width) < 0.5)
         {
             return;
         }
+        _capacity = Math.Max(1, (int)((rowHeight - DayNumberHeight) / (ChipHeight + ChipSpacing)));
         (_rowHeight, _width) = (rowHeight, width);
-        _capacity = Math.Max(1, (int)((_rowHeight - DayNumberHeight) / (ChipHeight + ChipSpacing)));
-        foreach (var week in _weeks.Values)
-        {
-            _canvas.Children.Remove(week);
-        }
-        _weeks.Clear();
-        _canvas.Width = _width;
-        _canvas.Height = _weekCanvas.Height = _weekCount * _rowHeight;
-        Realize();
+        _strip.SetCount(_weekCount);
         ApplyAnchor();
     }
 
@@ -175,173 +166,186 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
             return;
         }
         var y = (day.DayNumber - _first.DayNumber) / 7 * _rowHeight;
-        DispatcherQueue.TryEnqueue(() => _scroll.ChangeView(null, y, null, true));
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () => Scroll.ScrollToVerticalOffset(y));
     }
 
-    private void Realize()
+    // ---- Drag (R7): to another day, keeping the time and length. Positions are in the whole column of weeks. ----
+
+    private double CellWidth => (_width - WeekColumn) / 7;
+
+    private Point InWeeks(Point window)
     {
-        if (_rowHeight <= 0)
-        {
-            return;
-        }
-        var (a, b) = ViewPeriod.Realized(_scroll.VerticalOffset, _scroll.ViewportHeight, _rowHeight, _weekCount, Buffer);
-        foreach (var index in _weeks.Keys.Where(i => !_dragging && (i < a || i > b)).ToList())
-        {
-            _canvas.Children.Remove(_weeks[index]);
-            _weeks.Remove(index);
-        }
-        for (var w = a; w <= b; w++)
-        {
-            if (!_weeks.ContainsKey(w))
-            {
-                var week = BuildWeek(_first.AddDays(w * 7));
-                ViewParts.Place(week, 0, w * _rowHeight);
-                _canvas.Children.Add(week);
-                _weeks[w] = week;
-            }
-        }
-
-        _weekCanvas.Children.Clear();
-        if (ViewParts.ShowWeekNumbers)
-        {
-            for (var w = a; w <= b; w++)
-            {
-                var number = new TextBlock
-                {
-                    Text = ViewPeriod.WeekNumber(_first.AddDays(w * 7), _first.DayOfWeek).ToString(),
-                    Style = Theme.Style("CaptionTextBlockStyle"),
-                    Foreground = Theme.Brush("TextSecondaryBrush"),
-                    Width = WeekColumnWidth,
-                    TextAlignment = TextAlignment.Center,
-                };
-                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(number, ViewParts.WeekLabel(_first.AddDays(w * 7), _first.DayOfWeek));
-                ViewParts.Place(number, 0, w * _rowHeight + 8);
-                _weekCanvas.Children.Add(number);
-            }
-        }
-
-        // The title follows the week in the middle of the viewport.
-        var middleWeek = (int)((_scroll.VerticalOffset + _scroll.ViewportHeight / 2) / _rowHeight);
-        VisibleDayChanged?.Invoke(_first.AddDays(middleWeek * 7 + 3));
+        var p = ViewParts.To(Scroll, window);
+        return new Point(p.X + Scroll.HorizontalOffset, p.Y + Scroll.VerticalOffset);
     }
 
-    private Grid BuildWeek(DateOnly weekStart)
+    private int DayIndexAt(Point point)
     {
-        var row = new Grid { Width = _width, Height = _rowHeight };
-        for (var c = 0; c < 7; c++)
-        {
-            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        }
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        for (var c = 0; c < 7; c++)
-        {
-            AddDayCell(row, weekStart.AddDays(c), c, weekStart.AddDays(c) == today);
-        }
-        AddWeekEvents(row, weekStart);
-        return row;
-    }
-
-    private void AddDayCell(Grid row, DateOnly date, int column, bool isToday)
-    {
-        var cell = new Border
-        {
-            BorderBrush = Theme.Brush("DividerBrush"),
-            BorderThickness = new Thickness(column == 0 ? 0 : 1, 1, 0, 0),
-            Background = ViewParts.DayShade(date, isToday, _holidays.ContainsKey(date)) ?? ViewParts.Clickable,
-        };
-        // A click on the day creates an all-day event (R5 interim).
-        cell.Tapped += (_, _) => CreateRequested?.Invoke(date.ToDateTime(TimeOnly.MinValue), true);
-        var number = new TextBlock
-        {
-            // The first of each month carries the month name, since weeks run on without month breaks.
-            Text = date.Day == 1 ? date.ToString("MMM d") : date.Day.ToString(),
-            Style = Theme.Style(isToday || date.Day == 1 ? "BodyStrongTextBlockStyle" : "BodyTextBlockStyle"),
-            Foreground = isToday ? Theme.Brush("TodayChipTextBrush") : Theme.Brush("TextPrimaryBrush"),
-        };
-        var chip = new Border
-        {
-            Background = isToday ? Theme.Brush("TodayChipBrush") : null,
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(6, 0, 6, 0),
-            Margin = new Thickness(4, 4, 0, 0),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            VerticalAlignment = VerticalAlignment.Top,
-            Child = number,
-        };
-        var holiday = _holidays.GetValueOrDefault(date);
-        if (holiday is null)
-        {
-            cell.Child = chip;
-        }
-        else
-        {
-            // The holiday name sits beside the date (calendar-shading R4), trimmed to the cell.
-            var top = new Grid { VerticalAlignment = VerticalAlignment.Top };
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-            top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            var name = ViewParts.Caption(holiday);
-            name.Margin = new Thickness(0, 6, 0, 0);
-            Grid.SetColumn(name, 1);
-            top.Children.Add(chip);
-            top.Children.Add(name);
-            cell.Child = top;
-        }
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(cell, holiday is null ? date.ToString("D") : $"{holiday}, {date:D}");
-        Grid.SetColumn(cell, column);
-        row.Children.Add(cell);
-    }
-
-    // ---- Drag (R7): to another day, keeping the time and length. ----
-
-    private int DayIndexAt(Windows.Foundation.Point canvas)
-    {
-        var row = Math.Clamp((int)Math.Floor(canvas.Y / _rowHeight), 0, _weekCount - 1);
-        var column = Math.Clamp((int)Math.Floor(canvas.X / (_width / 7)), 0, 6);
+        var row = Math.Clamp((int)Math.Floor(point.Y / _rowHeight), 0, _weekCount - 1);
+        var column = Math.Clamp((int)Math.Floor((point.X - WeekColumn) / CellWidth), 0, 6);
         return row * 7 + column;
     }
 
-    public void BeginDrag(DisplayEvent e, DragMode mode, Windows.Foundation.Point window)
+    public void BeginDrag(DisplayEvent e, DragMode mode, Point window)
     {
-        _dragging = true;
-        _grabIndex = DayIndexAt(ViewParts.To(_canvas, window));
+        _strip.KeepAll = true;
+        _grabIndex = DayIndexAt(InWeeks(window));
     }
 
-    public DragTarget? Target(DisplayEvent e, DragMode mode, Windows.Foundation.Point window)
+    public DragTarget? Target(DisplayEvent e, DragMode mode, Point window)
     {
         if (_rowHeight <= 0)
         {
             return null;
         }
-        var (s, en) = DragMath.MoveDays(e.Start, e.End, DayIndexAt(ViewParts.To(_canvas, window)) - _grabIndex);
+        var (s, en) = DragMath.MoveDays(e.Start, e.End, DayIndexAt(InWeeks(window)) - _grabIndex);
         var moved = e with { Start = s, End = en };
         var index = moved.FirstDay.DayNumber - _first.DayNumber;
         var (row, column) = (index / 7, index % 7);
         var span = Math.Min(moved.LastDay.DayNumber - moved.FirstDay.DayNumber + 1, 7 - column);
-        var cell = _width / 7;
-        var rect = new Windows.Foundation.Rect(column * cell + 1, row * _rowHeight + DayNumberHeight, span * cell - 2, ChipHeight);
-        return new DragTarget(s, en, e.AllDay, ViewParts.InOverlay(_canvas, Overlay, rect));
+        var rect = new Rect(WeekColumn + column * CellWidth + 1 - Scroll.HorizontalOffset,
+            row * _rowHeight + DayNumberHeight - Scroll.VerticalOffset, span * CellWidth - 2, ChipHeight);
+        return new DragTarget(s, en, e.AllDay, ViewParts.InOverlay(Scroll, Overlay, rect));
     }
 
-    public void AutoScroll(Windows.Foundation.Point window)
+    public void AutoScroll(Point window)
     {
-        var dy = ViewParts.EdgeStep(ViewParts.To(_scroll, window).Y, _scroll.ActualHeight);
+        var dy = ViewParts.EdgeStep(ViewParts.To(Scroll, window).Y, Scroll.ViewportHeight);
         if (dy != 0)
         {
-            _scroll.ChangeView(null, _scroll.VerticalOffset + dy, null, true);
+            Scroll.ScrollToVerticalOffset(Scroll.VerticalOffset + dy);
         }
     }
 
-    public void EndDrag()
-    {
-        _dragging = false;
-        Realize();
-    }
+    public void EndDrag() => _strip.KeepAll = false;
 
     public void CompleteDrag(DisplayEvent e, DragTarget target) => EventDropped?.Invoke(e, target);
 
     public void OpenEvent(DisplayEvent e) => EventOpened?.Invoke(e);
 
-    private void AddWeekEvents(Grid row, DateOnly weekStart)
+    /// <summary>One week: the week number, seven day cells (kept across reuse) and a layer of event chips (rebuilt).</summary>
+    private sealed class WeekRow : Grid
+    {
+        private readonly MonthGridView _view;
+        private readonly TextBlock _weekNumber;
+        private readonly DayCell[] _cells = new DayCell[7];
+        private Grid? _layer;
+
+        public WeekRow(MonthGridView view)
+        {
+            _view = view;
+            ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            for (var c = 0; c < 7; c++)
+            {
+                ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            }
+            _weekNumber = new TextBlock
+            {
+                Style = Theme.Style("CaptionTextBlockStyle"),
+                Width = WeekColumnWidth,
+                TextAlignment = TextAlignment.Center,
+                Margin = new Thickness(0, 8, 0, 0),
+                VerticalAlignment = VerticalAlignment.Top,
+            };
+            Children.Add(_weekNumber);
+            for (var c = 0; c < 7; c++)
+            {
+                _cells[c] = new DayCell(view, c);
+                SetColumn(_cells[c].Root, c + 1);
+                Children.Add(_cells[c].Root);
+            }
+        }
+
+        public void Bind(int index)
+        {
+            Height = _view._rowHeight;
+            var weekStart = _view._first.AddDays(index * 7);
+            _weekNumber.Visibility = ViewParts.ShowWeekNumbers ? Visibility.Visible : Visibility.Collapsed;
+            if (ViewParts.ShowWeekNumbers)
+            {
+                _weekNumber.Foreground = Theme.Brush("TextSecondaryBrush");
+                _weekNumber.Text = ViewPeriod.WeekNumber(weekStart, _view._first.DayOfWeek).ToString();
+                AutomationProperties.SetName(_weekNumber, ViewParts.WeekLabel(weekStart, _view._first.DayOfWeek));
+            }
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            for (var c = 0; c < 7; c++)
+            {
+                var date = weekStart.AddDays(c);
+                _cells[c].Bind(date, date == today, _view._holidays.GetValueOrDefault(date));
+            }
+            if (_layer is not null)
+            {
+                Children.Remove(_layer);
+            }
+            _layer = _view.BuildEventLayer(weekStart);
+            SetColumn(_layer, 1);
+            SetColumnSpan(_layer, 7);
+            Children.Add(_layer);
+        }
+    }
+
+    /// <summary>A day cell: border and shade, the date (in a chip for today) and an optional holiday name.</summary>
+    private sealed class DayCell
+    {
+        private readonly TextBlock _number = new();
+        private readonly Border _chip;
+        private readonly Grid _top = new() { VerticalAlignment = VerticalAlignment.Top };
+        private TextBlock? _holiday;
+        private DateOnly _date;
+
+        public DayCell(MonthGridView view, int column)
+        {
+            _chip = new Border
+            {
+                CornerRadius = new CornerRadius(10),
+                Padding = new Thickness(6, 0, 6, 0),
+                Margin = new Thickness(4, 4, 0, 0),
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                Child = _number,
+            };
+            _top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            _top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            _top.Children.Add(_chip);
+            Root = new Border
+            {
+                BorderThickness = new Thickness(column == 0 ? 0 : 1, 1, 0, 0),
+                Child = _top,
+            };
+            // A click on the day creates an all-day event (R5 interim).
+            Root.MouseLeftButtonUp += (_, _) => view.CreateRequested?.Invoke(_date.ToDateTime(TimeOnly.MinValue), true);
+        }
+
+        public Border Root { get; }
+
+        public void Bind(DateOnly date, bool isToday, string? holiday)
+        {
+            _date = date;
+            Root.BorderBrush = Theme.Brush("DividerBrush");
+            Root.Background = ViewParts.DayShade(date, isToday, holiday is not null) ?? ViewParts.Clickable;
+            // The first of each month carries the month name, since weeks run on without month breaks.
+            _number.Text = date.Day == 1 ? date.ToString("MMM d") : date.Day.ToString();
+            _number.Style = Theme.Style(isToday || date.Day == 1 ? "BodyStrongTextBlockStyle" : "BodyTextBlockStyle");
+            _number.Foreground = isToday ? Theme.Brush("TodayChipTextBrush") : Theme.Brush("TextPrimaryBrush");
+            _chip.Background = isToday ? Theme.Brush("TodayChipBrush") : null;
+            if (_holiday is not null)
+            {
+                _top.Children.Remove(_holiday);
+                _holiday = null;
+            }
+            if (holiday is not null)
+            {
+                // The holiday name sits beside the date (calendar-shading R4), trimmed to the cell.
+                _holiday = ViewParts.Caption(holiday);
+                _holiday.Margin = new Thickness(0, 6, 0, 0);
+                Grid.SetColumn(_holiday, 1);
+                _top.Children.Add(_holiday);
+            }
+            AutomationProperties.SetName(Root, holiday is null ? date.ToString("D") : $"{holiday}, {date:D}");
+        }
+    }
+
+    private Grid BuildEventLayer(DateOnly weekStart)
     {
         var weekEnd = weekStart.AddDays(6);
         var inWeek = _events.Where(e => e.FirstDay <= weekEnd && e.LastDay >= weekStart).ToList();
@@ -363,14 +367,14 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
         bool Visible(int i) => lanes[i] < _capacity - 1
             || lanes[i] == _capacity - 1 && Enumerable.Range(spans[i].Item1, spans[i].Item2 - spans[i].Item1 + 1).All(d => !Overflows(d));
 
-        var layer = new Grid { Margin = new Thickness(0, DayNumberHeight, 0, 0), RowSpacing = ChipSpacing };
+        var layer = new Grid { Margin = new Thickness(0, DayNumberHeight, 0, 0), VerticalAlignment = VerticalAlignment.Top };
         for (var c = 0; c < 7; c++)
         {
             layer.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         }
         for (var r = 0; r < _capacity; r++)
         {
-            layer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(ChipHeight) });
+            layer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(ChipHeight + ChipSpacing) });
         }
 
         var hidden = new int[7];
@@ -387,6 +391,7 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
             var e = inWeek[i];
             var card = EventCard.Create(e, Theme.Calendar(e.Collection.Colour), ChipHeight, chip: true,
                 prefix: e.InAllDayLane ? null : e.Start.ToString("t"));
+            card.VerticalAlignment = VerticalAlignment.Top;
             EventDrag.Attach(card, e, this);
             Grid.SetRow(card, lanes[i]);
             Grid.SetColumn(card, spans[i].Item1);
@@ -401,19 +406,14 @@ internal sealed partial class MonthGridView : UserControl, IScrollingView, IDrag
                 continue;
             }
             var date = weekStart.AddDays(d);
-            var more = new HyperlinkButton
-            {
-                Content = new TextBlock { Text = $"+{hidden[d]} more", Style = Theme.Style("CaptionTextBlockStyle") },
-                Padding = new Thickness(4, 0, 4, 0),
-                MinHeight = 0,
-            };
-            more.Click += (_, _) => DayRequested?.Invoke(date);
+            var more = new TextBlock { Style = Theme.Style("CaptionTextBlockStyle"), Margin = new Thickness(4, 2, 4, 0) };
+            var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run($"+{hidden[d]} more"));
+            link.Click += (_, _) => DayRequested?.Invoke(date);
+            more.Inlines.Add(link);
             Grid.SetRow(more, _capacity - 1);
             Grid.SetColumn(more, d);
             layer.Children.Add(more);
         }
-
-        Grid.SetColumnSpan(layer, 7);
-        row.Children.Add(layer);
+        return layer;
     }
 }

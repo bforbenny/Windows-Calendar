@@ -1,11 +1,8 @@
 using System;
-using Microsoft.UI.Dispatching;
-using Microsoft.UI.Input;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media;
-using Windows.Foundation;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace WindowsCalendar.Views;
 
@@ -41,7 +38,7 @@ internal interface IDragHost
 }
 
 /// <summary>An edge of a timed card in Week that resizes it; shows the up-down cursor.</summary>
-internal sealed partial class ResizeHandle : Grid
+internal sealed class ResizeHandle : Grid
 {
     public ResizeHandle(DragMode mode)
     {
@@ -49,7 +46,7 @@ internal sealed partial class ResizeHandle : Grid
         Height = 6;
         Background = ViewParts.Clickable;
         VerticalAlignment = mode == DragMode.ResizeStart ? VerticalAlignment.Top : VerticalAlignment.Bottom;
-        ProtectedCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeNorthSouth);
+        Cursor = Cursors.SizeNS;
     }
 
     public DragMode Mode { get; }
@@ -67,49 +64,36 @@ internal sealed class EventDrag
     private readonly FrameworkElement _card;
     private readonly DisplayEvent _event;
     private readonly IDragHost _host;
-    private readonly DispatcherQueueTimer _scrollTimer;
+    private readonly DispatcherTimer _scrollTimer;
     private Point _press;
     private Point _last;
     private DragMode _mode;
+    private bool _down;
     private bool _pressed;
     private bool _dragging;
-    private bool _openedOnRelease;
     private bool _copy;
     private Border? _ghost;
 
     private EventDrag(FrameworkElement card, DisplayEvent e, IDragHost host)
     {
         (_card, _event, _host) = (card, e, host);
-        _scrollTimer = card.DispatcherQueue.CreateTimer();
-        _scrollTimer.Interval = TimeSpan.FromMilliseconds(40);
+        _scrollTimer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(40) };
         _scrollTimer.Tick += (_, _) =>
         {
             _host.AutoScroll(_last);
             UpdateGhost();
         };
 
-        card.PointerPressed += OnPressed;
-        card.PointerMoved += OnMoved;
-        card.PointerReleased += OnReleased;
-        card.PointerCaptureLost += (_, _) => Cancel();
+        card.MouseLeftButtonDown += OnPressed;
+        card.MouseMove += OnMoved;
+        card.MouseLeftButtonUp += OnReleased;
+        card.LostMouseCapture += (_, _) => Cancel();
         if (e.CanDuplicate)
         {
-            var duplicate = new MenuFlyoutItem { Text = "Duplicate", Icon = new FontIcon { Glyph = "" }, KeyboardAcceleratorTextOverride = "Ctrl+D" };
+            var duplicate = new MenuItem { Header = "Duplicate", InputGestureText = "Ctrl+D" };
             duplicate.Click += (_, _) => DuplicateRequested?.Invoke(_event);
-            var menu = new MenuFlyout();
-            menu.Items.Add(duplicate);
-            card.ContextFlyout = menu;
+            card.ContextMenu = new ContextMenu { Items = { duplicate } };
         }
-        card.Tapped += (_, args) =>
-        {
-            // Touch, or a card that cannot be dragged: a tap opens it. A click already opened it on release.
-            args.Handled = true;
-            if (!_openedOnRelease)
-            {
-                _host.OpenEvent(_event);
-            }
-            _openedOnRelease = false;
-        };
     }
 
     /// <summary>Raised by a card's Duplicate menu item.</summary>
@@ -135,28 +119,43 @@ internal sealed class EventDrag
         return true;
     }
 
-    private void OnPressed(object sender, PointerRoutedEventArgs args)
+    private static Point Window(MouseEventArgs args) => ViewParts.Root is { } root ? args.GetPosition(root) : args.GetPosition(null);
+
+    private void OnPressed(object sender, MouseButtonEventArgs args)
     {
-        _openedOnRelease = false;
-        var point = args.GetCurrentPoint(null);
-        _copy = _event.CanDuplicate && args.KeyModifiers.HasFlag(Windows.System.VirtualKeyModifiers.Control);
-        if (!(_event.Editable || _copy) || args.Pointer.PointerDeviceType == PointerDeviceType.Touch || !point.Properties.IsLeftButtonPressed)
+        args.Handled = true;
+        _down = true;
+        _copy = _event.CanDuplicate && Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
+        var touch = args.StylusDevice?.TabletDevice?.Type == TabletDeviceType.Touch;
+        if (!(_event.Editable || _copy) || touch)
         {
             return;
         }
-        _mode = !_copy && args.OriginalSource is ResizeHandle handle ? handle.Mode : DragMode.Move;
-        _press = _last = point.Position;
-        _pressed = _card.CapturePointer(args.Pointer);
-        args.Handled = true;
+        _mode = !_copy && args.OriginalSource is DependencyObject source && FindHandle(source) is { } handle ? handle.Mode : DragMode.Move;
+        _press = _last = Window(args);
+        _pressed = _card.CaptureMouse();
     }
 
-    private void OnMoved(object sender, PointerRoutedEventArgs args)
+    private ResizeHandle? FindHandle(DependencyObject? element)
+    {
+        while (element is not null && element != _card)
+        {
+            if (element is ResizeHandle handle)
+            {
+                return handle;
+            }
+            element = System.Windows.Media.VisualTreeHelper.GetParent(element);
+        }
+        return null;
+    }
+
+    private void OnMoved(object sender, MouseEventArgs args)
     {
         if (!_pressed)
         {
             return;
         }
-        _last = args.GetCurrentPoint(null).Position;
+        _last = Window(args);
         if (!_dragging && Math.Abs(_last.X - _press.X) + Math.Abs(_last.Y - _press.Y) > Threshold)
         {
             Start();
@@ -168,22 +167,22 @@ internal sealed class EventDrag
         }
     }
 
-    private void OnReleased(object sender, PointerRoutedEventArgs args)
+    private void OnReleased(object sender, MouseButtonEventArgs args)
     {
-        if (!_pressed)
+        if (!_down)
         {
             return;
         }
         args.Handled = true;
-        _openedOnRelease = true;
+        _down = false;
         if (!_dragging)
         {
             _pressed = false;
-            _card.ReleasePointerCaptures();
+            _card.ReleaseMouseCapture();
             _host.OpenEvent(_event);
             return;
         }
-        var target = _host.Target(_event, _mode, args.GetCurrentPoint(null).Position);
+        var target = _host.Target(_event, _mode, Window(args));
         Finish();
         if (target is not null && (target.Start != _event.Start || target.End != _event.End || target.AllDay != _event.AllDay))
         {
@@ -246,6 +245,7 @@ internal sealed class EventDrag
             Finish();
         }
         _pressed = false;
+        _down = false;
     }
 
     private void Finish()
@@ -264,7 +264,10 @@ internal sealed class EventDrag
         {
             Active = null;
         }
-        _card.ReleasePointerCaptures();
+        if (_card.IsMouseCaptured)
+        {
+            _card.ReleaseMouseCapture();
+        }
         if (wasDragging)
         {
             _host.EndDrag();

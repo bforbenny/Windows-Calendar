@@ -1,7 +1,7 @@
 ---
 description: Technology stack, packaging, process model, tray icon and start-with-Windows behaviour
 when-to-use: Before any project setup, build, packaging, or process/lifecycle work
-tags: [platform, winui, msix, tray, startup]
+tags: [platform, wpf, msix, tray, startup]
 status: in-progress
 ---
 
@@ -9,12 +9,12 @@ status: in-progress
 
 ## Summary
 
-A native Windows 11 desktop app built with C# / .NET 10 and WinUI 3 (Windows App SDK 2.6.x stable). It is packaged as MSIX for personal sideload. A single process runs the UI and a tray-resident background mode so that sync and reminders keep running when the window is closed.
+A native Windows 11 desktop app built with C# / .NET 10 and WPF, styled with the WPF-UI library (Fluent / Windows 11). It is packaged as MSIX for personal sideload. A single process runs the UI and a tray-resident background mode so that sync and reminders keep running when the window is closed.
 
 ## Requirements
 
 - R1. Language/runtime: C# on .NET 10 (LTS).
-- R2. UI: WinUI 3 on the current stable Windows App SDK (2.6.x at time of writing), Fluent / Windows 11 styling. Mica backdrop on the title bar and sidebar only; the calendar grid, event cards, dialogs and flyouts use solid surfaces from [ui-colour-theme](ui-colour-theme.md) so contrast does not depend on the wallpaper. Layout follows [display-scaling](display-scaling.md).
+- R2. UI: WPF on .NET 10 with the WPF-UI library (lepoco/wpfui) for Fluent / Windows 11 styling and the controls WPF lacks (content dialog, info bar, auto-suggest box, split button, title bar). WinUI 3 was dropped on 2026-11-08: its scrolling views rendered dimmed after scrolling, on every machine and over Remote Desktop, with no cause found. Mica backdrop on the title bar and sidebar only; the calendar grid, event cards, dialogs and flyouts use solid surfaces from [ui-colour-theme](ui-colour-theme.md) so contrast does not depend on the wallpaper. Layout follows [display-scaling](display-scaling.md).
 - R2a. Theme: Light / Dark / Use Windows setting (default) in settings. "Use Windows setting" follows the Windows app mode and switches live without a restart; the tray flyout and toasts follow the same theme. Colours come from [ui-colour-theme](ui-colour-theme.md); the app's Navy accent overrides the Windows accent colour inside the app. High-contrast themes are honoured (palette replaced by system colours).
 - R3. Packaging: MSIX, sideloaded with a self-signed certificate. Package identity is used for toasts and startup task. Updates and install steps follow [app-updates](app-updates.md).
 - R4. Single-instance app. Launching again activates the existing instance.
@@ -22,14 +22,22 @@ A native Windows 11 desktop app built with C# / .NET 10 and WinUI 3 (Windows App
   - Interim (until [tray-flyout](tray-flyout.md), sync and [local-store-offline](local-store-offline.md) exist): left-click opens the main window, "Sync now" requests a sync (logged only until the sync engines exist), and Quit exits without a warning.
 - R6. Optional "Start with Windows" (MSIX StartupTask), user-toggleable in settings, starts minimised to tray.
   - Interim (until [settings-page](settings-page.md) exists): the startup task is declared disabled by default and is turned on in Windows Settings > Apps > Startup.
-- R7. Key libraries: MSAL.NET (Microsoft sign-in with WAM broker), Microsoft Graph SDK or raw HTTP, Ical.Net 5.x (iCalendar parse/serialise, recurrence expansion), Microsoft.Data.Sqlite (local store).
+- R7. Key libraries: MSAL.NET (Microsoft sign-in with WAM broker), Microsoft Graph SDK or raw HTTP, Ical.Net 5.x (iCalendar parse/serialise, recurrence expansion), Microsoft.Data.Sqlite (local store), WPF-UI (Fluent controls and theme), H.NotifyIcon.Wpf (tray icon).
 - R8. Logging to a local rolling file under the app's LocalState folder. Logs must never contain credentials, tokens, or Authorization headers (CLAUDE.md security rules).
   - Serilog with Serilog.Sinks.File, configured in code. File `LocalState\Logs\app-YYYYMMDD.log`, one file per day, last 14 files kept. Logs app start, quit and unhandled exceptions.
 - R9. Errors on network/sync requests are logged and surfaced in the UI; no tight retry loops (exponential backoff only).
-- R10. App icon: a calendar page with a Navy 60 header band, Navy 80 binder rings, a white body with a 3 x 2 grid of Navy 20 day cells, and one Sea Green 40 "today" cell. Colours from [ui-colour-theme](ui-colour-theme.md). Used for the package logo, tiles and taskbar/Start icons (unplated targetsize 16, 24, 32, 48 and 256). The main window sets `AppIcon.ico` via `AppWindow.SetIcon`, since WinUI 3 does not use the package logo for Alt-Tab.
-  - A splash image is kept because the manifest requires one, but packaged WinUI 3 desktop apps do not show it; there is no splash screen.
+- R10. App icon: a calendar page with a Navy 60 header band, Navy 80 binder rings, a white body with a 3 x 2 grid of Navy 20 day cells, and one Sea Green 40 "today" cell. Colours from [ui-colour-theme](ui-colour-theme.md). Used for the package logo, tiles and taskbar/Start icons (unplated targetsize 16, 24, 32, 48 and 256). The main window sets `AppIcon.ico` as its window icon, so Alt-Tab shows it.
+  - A splash image is kept only if the packaging manifest requires one; there is no splash screen.
   - The tray icon is a monochrome version of the same glyph: dark on a light taskbar, white on a dark taskbar. It follows the Windows mode (`SystemUsesLightTheme`), not the app theme, and switches live when the Windows mode changes.
   - All icon assets are generated by `tools/icon/generate_icons.py` (Pillow); edit the script and re-run it rather than editing the images.
+
+## Interim (WPF port)
+
+The WinUI 3 project is converted to WPF in place, on branch `wpf`, in three slices. `WindowsCalendar.Core` and its tests are unchanged. The WinUI build on `main` stays the working app until the port is merged.
+
+1. Window shell, theme (Light / Dark / Windows, high contrast), sidebar, toolbar and the Month, Week and Agenda views, read-only. Month is a virtualizing list of fixed-height week rows; Week and Agenda are virtualizing lists of fixed-width day columns, with headers and hour labels kept in step on the UI thread. Check: scrolling all three views, locally and over Remote Desktop, never dims. This is the go/no-go point for the port.
+2. Editing: event and task editors, dialogs (with the Destructive button), drag, create, delete and undo.
+3. The rest: search, keyboard and key hints, banners, settings, tray (H.NotifyIcon.Wpf), accounts and Microsoft sign-in, single instance, start with Windows, icons and MSIX packaging; then the WinUI packages are removed. Single instance and packaging use the lightest option that works; any new package is asked for first.
 
 ## Out of scope
 

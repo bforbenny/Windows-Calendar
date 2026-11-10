@@ -1,6 +1,6 @@
 using System;
 using Serilog;
-using Windows.System;
+
 using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar.Views;
@@ -20,7 +20,7 @@ internal static class MeetingJoin
         }
         try
         {
-            if (await Launcher.LaunchUriAsync(new Uri(safe.Url)))
+            if (await Windows.System.Launcher.LaunchUriAsync(new Uri(safe.Url)))
             {
                 Log.Information("Opened a {Provider} meeting", safe.Provider);
             }

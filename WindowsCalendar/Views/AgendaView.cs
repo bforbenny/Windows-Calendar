@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Threading;
 using WindowsCalendar.Core.Views;
 
 namespace WindowsCalendar.Views;
@@ -10,25 +11,15 @@ namespace WindowsCalendar.Views;
 /// <summary>
 /// Agenda view (agenda-view R2-R5; cards fit their content, R4a): one column per day, each a plain list (all-day items first, then by start
 /// time), seven columns filling the width. Scrolls horizontally through days and vertically through the lists;
-/// day headers stay at the top. Only days near the viewport are built.
+/// day headers stay at the top and follow the horizontal scroll. The days are fixed-width items in <see cref="VirtualStrip"/>s.
 /// </summary>
-internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHost
+internal sealed class AgendaView : UserControl, IScrollingView, IDragHost
 {
     private const int VisibleDays = 7;
-    private const int Buffer = 7;
 
-    private readonly ScrollViewer _headerScroll = ViewParts.FollowerStrip(horizontal: true);
-    private readonly ScrollViewer _bodyScroll = new()
-    {
-        HorizontalScrollMode = ScrollMode.Enabled,
-        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        ZoomMode = ZoomMode.Disabled,
-    };
-    private readonly Canvas _headerCanvas = new() { Height = 68 };
+    private readonly VirtualStrip _body;
+    private readonly VirtualStrip _headers;
     private IReadOnlyDictionary<DateOnly, string> _holidays = new Dictionary<DateOnly, string>();
-    private readonly Canvas _bodyCanvas = new();
-    private readonly Dictionary<int, (UIElement Header, FrameworkElement Column)> _days = [];
 
     private DateOnly _first;
     private int _count;
@@ -36,31 +27,40 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
     private double _columnWidth;
     private DateOnly? _anchor;
     private int _grabIndex;
-    private bool _dragging;
 
     public AgendaView()
     {
+        _body = new VirtualStrip(Orientation.Horizontal, scrollBars: true, NewList, (list, index) => BindList((StackPanel)list, index));
+        _headers = new VirtualStrip(Orientation.Horizontal, scrollBars: false, () => new Border(), (header, index) => BindHeader((Border)header, index))
+        {
+            Height = 68,
+        };
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        _headerScroll.Content = _headerCanvas;
-        _bodyScroll.Content = _bodyCanvas;
-        Grid.SetRow(_bodyScroll, 1);
-        root.Children.Add(_headerScroll);
-        root.Children.Add(_bodyScroll);
+        Grid.SetRow(_body, 1);
+        root.Children.Add(_headers);
+        root.Children.Add(_body);
         Overlay = ViewParts.Overlay(root, 2, 1);
         Content = root;
 
-        _bodyScroll.ViewChanging += (_, e) => _headerScroll.ChangeView(e.NextView.HorizontalOffset, null, null, true);
-        _bodyScroll.ViewChanged += (_, _) =>
+        Scroll.ScrollChanged += (_, e) =>
         {
+            if (e.ViewportWidthChange != 0 || e.ViewportHeightChange != 0)
+            {
+                Relayout();
+            }
+            _headers.Scroll.ScrollToHorizontalOffset(Scroll.HorizontalOffset);
             if (_columnWidth > 0)
             {
-                _anchor = _first.AddDays((int)Math.Round(_bodyScroll.HorizontalOffset / _columnWidth));
+                if (e.HorizontalChange != 0)
+                {
+                    _anchor = _first.AddDays((int)Math.Round(Scroll.HorizontalOffset / _columnWidth));
+                }
+                var middle = _first.AddDays((int)((Scroll.HorizontalOffset + Scroll.ViewportWidth / 2) / _columnWidth));
+                VisibleDayChanged?.Invoke(middle);
             }
-            Realize();
         };
-        _bodyScroll.SizeChanged += (_, _) => Relayout();
     }
 
     public event Action<DateOnly>? VisibleDayChanged;
@@ -72,6 +72,8 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
     public event Action<DisplayEvent, DragTarget>? EventDropped;
 
     public Canvas Overlay { get; }
+
+    private ScrollViewer Scroll => _body.Scroll;
 
     public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events, IReadOnlyDictionary<DateOnly, string> holidays)
     {
@@ -94,43 +96,42 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
 
     public bool UpdateNowLine() => true;
 
-    public void Reveal(DateOnly day, DateTime? start) => DispatcherQueue.TryEnqueue(() =>
+    public void Reveal(DateOnly day, DateTime? start) => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
     {
         if (_columnWidth <= 0)
         {
             return;
         }
         var index = day.DayNumber - _first.DayNumber;
-        var left = (int)Math.Round(_bodyScroll.HorizontalOffset / _columnWidth);
+        var left = (int)Math.Round(Scroll.HorizontalOffset / _columnWidth);
         if (index < left)
         {
-            _bodyScroll.ChangeView(index * _columnWidth, null, null, true);
+            Scroll.ScrollToHorizontalOffset(index * _columnWidth);
         }
         else if (index > left + VisibleDays - 1)
         {
-            _bodyScroll.ChangeView((index - VisibleDays + 1) * _columnWidth, null, null, true);
+            Scroll.ScrollToHorizontalOffset((index - VisibleDays + 1) * _columnWidth);
         }
     });
 
     public void Page(int direction) =>
-        _bodyScroll.ChangeView(Math.Max(0, _bodyScroll.HorizontalOffset + direction * VisibleDays * _columnWidth), null, null);
+        Scroll.ScrollToHorizontalOffset(Math.Max(0, Scroll.HorizontalOffset + direction * VisibleDays * _columnWidth));
 
     private void Relayout(bool force = false)
     {
-        var width = Math.Max(VisibleDays * 40, _bodyScroll.ActualWidth) / VisibleDays;
-        if (_bodyScroll.ActualWidth <= 0 || !force && Math.Abs(width - _columnWidth) < 0.5)
+        var viewport = Scroll.ViewportWidth > 0 ? Scroll.ViewportWidth : _body.ActualWidth;
+        if (viewport <= 0)
+        {
+            return;
+        }
+        var width = Math.Max(VisibleDays * 40, viewport) / VisibleDays;
+        if (!force && Math.Abs(width - _columnWidth) < 0.5)
         {
             return;
         }
         _columnWidth = width;
-        foreach (var (header, column) in _days.Values)
-        {
-            _headerCanvas.Children.Remove(header);
-            _bodyCanvas.Children.Remove(column);
-        }
-        _days.Clear();
-        _headerCanvas.Width = _bodyCanvas.Width = _count * _columnWidth;
-        Realize();
+        _body.SetCount(_count);
+        _headers.SetCount(_count);
         ApplyAnchor(toTop: false);
     }
 
@@ -141,135 +142,124 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
             return;
         }
         var x = (day.DayNumber - _first.DayNumber) * _columnWidth;
-        DispatcherQueue.TryEnqueue(() => _bodyScroll.ChangeView(x, toTop ? 0 : null, null, true));
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            Scroll.ScrollToHorizontalOffset(x);
+            if (toTop)
+            {
+                Scroll.ScrollToVerticalOffset(0);
+            }
+        });
     }
 
-    private void Realize()
+    private void BindHeader(Border header, int index)
     {
-        if (_columnWidth <= 0)
-        {
-            return;
-        }
-        var (a, b) = ViewPeriod.Realized(_bodyScroll.HorizontalOffset, _bodyScroll.ViewportWidth, _columnWidth, _count, Buffer);
-        foreach (var index in _days.Keys.Where(i => !_dragging && (i < a || i > b)).ToList())
-        {
-            _headerCanvas.Children.Remove(_days[index].Header);
-            _bodyCanvas.Children.Remove(_days[index].Column);
-            _days.Remove(index);
-        }
-
+        var date = _first.AddDays(index);
         var today = DateOnly.FromDateTime(DateTime.Now);
-        for (var i = a; i <= b; i++)
+        var label = date == today ? "Today" : date == today.AddDays(1) ? "Tomorrow" : null;
+        if (_holidays.GetValueOrDefault(date) is { } holiday)
         {
-            if (_days.ContainsKey(i))
-            {
-                continue;
-            }
-            var date = _first.AddDays(i);
-            var label = date == today ? "Today" : date == today.AddDays(1) ? "Tomorrow" : null;
-            if (_holidays.GetValueOrDefault(date) is { } holiday)
-            {
-                label = label is null ? holiday : $"{label} · {holiday}";
-            }
-            // The first day of each week carries its number (calendar-shading R7 interim).
-            if (ViewParts.ShowWeekNumbers && date.DayOfWeek == _first.DayOfWeek)
-            {
-                var week = ViewParts.WeekLabel(date, _first.DayOfWeek);
-                label = label is null ? week : $"{week} · {label}";
-            }
-            var header = ViewParts.DayHeader(date, date == today, label, "d MMM");
-            header.Width = _columnWidth;
-            ViewParts.Place(header, i * _columnWidth, 0);
-            _headerCanvas.Children.Add(header);
-
-            var column = BuildList(date, date == today);
-            ViewParts.Place(column, i * _columnWidth, 0);
-            _bodyCanvas.Children.Add(column);
-            _days[i] = (header, column);
+            label = label is null ? holiday : $"{label} · {holiday}";
         }
-
-        // The lists scroll together: the canvas is as tall as the longest built list, and at least the viewport.
-        var tallest = _days.Values.Select(d => d.Column.DesiredSize.Height).DefaultIfEmpty(0).Max();
-        var height = Math.Max(_bodyScroll.ViewportHeight, tallest);
-        _bodyCanvas.Height = height;
-        foreach (var (_, column) in _days.Values)
+        // The first day of each week carries its number (calendar-shading R7 interim).
+        if (ViewParts.ShowWeekNumbers && date.DayOfWeek == _first.DayOfWeek)
         {
-            column.MinHeight = height;
+            var week = ViewParts.WeekLabel(date, _first.DayOfWeek);
+            label = label is null ? week : $"{week} · {label}";
         }
-
-        var middle = _first.AddDays((int)((_bodyScroll.HorizontalOffset + _bodyScroll.ViewportWidth / 2) / _columnWidth));
-        VisibleDayChanged?.Invoke(middle);
+        header.Width = _columnWidth;
+        header.Child = ViewParts.DayHeader(date, date == today, label, "d MMM");
     }
 
     // ---- Drag (R8, calendar-views R7): to another day column, keeping the time and length. ----
 
-    private int DayIndexAt(Windows.Foundation.Point canvas) => Math.Clamp((int)Math.Floor(canvas.X / _columnWidth), 0, _count - 1);
-
-    public void BeginDrag(DisplayEvent e, DragMode mode, Windows.Foundation.Point window)
+    private Point InDays(Point window)
     {
-        _dragging = true;
-        _grabIndex = DayIndexAt(ViewParts.To(_bodyCanvas, window));
+        var p = ViewParts.To(Scroll, window);
+        return new Point(p.X + Scroll.HorizontalOffset, p.Y + Scroll.VerticalOffset);
     }
 
-    public DragTarget? Target(DisplayEvent e, DragMode mode, Windows.Foundation.Point window)
+    private int DayIndexAt(Point days) => Math.Clamp((int)Math.Floor(days.X / _columnWidth), 0, _count - 1);
+
+    public void BeginDrag(DisplayEvent e, DragMode mode, Point window)
+    {
+        _body.KeepAll = true;
+        _grabIndex = DayIndexAt(InDays(window));
+    }
+
+    public DragTarget? Target(DisplayEvent e, DragMode mode, Point window)
     {
         if (_columnWidth <= 0)
         {
             return null;
         }
-        var canvas = ViewParts.To(_bodyCanvas, window);
-        var index = DayIndexAt(canvas);
+        var days = InDays(window);
+        var index = DayIndexAt(days);
         var (s, en) = DragMath.MoveDays(e.Start, e.End, index - _grabIndex);
-        var rect = new Windows.Foundation.Rect(index * _columnWidth + 4, canvas.Y - 16, _columnWidth - 8, 32);
-        return new DragTarget(s, en, e.AllDay, ViewParts.InOverlay(_bodyCanvas, Overlay, rect));
+        var rect = new Rect(index * _columnWidth + 4 - Scroll.HorizontalOffset, days.Y - 16 - Scroll.VerticalOffset, _columnWidth - 8, 32);
+        return new DragTarget(s, en, e.AllDay, ViewParts.InOverlay(Scroll, Overlay, rect));
     }
 
-    public void AutoScroll(Windows.Foundation.Point window)
+    public void AutoScroll(Point window)
     {
-        var v = ViewParts.To(_bodyScroll, window);
-        var dx = ViewParts.EdgeStep(v.X, _bodyScroll.ActualWidth);
-        var dy = ViewParts.EdgeStep(v.Y, _bodyScroll.ActualHeight);
-        if (dx != 0 || dy != 0)
+        var v = ViewParts.To(Scroll, window);
+        var dx = ViewParts.EdgeStep(v.X, Scroll.ViewportWidth);
+        var dy = ViewParts.EdgeStep(v.Y, Scroll.ViewportHeight);
+        if (dx != 0)
         {
-            _bodyScroll.ChangeView(_bodyScroll.HorizontalOffset + dx, _bodyScroll.VerticalOffset + dy, null, true);
+            Scroll.ScrollToHorizontalOffset(Scroll.HorizontalOffset + dx);
+        }
+        if (dy != 0)
+        {
+            Scroll.ScrollToVerticalOffset(Scroll.VerticalOffset + dy);
         }
     }
 
-    public void EndDrag()
-    {
-        _dragging = false;
-        Realize();
-    }
+    public void EndDrag() => _body.KeepAll = false;
 
     public void CompleteDrag(DisplayEvent e, DragTarget target) => EventDropped?.Invoke(e, target);
 
     public void OpenEvent(DisplayEvent e) => EventOpened?.Invoke(e);
 
-    private StackPanel BuildList(DateOnly date, bool isToday)
+    /// <summary>An empty day list; a click on its empty part creates an all-day event (calendar-views R5 interim).</summary>
+    private StackPanel NewList()
     {
-        var list = new StackPanel
+        var list = new StackPanel();
+        list.MouseLeftButtonUp += (_, _) =>
         {
-            Width = _columnWidth,
-            Spacing = 4,
-            Padding = new Thickness(4, 4, 4, 8),
-            BorderBrush = Theme.Brush("DividerBrush"),
-            BorderThickness = new Thickness(1, 0, 0, 0),
-            Background = ViewParts.DayShade(date, isToday, _holidays.ContainsKey(date)) ?? ViewParts.Clickable,
+            if (list.Tag is DateOnly date)
+            {
+                CreateRequested?.Invoke(date.ToDateTime(TimeOnly.MinValue), true);
+            }
         };
-        // A click on the empty part of the day creates an all-day event (calendar-views R5 interim); cards handle their own.
-        list.Tapped += (_, _) => CreateRequested?.Invoke(date.ToDateTime(TimeOnly.MinValue), true);
+        return list;
+    }
+
+    /// <summary>One day: its events as cards that fit their content, or "Nothing scheduled". At least as tall as the viewport.</summary>
+    private void BindList(StackPanel list, int index)
+    {
+        var date = _first.AddDays(index);
+        var isToday = date == DateOnly.FromDateTime(DateTime.Now);
+        list.Tag = date;
+        list.Children.Clear();
+        list.Width = _columnWidth;
+        list.MinHeight = Scroll.ViewportHeight;
+        // The divider is drawn by the first child's border, so the list stays a plain StackPanel.
+        list.Background = ViewParts.DayShade(date, isToday, _holidays.ContainsKey(date)) ?? ViewParts.Clickable;
         var events = _byDay.GetValueOrDefault(date) ?? [];
+        var body = new StackPanel { Margin = new Thickness(4, 4, 4, 8) };
         foreach (var e in events)
         {
             var total = e.LastDay.DayNumber - e.FirstDay.DayNumber + 1;
             var details = total > 1 ? $"Day {date.DayNumber - e.FirstDay.DayNumber + 1} of {total}" : null;
             var card = EventCard.Create(e, Theme.Calendar(e.Collection.Colour), double.NaN, details: details);
+            card.Margin = new Thickness(1, 0, 1, 4);
             EventDrag.Attach(card, e, this);
-            list.Children.Add(card);
+            body.Children.Add(card);
         }
         if (events.Count == 0)
         {
-            list.Children.Add(new TextBlock
+            body.Children.Add(new TextBlock
             {
                 Text = "Nothing scheduled",
                 Style = Theme.Style("CaptionTextBlockStyle"),
@@ -277,7 +267,12 @@ internal sealed partial class AgendaView : UserControl, IScrollingView, IDragHos
                 Margin = new Thickness(4, 4, 0, 0),
             });
         }
-        list.Measure(new Windows.Foundation.Size(_columnWidth, double.PositiveInfinity));
-        return list;
+        list.Children.Add(new Border
+        {
+            BorderBrush = Theme.Brush("DividerBrush"),
+            BorderThickness = new Thickness(1, 0, 0, 0),
+            MinHeight = Scroll.ViewportHeight,
+            Child = body,
+        });
     }
 }

@@ -46,4 +46,4 @@ Left-clicking the tray icon opens a compact flyout with what is on today, Join b
 
 ## Open questions
 
-- WinUI 3 has no built-in tray API; a tray library (e.g. H.NotifyIcon.WinUI) or a Win32 `Shell_NotifyIcon` wrapper is needed. NuGet package choice requires user approval at implementation time.
+- WPF has no built-in tray API; the app uses H.NotifyIcon.Wpf (approved 2026-11-08, replacing H.NotifyIcon.WinUI).

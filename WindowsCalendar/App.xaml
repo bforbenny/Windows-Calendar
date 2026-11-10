@@ -3,112 +3,37 @@
     x:Class="WindowsCalendar.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:WindowsCalendar">
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
-                <!-- Other merged dictionaries here -->
+                <!-- Fluent theme and controls (app-platform R2). The colour roles are set in code by Theme.Apply. -->
+                <ui:ThemesDictionary Theme="Light" />
+                <ui:ControlsDictionary />
             </ResourceDictionary.MergedDictionaries>
-            <ResourceDictionary.ThemeDictionaries>
-                <!-- Colour roles (ui-colour-theme R3). -->
-                <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="SurfaceBaseBrush" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="DividerBrush" Color="#D2D4D9" />
-                    <SolidColorBrush x:Key="ShadeTodayBrush" Color="#F4F7FE" />
-                    <SolidColorBrush x:Key="ShadeNonWorkingBrush" Color="#FBF6F8" />
-                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#16181A" />
-                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#4E535C" />
-                    <SolidColorBrush x:Key="TodayChipBrush" Color="#155CEE" />
-                    <SolidColorBrush x:Key="TodayChipTextBrush" Color="#FFFFFF" />
-                    <SolidColorBrush x:Key="NowLineBrush" Color="#CD1E1E" />
-                    <SolidColorBrush x:Key="DestructiveBrush" Color="#CD1E1E" />
-                    <SolidColorBrush x:Key="DestructiveHoverBrush" Color="#A31717" />
-                    <SolidColorBrush x:Key="DestructivePressedBrush" Color="#801212" />
-                    <SolidColorBrush x:Key="TextOnDestructiveBrush" Color="#FFFFFF" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="SurfaceBaseBrush" Color="#121824" />
-                    <SolidColorBrush x:Key="DividerBrush" Color="#2E3F61" />
-                    <SolidColorBrush x:Key="ShadeTodayBrush" Color="#0F1E3C" />
-                    <SolidColorBrush x:Key="ShadeNonWorkingBrush" Color="#201928" />
-                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#EBEFF5" />
-                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A8B7D5" />
-                    <SolidColorBrush x:Key="TodayChipBrush" Color="#6E9BF4" />
-                    <SolidColorBrush x:Key="TodayChipTextBrush" Color="#121824" />
-                    <SolidColorBrush x:Key="NowLineBrush" Color="#EC7A7A" />
-                    <SolidColorBrush x:Key="DestructiveBrush" Color="#EC7A7A" />
-                    <SolidColorBrush x:Key="DestructiveHoverBrush" Color="#F1A1A1" />
-                    <SolidColorBrush x:Key="DestructivePressedBrush" Color="#E54B4B" />
-                    <SolidColorBrush x:Key="TextOnDestructiveBrush" Color="#121824" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="HighContrast">
-                    <SolidColorBrush x:Key="SurfaceBaseBrush" Color="{ThemeResource SystemColorWindowColor}" />
-                    <SolidColorBrush x:Key="DividerBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-                    <SolidColorBrush x:Key="ShadeTodayBrush" Color="{ThemeResource SystemColorWindowColor}" />
-                    <SolidColorBrush x:Key="ShadeNonWorkingBrush" Color="{ThemeResource SystemColorWindowColor}" />
-                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="{ThemeResource SystemColorWindowTextColor}" />
-                    <SolidColorBrush x:Key="TodayChipBrush" Color="{ThemeResource SystemColorHighlightColor}" />
-                    <SolidColorBrush x:Key="TodayChipTextBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
-                    <SolidColorBrush x:Key="NowLineBrush" Color="{ThemeResource SystemColorHighlightColor}" />
-                    <SolidColorBrush x:Key="DestructiveBrush" Color="{ThemeResource SystemColorHighlightColor}" />
-                    <SolidColorBrush x:Key="DestructiveHoverBrush" Color="{ThemeResource SystemColorHighlightColor}" />
-                    <SolidColorBrush x:Key="DestructivePressedBrush" Color="{ThemeResource SystemColorHighlightColor}" />
-                    <SolidColorBrush x:Key="TextOnDestructiveBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
-            <!-- Other app resources here -->
-            <!-- A confirmation's destructive button (ui-colour-theme R3): Destructive fill in every state. Its own
-                 template, so the accent style that the default (Cancel) button uses keeps its colours. -->
-            <Style x:Key="DestructiveButtonStyle" TargetType="Button" BasedOn="{StaticResource DefaultButtonStyle}">
-                <Setter Property="Background" Value="{ThemeResource DestructiveBrush}" />
-                <Setter Property="BorderBrush" Value="{ThemeResource DestructiveBrush}" />
-                <Setter Property="Foreground" Value="{ThemeResource TextOnDestructiveBrush}" />
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="Button">
-                            <ContentPresenter x:Name="ContentPresenter"
-                                              Background="{TemplateBinding Background}"
-                                              BorderBrush="{TemplateBinding BorderBrush}"
-                                              BorderThickness="{TemplateBinding BorderThickness}"
-                                              CornerRadius="{TemplateBinding CornerRadius}"
-                                              Padding="{TemplateBinding Padding}"
-                                              Foreground="{TemplateBinding Foreground}"
-                                              Content="{TemplateBinding Content}"
-                                              ContentTemplate="{TemplateBinding ContentTemplate}"
-                                              ContentTransitions="{TemplateBinding ContentTransitions}"
-                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
-                                              AutomationProperties.AccessibilityView="Raw">
-                                <VisualStateManager.VisualStateGroups>
-                                    <VisualStateGroup x:Name="CommonStates">
-                                        <VisualState x:Name="Normal" />
-                                        <VisualState x:Name="PointerOver">
-                                            <VisualState.Setters>
-                                                <Setter Target="ContentPresenter.Background" Value="{ThemeResource DestructiveHoverBrush}" />
-                                                <Setter Target="ContentPresenter.BorderBrush" Value="{ThemeResource DestructiveHoverBrush}" />
-                                            </VisualState.Setters>
-                                        </VisualState>
-                                        <VisualState x:Name="Pressed">
-                                            <VisualState.Setters>
-                                                <Setter Target="ContentPresenter.Background" Value="{ThemeResource DestructivePressedBrush}" />
-                                                <Setter Target="ContentPresenter.BorderBrush" Value="{ThemeResource DestructivePressedBrush}" />
-                                            </VisualState.Setters>
-                                        </VisualState>
-                                        <VisualState x:Name="Disabled">
-                                            <VisualState.Setters>
-                                                <Setter Target="ContentPresenter.Background" Value="{ThemeResource ButtonBackgroundDisabled}" />
-                                                <Setter Target="ContentPresenter.BorderBrush" Value="{ThemeResource ButtonBorderBrushDisabled}" />
-                                                <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource ButtonForegroundDisabled}" />
-                                            </VisualState.Setters>
-                                        </VisualState>
-                                    </VisualStateGroup>
-                                </VisualStateManager.VisualStateGroups>
-                            </ContentPresenter>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
+
+            <!-- Type ramp (ui-style R2): Caption 12/16, Body 14/20, Body Strong 14/20 semibold, Subtitle 20/28, Title 28/36. -->
+            <Style x:Key="CaptionTextBlockStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="LineHeight" Value="16" />
+            </Style>
+            <Style x:Key="BodyTextBlockStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="LineHeight" Value="20" />
+            </Style>
+            <Style x:Key="BodyStrongTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+            <Style x:Key="SubtitleTextBlockStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="20" />
+                <Setter Property="LineHeight" Value="28" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+            <Style x:Key="TitleTextBlockStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="28" />
+                <Setter Property="LineHeight" Value="36" />
+                <Setter Property="FontWeight" Value="SemiBold" />
             </Style>
         </ResourceDictionary>
     </Application.Resources>

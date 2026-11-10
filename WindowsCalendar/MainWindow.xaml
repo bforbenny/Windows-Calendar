@@ -1,17 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Window
+<ui:FluentWindow
     x:Class="WindowsCalendar.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:local="using:WindowsCalendar"
-    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    mc:Ignorable="d"
-    Title="WindowsCalendar">
-
-    <Window.SystemBackdrop>
-        <MicaBackdrop />
-    </Window.SystemBackdrop>
+    xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    Title="WindowsCalendar"
+    Width="1400" Height="900" MinWidth="1000" MinHeight="640"
+    ExtendsContentIntoTitleBar="True"
+    WindowBackdropType="Mica"
+    WindowCornerPreference="Round"
+    WindowStartupLocation="CenterScreen"
+    UseLayoutRounding="True">
 
     <!-- Mica shows through the title bar and sidebar only; the content area is solid (app-platform R2). -->
     <Grid>
@@ -20,7 +19,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TitleBar x:Name="AppTitleBar" Title="WindowsCalendar" />
+        <ui:TitleBar x:Name="AppTitleBar" Title="WindowsCalendar" />
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
@@ -30,29 +29,19 @@
 
             <!-- Sidebar (calendar-views R2). Interim: accounts and their collections (account-management). -->
             <Grid x:Name="Sidebar" Grid.Column="0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <ScrollViewer>
-                    <StackPanel x:Name="AccountList" Padding="12,8" Spacing="2" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="AccountList" Margin="12,8" />
                 </ScrollViewer>
-                <HyperlinkButton x:Name="AddAccountLink" Grid.Row="1" Margin="8" Content="Add account"
-                                 Visibility="Collapsed" Click="OnAddAccount" />
             </Grid>
 
-            <!-- Settings page: replaces the toolbar and views while open (settings-page R1). -->
-            <Border x:Name="SettingsHost" Grid.Column="1" Canvas.ZIndex="1" Visibility="Collapsed"
-                    Background="{ThemeResource SurfaceBaseBrush}" />
-
-            <Grid x:Name="ContentArea" Grid.Column="1" Background="{ThemeResource SurfaceBaseBrush}">
+            <Grid x:Name="ContentArea" Grid.Column="1" Background="{DynamicResource SurfaceBaseBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- Toolbar (calendar-views R1, R1a: no Previous/Next; views scroll). Interim: no quick add or sync status yet. -->
-                <Grid x:Name="Toolbar" Padding="12,8" ColumnSpacing="8">
+                <!-- Toolbar (calendar-views R1, R1a: no Previous/Next; views scroll). -->
+                <Grid x:Name="Toolbar" Margin="12,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
@@ -61,109 +50,35 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <!-- Hides and shows the sidebar, also Ctrl+B (calendar-views R2b). -->
-                    <Button x:Name="SidebarButton" Click="OnToggleSidebar" VerticalAlignment="Center"
-                            ToolTipService.ToolTip="Hide or show the sidebar (Ctrl+B)" AutomationProperties.Name="Hide or show the sidebar">
-                        <FontIcon Glyph="&#xE700;" />
-                    </Button>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
-                        <!-- New event, or New task in the Tasks view; the drop-down offers both (calendar-views interim). -->
-                        <SplitButton x:Name="NewButton" Click="OnNew" VerticalAlignment="Center">
-                            <TextBlock x:Name="NewButtonText" Text="New event" />
-                            <SplitButton.Flyout>
-                                <MenuFlyout Placement="BottomEdgeAlignedLeft" Opening="OnNewMenuOpening">
-                                    <MenuFlyoutItem Text="New event" Click="OnNewEvent">
-                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE787;" /></MenuFlyoutItem.Icon>
-                                    </MenuFlyoutItem>
-                                    <MenuFlyoutItem x:Name="NewTaskItem" Text="New task" Click="OnNewTask">
-                                        <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE73E;" /></MenuFlyoutItem.Icon>
-                                    </MenuFlyoutItem>
-                                </MenuFlyout>
-                            </SplitButton.Flyout>
-                        </SplitButton>
-                        <Button x:Name="TodayButton" Content="Today" Click="OnToday" VerticalAlignment="Center"
-                                ToolTipService.ToolTip="Go to today (T)" />
-                    </StackPanel>
+                    <ui:Button x:Name="SidebarButton" Click="OnToggleSidebar" VerticalAlignment="Center" Margin="0,0,8,0"
+                               ToolTip="Hide or show the sidebar (Ctrl+B)" AutomationProperties.Name="Hide or show the sidebar">
+                        <TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE700;" FontSize="16" />
+                    </ui:Button>
+                    <ui:Button x:Name="TodayButton" Grid.Column="1" Content="Today" Click="OnToday" VerticalAlignment="Center"
+                               ToolTip="Go to today (T)" />
                     <TextBlock x:Name="PeriodTitle" Grid.Column="2" Style="{StaticResource SubtitleTextBlockStyle}"
-                               VerticalAlignment="Center" Margin="8,0,0,0" TextTrimming="CharacterEllipsis" />
-                    <SelectorBar x:Name="ViewSwitcher" Grid.Column="3" SelectionChanged="OnViewChanged">
-                        <SelectorBarItem Text="Week" Tag="Week" IsSelected="True" />
-                        <SelectorBarItem Text="Month" Tag="Month" />
-                        <SelectorBarItem Text="Agenda" Tag="Agenda" />
-                        <SelectorBarItem Text="Tasks" Tag="Tasks" />
-                    </SelectorBar>
-                    <StackPanel Grid.Column="4" Orientation="Horizontal" Spacing="4">
-                        <!-- Search (search R2): results drop down as you type; also Ctrl+F / Ctrl+E. -->
-                        <AutoSuggestBox x:Name="SearchBox" Width="240" Margin="0,0,4,0" VerticalAlignment="Center"
-                                        PlaceholderText="Search" UpdateTextOnSelect="False"
-                                        AutomationProperties.Name="Search events and tasks"
-                                        TextChanged="OnSearchTextChanged" QuerySubmitted="OnSearchSubmitted">
-                            <AutoSuggestBox.QueryIcon>
-                                <SymbolIcon Symbol="Find" />
-                            </AutoSuggestBox.QueryIcon>
-                        </AutoSuggestBox>
-                        <Button x:Name="SyncButton" Click="OnSyncNow" VerticalAlignment="Center"
-                                ToolTipService.ToolTip="Sync now (F5)" AutomationProperties.Name="Sync now">
-                            <FontIcon Glyph="&#xE895;" />
-                        </Button>
-                        <!-- Settings page (settings-page R1 interim), also Ctrl+,. -->
-                        <Button x:Name="SettingsButton" Click="OnOpenSettings" VerticalAlignment="Center"
-                                ToolTipService.ToolTip="Settings (Ctrl+,)" AutomationProperties.Name="Settings">
-                            <FontIcon Glyph="&#xE713;" />
-                        </Button>
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               VerticalAlignment="Center" Margin="16,0,0,0" TextTrimming="CharacterEllipsis" />
+                    <StackPanel x:Name="ViewSwitcher" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,8,0">
+                        <ToggleButton Content="Week" Tag="Week" IsChecked="True" Click="OnViewClicked" Margin="0,0,4,0" />
+                        <ToggleButton Content="Month" Tag="Month" Click="OnViewClicked" Margin="0,0,4,0" />
+                        <ToggleButton Content="Agenda" Tag="Agenda" Click="OnViewClicked" />
                     </StackPanel>
+                    <ui:Button x:Name="SyncButton" Grid.Column="4" Click="OnSyncNow" VerticalAlignment="Center"
+                               ToolTip="Sync now (F5)" AutomationProperties.Name="Sync now">
+                        <TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE895;" FontSize="16" />
+                    </ui:Button>
                 </Grid>
 
                 <Grid x:Name="Body" Grid.Row="1">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
                     <Grid x:Name="ViewHost" />
 
-                    <!-- First launch, no accounts (ui-states R5). -->
-                    <StackPanel x:Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
-                                Visibility="Collapsed">
-                        <TextBlock Text="Add an account to get started" Style="{StaticResource SubtitleTextBlockStyle}"
-                                   HorizontalAlignment="Center" />
-                        <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
-                            <Button x:Name="AddMs365Button" Content="Microsoft 365" Click="OnAddMs365" />
-                            <Button x:Name="AddRadicaleButton" Content="Radicale" Style="{StaticResource AccentButtonStyle}"
-                                    Click="OnAddRadicale" />
-                        </StackPanel>
-                    </StackPanel>
-
-                    <!-- Event editor (calendar-views R6c): pushes the views at 1200 epx and wider, slides over them below. -->
-                    <Border x:Name="EditorHost" Grid.Column="1" Visibility="Collapsed"
-                            Background="{ThemeResource SurfaceBaseBrush}" BorderBrush="{ThemeResource DividerBrush}"
-                            BorderThickness="1,0,0,0" />
-
-                    <!-- Banners float over the views and editor, bottom centre, so nothing moves (floating-banners R1-R4).
-                         Lasting conditions above, passing ones (undo) below. Only the cards take clicks. -->
-                    <StackPanel x:Name="BannerStack" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Bottom"
-                                Margin="24" Spacing="8" MinWidth="320" MaxWidth="520">
-                        <!-- Conflicts (conflict-resolution R5, interim: banner only). -->
-                        <InfoBar x:Name="ConflictBar" Severity="Warning" IsClosable="True" Closed="OnConflictBarClosed"
-                                 Background="{ThemeResource SurfaceBaseBrush}">
-                            <InfoBar.Shadow>
-                                <ThemeShadow />
-                            </InfoBar.Shadow>
-                        </InfoBar>
-                        <!-- "Event moved · Undo" for 8 seconds (undo R3). -->
-                        <InfoBar x:Name="UndoBar" IsClosable="True" Background="{ThemeResource SurfaceBaseBrush}">
-                            <InfoBar.Shadow>
-                                <ThemeShadow />
-                            </InfoBar.Shadow>
-                            <InfoBar.ActionButton>
-                                <Button x:Name="UndoButton" Content="Undo" Click="OnUndo" />
-                            </InfoBar.ActionButton>
-                        </InfoBar>
-                    </StackPanel>
+                    <!-- First launch, no accounts (ui-states R5). Adding accounts comes with the WPF port's third slice. -->
+                    <TextBlock x:Name="EmptyPanel" Text="Add an account to get started" Style="{StaticResource SubtitleTextBlockStyle}"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
                 </Grid>
             </Grid>
         </Grid>
-
-        <!-- Shortcut badges while Ctrl is held (keyboard-navigation interim); never takes clicks. -->
-        <Canvas x:Name="KeyHintLayer" Grid.Row="1" IsHitTestVisible="False" Canvas.ZIndex="10" />
     </Grid>
-</Window>
+</ui:FluentWindow>

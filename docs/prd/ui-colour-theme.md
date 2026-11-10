@@ -39,7 +39,7 @@ All UI colours come from one palette of 10-step ramps, where a given step has th
   - Text on a light surface (white, step 10–20) uses step 60 or darker. Text on a dark surface (Night 90–100) uses step 40 or lighter.
   - Step 50 is never used for text; it is for bars, icons and large shapes only (≥ 3:1).
   - Light surfaces in the light theme are white (FFFFFF) and Grey; dark surfaces in the dark theme are Night.
-- R3. Colour roles. Code references these tokens only; values are defined once in WinUI theme dictionaries (Light, Dark, HighContrast).
+- R3. Colour roles. Code references these tokens only; values are defined once in theme resource dictionaries (Light, Dark, HighContrast), swapped when the theme changes.
 
   | Token | Light | Dark |
   | --- | --- | --- |
@@ -67,7 +67,7 @@ All UI colours come from one palette of 10-step ramps, where a given step has th
   | Selection outline (selected event) | Grey 100, 2 epx | Night 10, 2 epx |
 
 - R4. Status colours are always paired with an icon and/or text label; no state is conveyed by colour alone. Calendars may use Red, Amber and Sea Green hues.
-- R5. The app overrides the Windows accent colour with the Accent token inside the app. Focus rectangles use the WinUI system focus visual (unchanged).
+- R5. The app overrides the Windows accent colour with the Accent token inside the app. Focus rectangles use the WPF-UI focus visual (unchanged colours).
 - R6. Calendar colours: 24 = 8 hues × 3 levels.
   - Hues: Navy, Sea Green, Strawberry Red, Amber, Purple, Teal, Orange, Pink.
   - Each calendar colour is (hue, level). Per-theme steps:

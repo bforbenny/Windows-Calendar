@@ -14,7 +14,7 @@ The app follows Windows 11 Fluent conventions so it looks native and stays sharp
 ## Requirements
 
 - R1. Font: Segoe UI Variable (Windows system font) everywhere. No bundled fonts. Icons use Segoe Fluent Icons.
-- R2. Type ramp (size / line height in epx), using the WinUI built-in text styles:
+- R2. Type ramp (size / line height in epx), defined once as app text styles (WPF-UI's Fluent ramp):
 
   | Style | Size / line | Use |
   | --- | --- | --- |
@@ -26,9 +26,9 @@ The app follows Windows 11 Fluent conventions so it looks native and stays sharp
 
   No text smaller than 12 epx.
 - R3. Spacing on a 4 epx grid; standard steps 4, 8, 12, 16, 24 epx.
-- R4. Corner radius: 4 epx for controls and event cards, 8 epx for dialogs, flyouts and the tray flyout (WinUI defaults).
+- R4. Corner radius: 4 epx for controls and event cards, 8 epx for dialogs, flyouts and the tray flyout (Fluent defaults).
 - R5. Interactive targets are at least 32×32 epx (mouse and trackpad use).
-- R6. Motion: WinUI built-in transitions for view switches, flyouts, dialogs and the undo banner. Drag-move and resize follow the pointer directly with no easing. When Windows "Animation effects" is off (`UISettings.AnimationsEnabled` false), all non-essential animation is disabled.
+- R6. Motion: short built-in or WPF-UI transitions for view switches, flyouts, dialogs and the undo banner. Drag-move and resize follow the pointer directly with no easing. When Windows "Animation effects" is off (`UISettings.AnimationsEnabled` false), all non-essential animation is disabled.
 - R7. Time and date formats come from the Windows region settings (12/24-hour clock, short and long date patterns, first day of week default). There is no separate format setting in the app.
 
 ## Out of scope
@@ -39,7 +39,7 @@ The app follows Windows 11 Fluent conventions so it looks native and stays sharp
 
 ## Acceptance criteria
 
-- [ ] All text uses WinUI text styles from R2; no hard-coded font sizes outside the style definitions.
+- [ ] All text uses the app text styles from R2; no hard-coded font sizes outside the style definitions.
 - [ ] Switching Windows to 24-hour time changes times in all views after restart (or live, if Windows notifies).
 - [ ] With Windows "Animation effects" off, view switches and flyouts appear without animation.
 

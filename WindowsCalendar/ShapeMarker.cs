@@ -1,10 +1,9 @@
 using System;
 using System.Globalization;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Shapes;
-using Windows.Foundation;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Shapes;
+using WindowsCalendar.Views;
 
 namespace WindowsCalendar;
 
@@ -43,13 +42,9 @@ internal static class ShapeMarker
             && int.TryParse(shape.AsSpan(GlyphPrefix.Length), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var code))
         {
             // A glyph's ink is smaller than its em box: 1.2 x the shape size looks the same weight.
-            return new FontIcon
-            {
-                Glyph = char.ConvertFromUtf32(code),
-                FontSize = size * 1.2,
-                Foreground = fill,
-                VerticalAlignment = VerticalAlignment.Center,
-            };
+            var icon = ViewParts.Icon(char.ConvertFromUtf32(code), size * 1.2);
+            icon.Foreground = fill;
+            return icon;
         }
         Shape marker = shape switch
         {

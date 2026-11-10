@@ -27,7 +27,7 @@ The user can connect any number of Microsoft 365 work accounts and any number of
   - Never in SQLite, config files, logs, or source.
   - PasswordVault entry: resource `WindowsCalendar/<accountId>`, user name = the server username.
 - R7. Password entry uses a masked field. The in-memory plaintext copy is cleared after it is stored or used.
-  - WinUI `PasswordBox` only exposes a plain string, so SecureString is not used (approved deviation from CLAUDE.md rule 4). The value is read once, the box is cleared at once, and the copy is used for the connection test and the vault save, then dropped. It never appears in logs or exception messages.
+  - The WPF `PasswordBox` gives the value as a SecureString (CLAUDE.md rule 4). It is converted to plain text only for the connection test and the vault save, the plain copy is dropped and the box cleared at once. It never appears in logs or exception messages.
 - R8. Removing an account deletes its credentials and all its cached data, after explicit confirmation (destructive action).
   - Remove is on the account's sidebar menu, behind a confirmation dialog. It deletes the vault entry, the account and its cached data, including its outbox entries.
 - R9. Per-collection settings: colour, shape, reminders on ([reminders-notifications](reminders-notifications.md) R5), default calendar for new events, default task list for new tasks. When the first account is added, its main calendar (Graph `isDefaultCalendar`; CalDAV the first writable VEVENT collection) and first task list become the defaults. Read-only collections cannot be defaults. If a default is removed, the next writable collection in sidebar order takes over.

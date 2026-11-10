@@ -8,12 +8,12 @@
     <Platforms>x86;x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
     <PublishProfile>win-$(Platform).pubxml</PublishProfile>
-    <UseWinUI>true</UseWinUI>
-    <WinUISDKReferences>false</WinUISDKReferences>
+    <!-- WPF with WPF-UI (app-platform R2). The Windows App SDK stays only for AppLifecycle and MSIX tooling. -->
+    <UseWPF>true</UseWPF>
     <EnableMsixTooling>true</EnableMsixTooling>
     <Nullable>enable</Nullable>
     <!-- Custom Main in Program.cs handles single-instance redirection (app-platform R4). -->
-    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <StartupObject>WindowsCalendar.Program</StartupObject>
   </PropertyGroup>
 
   <ItemGroup>
@@ -40,13 +40,22 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.4.1" />
     <PackageReference Include="Microsoft.Identity.Client" Version="4.92.0" />
     <PackageReference Include="Microsoft.Identity.Client.Broker" Version="4.92.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.6.5" />
     <PackageReference Include="Serilog" Version="4.4.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
+
+  <!-- WPF port (app-platform interim): WinUI files not yet ported stay out of the build until their slice. -->
+  <ItemGroup>
+    <Compile Remove="AddRadicaleDialog.xaml.cs;MainWindow.Duplicate.cs;MainWindow.Graph.cs;MainWindow.Join.cs;MainWindow.KeyHints.cs;MainWindow.Keyboard.cs;MainWindow.New.cs;MainWindow.Search.cs;MainWindow.Settings.cs;MainWindow.Style.cs;MainWindow.Tasks.cs" />
+    <Compile Remove="Views/EventEditor*.cs;Views/TaskEditor.cs;Views/RepeatPanel.cs;Views/ScopeDialog.cs;Views/LostDialog.cs;Views/SettingsPage.cs;Views/TasksView.cs;Views/Destructive.cs" />
+    <Page Remove="AddRadicaleDialog.xaml;Views/NeutralDefaultButton.xaml" />
+    <None Include="AddRadicaleDialog.xaml;Views/NeutralDefaultButton.xaml" />
   </ItemGroup>
 
   <!--

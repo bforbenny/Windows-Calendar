@@ -1,10 +1,9 @@
 using System;
 using System.Collections.Generic;
-using Microsoft.UI;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media;
-using Windows.UI;
+using System.Windows;
+using System.Windows.Media;
 using WindowsCalendar.Core.Store;
+using WindowsCalendar.Views;
 
 namespace WindowsCalendar;
 
@@ -27,9 +26,9 @@ internal static class CalendarPalette
     private static readonly int[] DarkFill = [8, 7, 6];
     private static readonly int[] DarkCardMarker = [1, 3, 1];
 
-    private static readonly Dictionary<(string, ElementTheme, bool), CalendarBrushes> Cache = [];
+    private static readonly Dictionary<(string, AppTheme, bool), CalendarBrushes> Cache = [];
 
-    public static CalendarBrushes For(string colour, ElementTheme theme, bool highContrast)
+    public static CalendarBrushes For(string colour, AppTheme theme, bool highContrast)
     {
         if (Cache.TryGetValue((colour, theme, highContrast), out var cached))
         {
@@ -39,16 +38,15 @@ internal static class CalendarPalette
         CalendarBrushes brushes;
         if (highContrast)
         {
-            var highlight = SystemBrush("SystemColorHighlightColor");
-            brushes = new CalendarBrushes(
-                highlight, SystemBrush("SystemColorWindowColor"), SystemBrush("SystemColorWindowTextColor"), highlight);
+            var highlight = SystemColors.HighlightBrush;
+            brushes = new CalendarBrushes(highlight, SystemColors.WindowBrush, SystemColors.WindowTextBrush, highlight);
         }
         else
         {
             var parts = colour.Split('/');
             var ramp = CalendarColours.Ramps.TryGetValue(parts[0], out var r) ? r : CalendarColours.Ramps["Navy"];
             var level = parts.Length > 1 && int.TryParse(parts[1].TrimStart('L'), out var l) ? Math.Clamp(l, 1, 3) - 1 : 0;
-            var dark = theme == ElementTheme.Dark;
+            var dark = theme == AppTheme.Dark;
             var swatch = Brush(ramp[(dark ? DarkSwatch : LightSwatch)[level]]);
             brushes = new CalendarBrushes(
                 swatch,
@@ -60,9 +58,11 @@ internal static class CalendarPalette
         return brushes;
     }
 
-    private static SolidColorBrush Brush(string hex) => new(Color.FromArgb(0xFF,
-        Convert.ToByte(hex[..2], 16), Convert.ToByte(hex[2..4], 16), Convert.ToByte(hex[4..6], 16)));
-
-    private static SolidColorBrush SystemBrush(string key) =>
-        Application.Current.Resources.TryGetValue(key, out var value) && value is Color c ? new SolidColorBrush(c) : new SolidColorBrush(Colors.Gray);
+    private static SolidColorBrush Brush(string hex)
+    {
+        var brush = new SolidColorBrush(Color.FromArgb(0xFF,
+            Convert.ToByte(hex[..2], 16), Convert.ToByte(hex[2..4], 16), Convert.ToByte(hex[4..6], 16)));
+        brush.Freeze();
+        return brush;
+    }
 }
