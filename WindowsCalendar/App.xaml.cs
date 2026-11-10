@@ -9,7 +9,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using H.NotifyIcon;
 using Microsoft.Identity.Client;
-using Microsoft.Windows.AppLifecycle;
 using Serilog;
 using Windows.ApplicationModel;
 using Windows.Networking.Connectivity;
@@ -17,7 +16,6 @@ using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Core.Sync;
-using AppInstance = Microsoft.Windows.AppLifecycle.AppInstance;
 
 namespace WindowsCalendar;
 /// <summary>
@@ -123,11 +121,15 @@ public partial class App : Application
         _trayIcon = CreateTrayIcon();
         StartSyncScheduling();
 
-        // A second launch is redirected here by Program.Main (app-platform R4).
-        AppInstance.GetCurrent().Activated += (_, _) => Dispatcher.BeginInvoke(ShowMainWindow);
+        // A second launch signals here through Program.Main (app-platform R4).
+        if (Program.Activated is { } activated)
+        {
+            ThreadPool.RegisterWaitForSingleObject(activated, (_, _) => Dispatcher.BeginInvoke(ShowMainWindow), null,
+                Timeout.Infinite, executeOnlyOnce: false);
+        }
 
         // Launched by the Start with Windows task: stay hidden in the tray (app-platform R6).
-        if (AppInstance.GetCurrent().GetActivatedEventArgs().Kind == ExtendedActivationKind.StartupTask)
+        if (global::Windows.ApplicationModel.AppInstance.GetActivatedEventArgs()?.Kind == global::Windows.ApplicationModel.Activation.ActivationKind.StartupTask)
         {
             Log.Information("Started by startup task; staying in tray");
             return;
