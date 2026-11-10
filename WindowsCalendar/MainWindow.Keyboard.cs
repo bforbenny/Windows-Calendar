@@ -81,6 +81,11 @@ public sealed partial class MainWindow
             JoinNext();
             return true;
         }
+        if (ctrl && !shift && !alt && key is Key.F or Key.E && SettingsHost.Visibility != Visibility.Visible)
+        {
+            FocusSearch();
+            return true;
+        }
         if (!SingleKeysAllowed())
         {
             return false;
@@ -134,10 +139,14 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// R4: single keys, arrows, Enter and Del are left alone while typing or in a drop-down, and inside the editor
-    /// panel. The view tabs do not keep their arrow keys: F1-F4 switch views.
+    /// panel or Settings. The view tabs do not keep their arrow keys: F1-F4 switch views.
     /// </summary>
     private bool SingleKeysAllowed()
     {
+        if (SettingsHost.Visibility == Visibility.Visible)
+        {
+            return false;
+        }
         for (var e = Keyboard.FocusedElement as DependencyObject; e is not null;
             e = (e is Visual ? VisualTreeHelper.GetParent(e) : null) ?? LogicalTreeHelper.GetParent(e))
         {

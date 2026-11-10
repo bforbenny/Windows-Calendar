@@ -29,10 +29,20 @@
 
             <!-- Sidebar (calendar-views R2). Interim: accounts and their collections (account-management). -->
             <Grid x:Name="Sidebar" Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel x:Name="AccountList" Margin="12,8" />
                 </ScrollViewer>
+                <ui:Button x:Name="AddAccountLink" Grid.Row="1" Margin="8" Content="Add account" Appearance="Transparent"
+                           Visibility="Collapsed" Click="OnAddAccount" />
             </Grid>
+
+            <!-- Settings page: replaces the toolbar and views while open (settings-page R1). -->
+            <Border x:Name="SettingsHost" Grid.Column="1" Panel.ZIndex="1" Visibility="Collapsed"
+                    Background="{DynamicResource SurfaceBaseBrush}" />
 
             <Grid x:Name="ContentArea" Grid.Column="1" Background="{DynamicResource SurfaceBaseBrush}">
                 <Grid.RowDefinitions>
@@ -81,10 +91,34 @@
                         <ToggleButton Content="Agenda" Tag="Agenda" Click="OnViewClicked" Margin="0,0,4,0" />
                         <ToggleButton Content="Tasks" Tag="Tasks" Click="OnViewClicked" />
                     </StackPanel>
-                    <ui:Button x:Name="SyncButton" Grid.Column="4" Click="OnSyncNow" VerticalAlignment="Center"
-                               ToolTip="Sync now (F5)" AutomationProperties.Name="Sync now">
-                        <TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE895;" FontSize="16" />
-                    </ui:Button>
+                    <StackPanel Grid.Column="4" Orientation="Horizontal">
+                        <!-- Search (search R2): results drop down as you type; also Ctrl+F / Ctrl+E. -->
+                        <ui:TextBox x:Name="SearchBox" Width="240" Margin="0,0,8,0" VerticalAlignment="Center"
+                                    PlaceholderText="Search" AutomationProperties.Name="Search events and tasks"
+                                    TextChanged="OnSearchTextChanged" PreviewKeyDown="OnSearchKeyDown">
+                            <ui:TextBox.Icon>
+                                <ui:SymbolIcon Symbol="Search24" />
+                            </ui:TextBox.Icon>
+                        </ui:TextBox>
+                        <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom"
+                               StaysOpen="False" AllowsTransparency="True">
+                            <Border Background="{DynamicResource SurfaceBaseBrush}" BorderBrush="{DynamicResource DividerBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="4" Margin="0,4,0,0">
+                                <ListBox x:Name="SearchResults" MaxHeight="480" Width="440" BorderThickness="0" Background="Transparent"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         PreviewMouseLeftButtonUp="OnSearchResultClicked" PreviewKeyDown="OnSearchResultsKeyDown" />
+                            </Border>
+                        </Popup>
+                        <ui:Button x:Name="SyncButton" Click="OnSyncNow" VerticalAlignment="Center" Margin="0,0,4,0"
+                                   ToolTip="Sync now (F5)" AutomationProperties.Name="Sync now">
+                            <TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE895;" FontSize="16" />
+                        </ui:Button>
+                        <!-- Settings page (settings-page R1 interim), also Ctrl+,. -->
+                        <ui:Button x:Name="SettingsButton" Click="OnOpenSettings" VerticalAlignment="Center"
+                                   ToolTip="Settings (Ctrl+,)" AutomationProperties.Name="Settings">
+                            <TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE713;" FontSize="16" />
+                        </ui:Button>
+                    </StackPanel>
                 </Grid>
 
                 <Grid x:Name="Body" Grid.Row="1">
@@ -95,10 +129,15 @@
 
                     <Grid x:Name="ViewHost" />
 
-                    <!-- First launch, no accounts (ui-states R5). Adding accounts comes with the WPF port's third slice. -->
-                    <TextBlock x:Name="EmptyPanel" Text="Add an account to get started" Style="{StaticResource SubtitleTextBlockStyle}"
-                               Foreground="{DynamicResource TextPrimaryBrush}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed" />
+                    <!-- First launch, no accounts (ui-states R5). -->
+                    <StackPanel x:Name="EmptyPanel" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed">
+                        <TextBlock Text="Add an account to get started" Style="{StaticResource SubtitleTextBlockStyle}"
+                                   Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center" Margin="0,0,0,16" />
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <ui:Button x:Name="AddMs365Button" Content="Microsoft 365" Click="OnAddMs365" Margin="0,0,8,0" />
+                            <ui:Button x:Name="AddRadicaleButton" Content="Radicale" Appearance="Primary" Click="OnAddRadicale" />
+                        </StackPanel>
+                    </StackPanel>
 
                     <!-- Event and task editor (calendar-views R6c): pushes the views at 1200 epx and wider, slides over them below. -->
                     <Border x:Name="EditorHost" Grid.Column="1" Visibility="Collapsed"
@@ -127,6 +166,9 @@
                 </Grid>
             </Grid>
         </Grid>
+
+        <!-- Shortcut badges while Ctrl is held (keyboard-navigation interim); never takes clicks. -->
+        <Canvas x:Name="KeyHintLayer" Grid.Row="1" IsHitTestVisible="False" Panel.ZIndex="10" />
 
         <!-- Content dialogs (WPF-UI) cover the whole window while open. -->
         <ui:ContentDialogHost x:Name="DialogHost" Grid.RowSpan="2" />

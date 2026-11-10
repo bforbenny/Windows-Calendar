@@ -1,4 +1,4 @@
-using Microsoft.UI.Xaml;
+using System.Windows;
 using WindowsCalendar.Views;
 
 namespace WindowsCalendar;

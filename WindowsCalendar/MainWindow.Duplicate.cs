@@ -81,7 +81,7 @@ public sealed partial class MainWindow
             {
                 store.DeleteItem(copyId);
             }
-            UndoBar.IsOpen = false;
+            BannerFade.SetOpen(UndoBar, false);
             Log.Information("Duplicate {ItemId} undone", copyId);
         }
         catch (Exception ex)

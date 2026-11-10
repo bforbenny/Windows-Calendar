@@ -1,13 +1,13 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using Microsoft.UI.Dispatching;
-using Microsoft.UI.Text;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Documents;
-using Microsoft.UI.Xaml.Media;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Controls;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
 using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Core.Views;
@@ -17,29 +17,33 @@ namespace WindowsCalendar;
 
 /// <summary>
 /// Search (search first slice): the toolbar box finds events and tasks in the local store as you type (R2), lists
-/// them under the box (R3, R6, R7), and choosing one goes to its day and opens it (R5).
+/// them under the box (R3, R6, R7), and choosing one goes to its day and opens it (R5). Down moves into the list;
+/// Enter in the box opens the first result; Esc closes the list.
 /// </summary>
 public sealed partial class MainWindow
 {
-    private DispatcherQueueTimer? _searchTimer;
+    private DispatcherTimer? _searchTimer;
 
     private void FocusSearch()
     {
-        SearchBox.Focus(FocusState.Keyboard);
+        SearchBox.Focus();
+        SearchBox.SelectAll();
     }
 
-    private void OnSearchTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)
+    private void OnSearchTextChanged(object sender, TextChangedEventArgs e)
     {
-        if (args.Reason != AutoSuggestionBoxTextChangeReason.UserInput)
+        if (!SearchBox.IsKeyboardFocusWithin)
         {
             return;
         }
         if (_searchTimer is null)
         {
-            _searchTimer = DispatcherQueue.CreateTimer();
-            _searchTimer.Interval = TimeSpan.FromMilliseconds(150);
-            _searchTimer.IsRepeating = false;
-            _searchTimer.Tick += (_, _) => ShowSearchResults();
+            _searchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+            _searchTimer.Tick += (_, _) =>
+            {
+                _searchTimer.Stop();
+                ShowSearchResults();
+            };
         }
         _searchTimer.Stop();
         _searchTimer.Start();
@@ -48,46 +52,88 @@ public sealed partial class MainWindow
     private void ShowSearchResults()
     {
         var text = SearchBox.Text;
+        SearchResults.Items.Clear();
         if (string.IsNullOrWhiteSpace(text) || Store is not { } store)
         {
-            SearchBox.ItemsSource = null;
+            SearchPopup.IsOpen = false;
             return;
         }
-        var rows = new List<FrameworkElement>();
         foreach (var result in store.Search(text))
         {
             if (_collections.TryGetValue(result.CollectionId, out var collection))
             {
-                rows.Add(ResultRow(result, collection));
+                SearchResults.Items.Add(new ListBoxItem { Content = ResultRow(result, collection), Tag = result });
             }
         }
-        if (rows.Count == 0)
+        if (SearchResults.Items.Count == 0)
         {
-            rows.Add(NoteRow("No results"));
+            SearchResults.Items.Add(NoteRow("No results"));
         }
         if (_graphAccounts.Count > 0)
         {
-            rows.Add(NoteRow($"Microsoft 365 searched from {GraphSync.WindowStart(_today):d MMM yyyy}"));
+            SearchResults.Items.Add(NoteRow($"Microsoft 365 searched from {GraphSync.WindowStart(_today):d MMM yyyy}"));
         }
-        SearchBox.ItemsSource = rows;
-        SearchBox.IsSuggestionListOpen = true;
+        SearchPopup.IsOpen = true;
     }
 
-    /// <summary>Enter or a click: the chosen result, or the first one when Enter is pressed in the box.</summary>
-    private void OnSearchSubmitted(AutoSuggestBox sender, AutoSuggestBoxQuerySubmittedEventArgs args)
+    private void OnSearchKeyDown(object sender, KeyEventArgs e)
     {
-        var chosen = args.ChosenSuggestion as FrameworkElement
-            ?? (sender.ItemsSource as IEnumerable<FrameworkElement>)?.FirstOrDefault();
-        if (chosen?.Tag is SearchResult result)
+        switch (e.Key)
         {
-            sender.IsSuggestionListOpen = false;
-            OpenSearchResult(result);
+            case Key.Enter:
+                e.Handled = true;
+                if (SearchResults.Items.OfType<ListBoxItem>().FirstOrDefault(i => i.Tag is SearchResult) is { } first)
+                {
+                    OpenSearchResult(first);
+                }
+                break;
+            case Key.Down when SearchPopup.IsOpen:
+                e.Handled = true;
+                if (SearchResults.Items.OfType<ListBoxItem>().FirstOrDefault(i => i.Tag is SearchResult) is { } top)
+                {
+                    SearchResults.SelectedItem = top;
+                    top.Focus();
+                }
+                break;
+            case Key.Escape when SearchPopup.IsOpen:
+                e.Handled = true;
+                SearchPopup.IsOpen = false;
+                break;
+        }
+    }
+
+    private void OnSearchResultsKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && SearchResults.SelectedItem is ListBoxItem { Tag: SearchResult } item)
+        {
+            e.Handled = true;
+            OpenSearchResult(item);
+        }
+        else if (e.Key == Key.Escape)
+        {
+            e.Handled = true;
+            SearchPopup.IsOpen = false;
+            SearchBox.Focus();
+        }
+    }
+
+    private void OnSearchResultClicked(object sender, MouseButtonEventArgs e)
+    {
+        for (var hit = e.OriginalSource as DependencyObject; hit is not null; hit = VisualTreeHelper.GetParent(hit))
+        {
+            if (hit is ListBoxItem { Tag: SearchResult } item)
+            {
+                OpenSearchResult(item);
+                return;
+            }
         }
     }
 
     /// <summary>R5: scrolls the calendar to the result's day (Tasks switches to Week for an event) and opens it.</summary>
-    private void OpenSearchResult(SearchResult result)
+    private void OpenSearchResult(ListBoxItem item)
     {
+        var result = (SearchResult)item.Tag;
+        SearchPopup.IsOpen = false;
         var stayInTasks = result.Kind == ItemKind.Task && _view == ViewKind.Tasks;
         if (result.StartUtc is { } start && !stayInTasks)
         {
@@ -96,7 +142,7 @@ public sealed partial class MainWindow
             if (_view == ViewKind.Tasks)
             {
                 _pendingDay = day;
-                ViewSwitcher.SelectedItem = ViewSwitcher.Items[0];
+                SwitchView(ViewKind.Week);
             }
             else
             {
@@ -117,15 +163,16 @@ public sealed partial class MainWindow
     private static FrameworkElement ResultRow(SearchResult result, Collection collection)
     {
         var title = Marked(result.Title, Theme.Style("BodyStrongTextBlockStyle"));
+        title.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
         if (result.IsSeries)
         {
             title.Inlines.Add(new Run { Text = "  ", FontFamily = new FontFamily("Segoe Fluent Icons"), FontSize = 12 });
         }
-        var details = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+        var details = new SpacedStack { Orientation = Orientation.Horizontal, Spacing = 6 };
         details.Children.Add(Caption(When(result)));
         details.Children.Add(ShapeMarker.Create(collection.Shape, Theme.Calendar(collection.Colour).Swatch));
         details.Children.Add(Caption(collection.Name));
-        var text = new StackPanel { Spacing = 2 };
+        var text = new SpacedStack { Spacing = 2 };
         text.Children.Add(title);
         text.Children.Add(details);
         if (result.Snippet is { } snippet)
@@ -134,29 +181,25 @@ public sealed partial class MainWindow
             line.Foreground = Theme.Brush("TextSecondaryBrush");
             text.Children.Add(line);
         }
-        var row = new Grid { ColumnSpacing = 10, Padding = new Thickness(0, 4, 0, 4), Tag = result, MaxWidth = 420 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.Children.Add(new FontIcon
-        {
-            Glyph = result.Kind == ItemKind.Task ? "" : "",
-            FontSize = 16,
-            VerticalAlignment = VerticalAlignment.Top,
-            Margin = new Thickness(0, 2, 0, 0),
-        });
-        Grid.SetColumn(text, 1);
+        var row = new DockPanel { Margin = new Thickness(0, 4, 0, 4) };
+        var icon = ViewParts.Icon(result.Kind == ItemKind.Task ? "" : "", 16);
+        icon.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+        icon.VerticalAlignment = VerticalAlignment.Top;
+        icon.Margin = new Thickness(0, 2, 10, 0);
+        DockPanel.SetDock(icon, Dock.Left);
+        row.Children.Add(icon);
         row.Children.Add(text);
-        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(row,
+        AutomationProperties.SetName(row,
             $"{(result.Kind == ItemKind.Task ? "Task" : "Event")} {Plain(result.Title)}, {When(result)}, {collection.Name}");
         return row;
     }
 
     /// <summary>A line in the list that is not a result (no results, the MS365 window); choosing it does nothing.</summary>
-    private static FrameworkElement NoteRow(string text)
+    private static ListBoxItem NoteRow(string text)
     {
         var note = Caption(text);
         note.Margin = new Thickness(0, 4, 0, 4);
-        return note;
+        return new ListBoxItem { Content = note, Focusable = false, IsHitTestVisible = false };
     }
 
     private static string When(SearchResult result)

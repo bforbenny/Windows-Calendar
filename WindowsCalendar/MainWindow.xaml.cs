@@ -25,13 +25,10 @@ namespace WindowsCalendar;
 /// <summary>
 /// The main window: sidebar with accounts and calendars, toolbar, and the Week/Month/Agenda views, which scroll
 /// naturally instead of paging (calendar-views R1a), and the Tasks view (MainWindow.Tasks.cs).
-/// WPF port, second slice (app-platform interim): search, key hints, settings, colour and icon overrides and account
-/// adding follow in the third.
 /// </summary>
 public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
     private const string SidebarHiddenFlag = "sidebar-hidden";
-    private const string WeekNumbersFlag = "week-numbers";
 
     private readonly TimeGridView _week = new();
     private readonly MonthGridView _month = new();
@@ -116,6 +113,11 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             {
                 // A content dialog is open: its own keys only.
             }
+            else if (key == Key.Escape && SettingsHost.Visibility == Visibility.Visible)
+            {
+                e.Handled = true;
+                CloseSettings();
+            }
             else if (key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
             {
                 // Ctrl+N: the New button, until quick add takes the key (keyboard-navigation interim).
@@ -125,6 +127,12 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             else if (HandleShortcut(key))
             {
                 e.Handled = true;
+            }
+            else if (key == Key.OemComma && Keyboard.Modifiers == ModifierKeys.Control)
+            {
+                // Ctrl+, opens Settings (settings-page R1).
+                e.Handled = true;
+                OpenSettings();
             }
             else if (key == Key.B && Keyboard.Modifiers == ModifierKeys.Control)
             {
@@ -141,7 +149,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _undoTimer.Tick += (_, _) =>
         {
             _undoTimer.Stop();
-            UndoBar.IsOpen = false;
+            BannerFade.SetOpen(UndoBar, false);
         };
         // Closing the conflicts banner hides it for the session, until the count grows (conflict-resolution R5).
         System.ComponentModel.DependencyPropertyDescriptor.FromProperty(Wpf.Ui.Controls.InfoBar.IsOpenProperty, typeof(Wpf.Ui.Controls.InfoBar))
@@ -168,6 +176,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         };
         _editor.OpenChanged += PlaceEditor;
         SetupTasks();
+        SetupKeyHints();
         SizeChanged += (_, _) => PlaceEditor();
 
         // Redraw in the new theme when Windows switches light/dark or high contrast (app-platform R2a).
@@ -268,7 +277,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var count = Store?.GetConflictCount() ?? 0;
         ConflictBar.Title = count == 1 ? "1 conflict" : $"{count} conflicts";
         ConflictBar.Message = "Changed both here and on the server: the server version was kept, and your version is saved.";
-        ConflictBar.IsOpen = count > _conflictsDismissed;
+        BannerFade.SetOpen(ConflictBar, count > _conflictsDismissed);
     }
 
     /// <summary>
@@ -401,7 +410,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             {
                 store.UpdateItem(restored);
             }
-            UndoBar.IsOpen = false;
+            BannerFade.SetOpen(UndoBar, false);
             Log.Information("Change to event {ItemId} undone", change.ItemId);
         }
         catch (Exception ex)
@@ -420,7 +429,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         UndoBar.Message = message;
         UndoBar.Severity = canUndo ? Wpf.Ui.Controls.InfoBarSeverity.Informational : Wpf.Ui.Controls.InfoBarSeverity.Warning;
         UndoButton.Visibility = canUndo ? Visibility.Visible : Visibility.Collapsed;
-        UndoBar.IsOpen = true;
+        BannerFade.SetOpen(UndoBar, true);
         _undoTimer.Stop();
         _undoTimer.Start();
     }
@@ -439,7 +448,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
         _renderPending = false;
         ViewParts.Working = Store?.GetWorkingHours() ?? WorkingHours.Default;
-        ViewParts.ShowWeekNumbers = Store?.GetUiFlag(WeekNumbersFlag) == true;
+        ViewParts.ShowWeekNumbers = SettingsPage.WeekNumbersOn(Store);
         if (_view == ViewKind.Tasks)
         {
             RenderTasks();
@@ -637,15 +646,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     continue;
                 }
                 var group = new StackPanel();
-                var header = Collapser($"collapsed:{kind}:{account.Id}", new TextBlock
-                {
-                    Text = account.DisplayName,
-                    Style = Theme.Style("CaptionTextBlockStyle"),
-                    Foreground = Theme.Brush("TextSecondaryBrush"),
-                    TextTrimming = TextTrimming.CharacterEllipsis,
-                }, group);
-                header.Margin = new Thickness(0, 8, 0, 2);
-                section.Children.Add(header);
+                section.Children.Add(AccountHeader(account, $"collapsed:{kind}:{account.Id}", group));
                 section.Children.Add(group);
                 foreach (var collection in collections)
                 {
@@ -656,6 +657,8 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
         EmptyPanel.Visibility = accounts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ViewHost.Visibility = accounts.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        AddAccountLink.Visibility = accounts.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+        AddRadicaleButton.IsEnabled = AddMs365Button.IsEnabled = AddAccountLink.IsEnabled = Store is not null;
     }
 
     /// <summary>
@@ -734,6 +737,8 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             ShowSyncing(name, true);
         }
         var check = new CheckBox { Content = label, IsChecked = visible, MinWidth = 0, Margin = new Thickness(0, 1, 0, 1) };
+        // Right-click: colour and icon (ui-colour-theme interim).
+        check.ContextMenu = StyleMenu(collection, check);
         if (status is not null)
         {
             AutomationProperties.SetName(check, $"{collection.Name}, {status}");

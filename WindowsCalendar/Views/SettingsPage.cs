@@ -2,11 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Automation;
-using Microsoft.UI.Xaml.Controls;
+using System.Windows;
+using System.Windows.Controls;
 using Serilog;
 using WindowsCalendar.Core.Store;
+using InfoBar = Wpf.Ui.Controls.InfoBar;
+using InfoBarSeverity = Wpf.Ui.Controls.InfoBarSeverity;
 
 namespace WindowsCalendar.Views;
 
@@ -18,7 +19,7 @@ internal sealed class SettingsPage : UserControl
 {
     private const string WeekNumbersFlag = "week-numbers";
 
-    private readonly ListView _sections = new() { Width = 220, SelectionMode = ListViewSelectionMode.Single };
+    private readonly ListBox _sections = new() { Width = 220, SelectionMode = SelectionMode.Single, BorderThickness = new Thickness(0), Background = System.Windows.Media.Brushes.Transparent };
     private readonly ContentControl _content = new()
     {
         HorizontalContentAlignment = HorizontalAlignment.Stretch,
@@ -36,27 +37,25 @@ internal sealed class SettingsPage : UserControl
     public SettingsPage(DayOfWeek weekStart)
     {
         _weekStart = weekStart;
-        var back = new Button
-        {
-            Content = new FontIcon { Glyph = "", FontSize = 14 },
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        ToolTipService.SetToolTip(back, "Back (Esc)");
-        AutomationProperties.SetName(back, "Back");
+        var back = ViewParts.IconButton("", "Back");
+        back.ToolTip = "Back (Esc)";
+        back.VerticalAlignment = VerticalAlignment.Center;
         back.Click += (_, _) => BackRequested?.Invoke();
 
-        var header = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Padding = new Thickness(12, 8, 12, 8) };
+        var header = new SpacedStack { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(12, 8, 12, 8) };
         header.Children.Add(back);
-        header.Children.Add(new TextBlock { Text = "Settings", Style = Theme.Style("SubtitleTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center });
+        var title = new TextBlock { Text = "Settings", Style = Theme.Style("SubtitleTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center };
+        title.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+        header.Children.Add(title);
 
         _sections.Items.Add("Working hours");
         _sections.Items.Add("Appearance");
         _sections.SelectionChanged += (_, _) => ShowSection();
 
-        var body = new Grid { ColumnSpacing = 24, Padding = new Thickness(12, 0, 24, 24) };
+        var body = new Grid { Margin = new Thickness(12, 0, 24, 24) };
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        var scroll = new ScrollViewer { Content = _content };
+        var scroll = new ScrollViewer { Content = _content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(24, 0, 0, 0) };
         Grid.SetColumn(scroll, 1);
         body.Children.Add(_sections);
         body.Children.Add(scroll);
@@ -96,14 +95,14 @@ internal sealed class SettingsPage : UserControl
 
     // ---- Working hours (calendar-shading R1) ----
 
-    private StackPanel WorkingHoursSection()
+    private SpacedStack WorkingHoursSection()
     {
         _loading = true;
         var hours = Store?.GetWorkingHours() ?? WorkingHours.Default;
         var panel = Section("Working hours", "Time outside working hours and days off are shaded in the calendar.");
 
         var names = CultureInfo.CurrentCulture.DateTimeFormat.AbbreviatedDayNames;
-        var days = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 4 };
+        var days = new SpacedStack { Orientation = Orientation.Horizontal, Spacing = 4 };
         var checks = new List<(DayOfWeek Day, CheckBox Box)>();
         for (var i = 0; i < 7; i++)
         {
@@ -112,24 +111,24 @@ internal sealed class SettingsPage : UserControl
             checks.Add((day, box));
             days.Children.Add(box);
         }
-        panel.Children.Add(new TextBlock { Text = "Working days" });
-        panel.Children.Add(days);
+        panel.Children.Add(ViewParts.Field("Working days", days));
 
-        var start = new TimePicker { Header = "Start", MinuteIncrement = 30, SelectedTime = hours.Start.ToTimeSpan() };
-        var end = new TimePicker { Header = "End", MinuteIncrement = 30, SelectedTime = hours.End.ToTimeSpan() };
-        var times = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 16 };
-        times.Children.Add(start);
-        times.Children.Add(end);
+        var start = new TimeBox { Time = hours.Start.ToTimeSpan() };
+        var end = new TimeBox { Time = hours.End.ToTimeSpan() };
+        var times = new SpacedStack { Orientation = Orientation.Horizontal, Spacing = 16 };
+        times.Children.Add(ViewParts.Field("Start", start));
+        times.Children.Add(ViewParts.Field("End", end));
         panel.Children.Add(times);
         _hoursError.IsOpen = false;
         panel.Children.Add(_hoursError);
 
         void Save()
         {
-            if (_loading || Store is not { } store || start.SelectedTime is not { } s || end.SelectedTime is not { } e)
+            if (_loading || Store is not { } store)
             {
                 return;
             }
+            var (s, e) = (start.Time, end.Time);
             if (e <= s)
             {
                 _hoursError.IsOpen = true;
@@ -153,26 +152,27 @@ internal sealed class SettingsPage : UserControl
         {
             box.Click += (_, _) => Save();
         }
-        start.SelectedTimeChanged += (_, _) => Save();
-        end.SelectedTimeChanged += (_, _) => Save();
+        start.TimeChanged += Save;
+        end.TimeChanged += Save;
         _loading = false;
         return panel;
     }
 
     // ---- Appearance (calendar-shading R7) ----
 
-    private StackPanel Appearance()
+    private SpacedStack Appearance()
     {
         var panel = Section("Appearance", null);
-        var weekNumbers = new ToggleSwitch
+        var weekNumbers = new Wpf.Ui.Controls.ToggleSwitch
         {
-            Header = "Show week numbers",
-            IsOn = Store?.GetUiFlag(WeekNumbersFlag) == true,
+            Content = "Show week numbers",
+            IsChecked = Store?.GetUiFlag(WeekNumbersFlag) == true,
         };
-        weekNumbers.Toggled += (_, _) =>
+        weekNumbers.Click += (_, _) =>
         {
-            Store?.SetUiFlag(WeekNumbersFlag, weekNumbers.IsOn);
-            Log.Information("Week numbers {State}", weekNumbers.IsOn ? "on" : "off");
+            var on = weekNumbers.IsChecked == true;
+            Store?.SetUiFlag(WeekNumbersFlag, on);
+            Log.Information("Week numbers {State}", on ? "on" : "off");
             Changed?.Invoke();
         };
         panel.Children.Add(weekNumbers);
@@ -189,10 +189,12 @@ internal sealed class SettingsPage : UserControl
     /// <summary>Whether week numbers are on (read by the window before each render).</summary>
     public static bool WeekNumbersOn(LocalStore? store) => store?.GetUiFlag(WeekNumbersFlag) == true;
 
-    private static StackPanel Section(string title, string? description)
+    private static SpacedStack Section(string title, string? description)
     {
-        var panel = new StackPanel { Spacing = 12, MaxWidth = 720, HorizontalAlignment = HorizontalAlignment.Left };
-        panel.Children.Add(new TextBlock { Text = title, Style = Theme.Style("BodyStrongTextBlockStyle") });
+        var panel = new SpacedStack { Spacing = 12, MaxWidth = 720, HorizontalAlignment = HorizontalAlignment.Left };
+        var heading = new TextBlock { Text = title, Style = Theme.Style("BodyStrongTextBlockStyle") };
+        heading.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+        panel.Children.Add(heading);
         if (description is not null)
         {
             panel.Children.Add(new TextBlock

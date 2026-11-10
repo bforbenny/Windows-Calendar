@@ -1,8 +1,8 @@
 using System;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Windows.System;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Threading;
 using WindowsCalendar.Views;
 
 namespace WindowsCalendar;
@@ -13,22 +13,21 @@ namespace WindowsCalendar;
 /// </summary>
 public sealed partial class MainWindow
 {
-    private Microsoft.UI.Dispatching.DispatcherQueueTimer? _keyHintTimer;
+    private readonly DispatcherTimer _keyHintTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
 
     private void SetupKeyHints()
     {
-        _keyHintTimer = DispatcherQueue.CreateTimer();
-        _keyHintTimer.Interval = TimeSpan.FromMilliseconds(500);
-        _keyHintTimer.IsRepeating = false;
-        _keyHintTimer.Tick += (_, _) => ShowKeyHints();
-
-        var content = (UIElement)Content;
-        content.AddHandler(UIElement.PreviewKeyDownEvent, new KeyEventHandler((_, e) =>
+        _keyHintTimer.Tick += (_, _) =>
+        {
+            _keyHintTimer.Stop();
+            ShowKeyHints();
+        };
+        AddHandler(PreviewKeyDownEvent, new KeyEventHandler((_, e) =>
         {
             if (IsCtrl(e.Key))
             {
                 // Key repeat while held does not restart the wait.
-                if (!e.KeyStatus.WasKeyDown)
+                if (!e.IsRepeat)
                 {
                     _keyHintTimer.Start();
                 }
@@ -38,23 +37,17 @@ public sealed partial class MainWindow
                 HideKeyHints();
             }
         }), handledEventsToo: true);
-        content.AddHandler(UIElement.PreviewKeyUpEvent, new KeyEventHandler((_, e) =>
+        AddHandler(PreviewKeyUpEvent, new KeyEventHandler((_, e) =>
         {
             if (IsCtrl(e.Key))
             {
                 HideKeyHints();
             }
         }), handledEventsToo: true);
-        Activated += (_, e) =>
-        {
-            if (e.WindowActivationState == WindowActivationState.Deactivated)
-            {
-                HideKeyHints();
-            }
-        };
+        Deactivated += (_, _) => HideKeyHints();
     }
 
-    private static bool IsCtrl(VirtualKey key) => key is VirtualKey.Control or VirtualKey.LeftControl or VirtualKey.RightControl;
+    private static bool IsCtrl(Key key) => key is Key.LeftCtrl or Key.RightCtrl;
 
     private void ShowKeyHints()
     {
@@ -63,9 +56,9 @@ public sealed partial class MainWindow
         AddKeyHint(NewButton, "Ctrl+N");
         AddKeyHint(TodayButton, "T");
         AddKeyHint(PeriodTitle, "Ctrl+G");
-        for (var i = 0; i < ViewSwitcher.Items.Count && i < 4; i++)
+        for (var i = 0; i < ViewSwitcher.Children.Count && i < 4; i++)
         {
-            AddKeyHint(ViewSwitcher.Items[i], $"F{i + 1}");
+            AddKeyHint((FrameworkElement)ViewSwitcher.Children[i], $"F{i + 1}");
         }
         AddKeyHint(SearchBox, "Ctrl+F");
         AddKeyHint(SyncButton, "F5");
@@ -78,18 +71,18 @@ public sealed partial class MainWindow
 
     private void HideKeyHints()
     {
-        _keyHintTimer?.Stop();
+        _keyHintTimer.Stop();
         KeyHintLayer.Children.Clear();
     }
 
     /// <summary>A badge just under <paramref name="target"/>'s left edge, if it is on screen.</summary>
     private void AddKeyHint(FrameworkElement target, string keys)
     {
-        if (target.ActualWidth <= 0 || !IsShown(target))
+        if (target.ActualWidth <= 0 || !target.IsVisible)
         {
             return;
         }
-        var at = target.TransformToVisual(KeyHintLayer).TransformPoint(new Windows.Foundation.Point(0, target.ActualHeight + 2));
+        var at = target.TransformToVisual(KeyHintLayer).Transform(new Point(0, target.ActualHeight + 2));
         var badge = new Border
         {
             Background = Theme.Brush("TextPrimaryBrush"),
@@ -99,18 +92,5 @@ public sealed partial class MainWindow
         };
         ViewParts.Place(badge, at.X, at.Y);
         KeyHintLayer.Children.Add(badge);
-    }
-
-    /// <summary>Whether the element and all its parents are visible (e.g. not under a collapsed toolbar).</summary>
-    private static bool IsShown(FrameworkElement element)
-    {
-        for (DependencyObject? e = element; e is not null; e = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(e))
-        {
-            if (e is UIElement { Visibility: Visibility.Collapsed })
-            {
-                return false;
-            }
-        }
-        return true;
     }
 }

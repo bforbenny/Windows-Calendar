@@ -50,14 +50,6 @@
     <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 
-  <!-- WPF port (app-platform interim): WinUI files not yet ported stay out of the build until their slice. -->
-  <ItemGroup>
-    <Compile Remove="AddRadicaleDialog.xaml.cs;MainWindow.KeyHints.cs;MainWindow.Search.cs;MainWindow.Settings.cs;MainWindow.Style.cs" />
-    <Compile Remove="Views/SettingsPage.cs" />
-    <Page Remove="AddRadicaleDialog.xaml" />
-    <None Include="AddRadicaleDialog.xaml" />
-  </ItemGroup>
-
   <!--
     Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging
     Tools extension to be activated for this project even if the Windows App SDK Nuget
