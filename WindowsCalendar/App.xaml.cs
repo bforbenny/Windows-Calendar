@@ -27,6 +27,18 @@ public partial class App : Application
 {
     private MainWindow? _window;
     private TaskbarIcon? _trayIcon;
+    private TrayFlyout? _flyout;
+
+    /// <summary>Whether a sync run is going, and when the last one ended (tray-flyout R3 footer; in memory only).</summary>
+    internal bool SyncRunning { get; private set; }
+    internal DateTime? LastSynced { get; private set; }
+    internal bool Online => _online;
+
+    /// <summary>Raised on the UI thread when a sync run starts or ends, or the network comes or goes; true when a run ended.</summary>
+    internal event Action<bool>? SyncStateChanged;
+
+    /// <summary>The main window, which always exists while the app runs (only hidden); the flyout acts through it.</summary>
+    internal MainWindow? Calendar => _window;
     private SyncScheduler? _scheduler;
     private bool _online;
 
@@ -172,6 +184,10 @@ public partial class App : Application
             {
                 _scheduler.Request("network back");
             }
+            if (online != _online)
+            {
+                Dispatcher.BeginInvoke(() => SyncStateChanged?.Invoke(false));
+            }
             _online = online;
         };
     }
@@ -221,9 +237,13 @@ public partial class App : Application
         _window?.OpenAgendaToday();
     }
 
-    /// <summary>A reminder toast's Open or body click (reminders-notifications R3): the main window on that item.</summary>
-    internal void OpenFromReminder(string itemId, DateTimeOffset? start, DateTimeOffset? recurrence)
+    /// <summary>
+    /// A reminder toast's Open or body click (reminders-notifications R3) and a tray flyout item (tray-flyout R4): the
+    /// main window on that item's day, with its editor open.
+    /// </summary>
+    internal void OpenItem(string itemId, DateTimeOffset? start, DateTimeOffset? recurrence)
     {
+        _flyout?.HideFlyout();
         ShowMainWindow();
         _window?.OpenFromReminder(itemId, start, recurrence);
     }
@@ -231,7 +251,30 @@ public partial class App : Application
     private static bool IsOnline() =>
         NetworkInformation.GetInternetConnectionProfile()?.GetNetworkConnectivityLevel() == NetworkConnectivityLevel.InternetAccess;
 
+    /// <summary>One sync run, with its start and end shown in the tray flyout's footer (tray-flyout R3, R4a).</summary>
     private async Task RunSync(string reason, IReadOnlySet<string>? only, CancellationToken cancellationToken)
+    {
+        _ = Dispatcher.BeginInvoke(() =>
+        {
+            SyncRunning = true;
+            SyncStateChanged?.Invoke(false);
+        });
+        try
+        {
+            await RunSyncCore(reason, only, cancellationToken);
+        }
+        finally
+        {
+            _ = Dispatcher.BeginInvoke(() =>
+            {
+                SyncRunning = false;
+                LastSynced = DateTime.Now;
+                SyncStateChanged?.Invoke(true);
+            });
+        }
+    }
+
+    private async Task RunSyncCore(string reason, IReadOnlySet<string>? only, CancellationToken cancellationToken)
     {
         Log.Information("Sync requested ({Reason})", reason);
         if (Store is not { } store)
@@ -441,7 +484,8 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Tray icon and menu (app-platform R5). Left-click opens the main window until the tray flyout exists.
+    /// Tray icon and menu (app-platform R5). Left-click toggles the tray flyout at once; a double-click closes it and
+    /// opens the main window (tray-flyout R1).
     /// </summary>
     private TaskbarIcon CreateTrayIcon()
     {
@@ -456,7 +500,12 @@ public partial class App : Application
             ToolTipText = "WindowsCalendar",
             Icon = LoadTrayIcon(),
             ContextMenu = menu,
-            LeftClickCommand = new Command(ShowMainWindow),
+            LeftClickCommand = new Command(ToggleFlyout),
+            DoubleClickCommand = new Command(() =>
+            {
+                _flyout?.HideFlyout();
+                ShowMainWindow();
+            }),
             NoLeftClickDelay = true,
         };
         icon.ForceCreate(false);
@@ -499,6 +548,13 @@ public partial class App : Application
         var lightTaskbar = key?.GetValue("SystemUsesLightTheme") is int v && v != 0;
         var file = lightTaskbar ? "TrayIconLight.ico" : "TrayIconDark.ico";
         return new System.Drawing.Icon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", file));
+    }
+
+    /// <summary>The flyout is created on first open and only hidden afterwards (tray-flyout R6).</summary>
+    private void ToggleFlyout()
+    {
+        _flyout ??= new TrayFlyout { TrayIcon = _trayIcon?.TrayIcon };
+        _flyout.Toggle();
     }
 
     internal void ShowMainWindow() => _window?.ShowAndFocus();

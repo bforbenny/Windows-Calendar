@@ -50,11 +50,11 @@ The WinUI 3 project was converted to WPF in place, on branch `wpf`, in three sli
 ## Acceptance criteria
 
 - [ ] App builds and installs from MSIX on Windows 11. Deferred: checked with the install steps in [app-updates](app-updates.md).
-- [ ] Closing the window leaves the tray icon; reminders still fire.
+- [x] Closing the window leaves the tray icon; reminders still fire.
 - [x] Start-with-Windows toggle works across a reboot and starts in tray.
 - [x] Second launch focuses the existing window.
-- [ ] Switching Windows between light and dark mode re-themes the open app immediately when the theme is "Use Windows setting".
-- [ ] Grep of log files after a full sync shows no tokens or passwords.
+- [x] Switching Windows between light and dark mode re-themes the open app immediately when the theme is "Use Windows setting".
+- [x] Grep of log files after a full sync shows no tokens or passwords.
 - [x] Start menu, taskbar and Alt-Tab show the app icon; switching Windows mode between light and dark swaps the tray icon between dark and white without a restart.
 
 ## Dependencies

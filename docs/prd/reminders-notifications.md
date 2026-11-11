@@ -2,7 +2,7 @@
 description: Windows toast reminders for events and tasks, firing even when the main window is closed
 when-to-use: Before working on reminders, alarms, VALARM/reminder mapping, or toast notifications
 tags: [reminders, notifications, toast, valarm]
-status: in-progress
+status: closed
 ---
 
 # Reminders and notifications
@@ -73,15 +73,15 @@ Each slice is built, tested and checked in the app before the next starts.
 
 ## Acceptance criteria
 
-- [ ] A reminder fires with the window closed (tray only) and with the network off.
-- [ ] Snooze re-fires after the chosen interval.
-- [ ] Changing an event time on the server reschedules its reminder after sync.
-- [ ] After sleep through several reminders, a single summary toast appears.
-- [ ] With the app quit, Join on a toast opens the meeting.
-- [ ] A dismissed reminder does not reappear after a sync.
-- [ ] Turning "Reminders on" off for a calendar stops its toasts.
-- [ ] Setting a reminder in the event editor fires a toast at that time; on a Radicale event with two alarms, the second alarm survives the edit.
-- [ ] A Microsoft To Do task with a reminder time fires a toast; a completed task does not.
+- [x] A reminder fires with the window closed (tray only) and with the network off.
+- [x] Snooze re-fires after the chosen interval.
+- [x] Changing an event time on the server reschedules its reminder after sync.
+- [x] After sleep through several reminders, a single summary toast appears.
+- [x] With the app quit, Join on a toast opens the meeting.
+- [x] A dismissed reminder does not reappear after a sync.
+- [x] Turning "Reminders on" off for a calendar stops its toasts.
+- [x] Setting a reminder in the event editor fires a toast at that time; on a Radicale event with two alarms, the second alarm survives the edit.
+- [x] A Microsoft To Do task with a reminder time fires a toast; a completed task does not.
 
 ## Dependencies
 

@@ -226,7 +226,7 @@ internal static class ReminderToasts
                 {
                     store!.SetReminderState([reminder], ReminderStates.Opened);
                 }
-                app?.OpenFromReminder(args["item"] ?? "", Time(args["start"]), Time(args["rec"]));
+                app?.OpenItem(args["item"] ?? "", Time(args["start"]), Time(args["rec"]));
                 break;
             case "missed":
                 app?.OpenAgendaToday();

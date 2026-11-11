@@ -44,7 +44,7 @@ public sealed partial class MainWindow
         QuickBox.CollectionOf = id => _collections.GetValueOrDefault(id);
         QuickBox.Submitted += result =>
         {
-            if (QuickCreate(result))
+            if (QuickCreate(result) is null)
             {
                 QuickBox.Clear();
             }
@@ -63,7 +63,7 @@ public sealed partial class MainWindow
         _quickCreateBox.CollectionOf = id => _collections.GetValueOrDefault(id);
         _quickCreateBox.Submitted += result =>
         {
-            if (QuickCreate(result))
+            if (QuickCreate(result) is null)
             {
                 _quickCreate.IsOpen = false;
             }
@@ -123,7 +123,7 @@ public sealed partial class MainWindow
     /// The parser's inputs: writable calendars, then writable To Do lists, each in sidebar order; the Windows short-date
     /// order; the slot (popup) or the Tasks view's task default (toolbar).
     /// </summary>
-    private QuickAddOptions QuickOptions(DateTime? slot, bool slotAllDay)
+    internal QuickAddOptions QuickOptions(DateTime? slot, bool slotAllDay)
     {
         var accounts = Store?.GetAccounts() ?? [];
         var hidden = Store?.GetHiddenCollectionIds() ?? new HashSet<string>();
@@ -148,18 +148,23 @@ public sealed partial class MainWindow
 
     /// <summary>
     /// Creates what the box understood by the editors' own paths: Graph events like EventEditor.CreateGraph, CalDAV events
-    /// like EventEditor.Save, tasks like TaskEditor.Create; then the Undo banner (undo deletes the new item).
+    /// like EventEditor.Save, tasks like TaskEditor.Create; then the Undo banner (undo deletes the new item). Returns
+    /// null when created, else why not, so the tray flyout can show it (tray-flyout prerequisite).
     /// </summary>
-    private bool QuickCreate(QuickAddResult result)
+    internal string? QuickCreate(QuickAddResult result)
     {
-        if (Store is not { } store || result.Error is not null)
+        if (Store is not { } store)
         {
-            return false;
+            return "The local store could not be opened.";
+        }
+        if (result.Error is { } parseError)
+        {
+            return parseError;
         }
         if (result.Target is not { } chosen || !_collections.TryGetValue(chosen.Id, out var target))
         {
             ShowUndo("Can't add this", canUndo: false, "There is no calendar to add it to.");
-            return false;
+            return "There is no calendar to add it to.";
         }
         var zone = TimeZoneInfo.Local;
         try
@@ -202,13 +207,13 @@ public sealed partial class MainWindow
         catch (EditRefusedException ex)
         {
             ShowUndo("Can't add this", canUndo: false, ex.Message);
-            return false;
+            return ex.Message;
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Quick add failed");
             ShowUndo("Can't add this", canUndo: false, "Something went wrong; your text is kept.");
-            return false;
+            return "Something went wrong; your text is kept.";
         }
 
         // A hidden calendar (only via #account/name, or an unticked list) says so, with a way to show it (quick-add R4).
@@ -220,7 +225,7 @@ public sealed partial class MainWindow
         }
         BannerFade.SetOpen(HiddenBar, result.TargetHidden);
         RenderView();
-        return true;
+        return null;
     }
 
     /// <summary>The banner's Show button: the same as ticking the calendar in the sidebar.</summary>
@@ -239,7 +244,7 @@ public sealed partial class MainWindow
     }
 
     /// <summary>Ctrl+Enter or "More details": the full editor, pre-filled with what the box understood (quick-add R4).</summary>
-    private bool QuickMoreDetails(QuickAddResult result)
+    internal bool QuickMoreDetails(QuickAddResult result)
     {
         if (result.Kind == QuickAddKind.Task)
         {

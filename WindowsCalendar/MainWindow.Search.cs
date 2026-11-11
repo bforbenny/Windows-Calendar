@@ -138,7 +138,10 @@ public sealed partial class MainWindow
         OpenResult((SearchResult)item.Tag);
     }
 
-    /// <summary>A reminder toast's Open (reminders-notifications R3): the occurrence's day, with its editor open.</summary>
+    /// <summary>
+    /// A reminder toast's Open (reminders-notifications R3) or a tray flyout item (tray-flyout R4): the occurrence's
+    /// day, with its editor open.
+    /// </summary>
     internal void OpenFromReminder(string itemId, DateTimeOffset? start, DateTimeOffset? recurrence)
     {
         if (Store?.GetItem(itemId) is not { } item)

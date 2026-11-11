@@ -28,7 +28,7 @@ public sealed partial class MainWindow
     }
 
     /// <summary>A To Do list the app may write to (sync-ms365 third slice); Radicale task writes come later.</summary>
-    private bool IsWritableTaskList(Collection list) => IsGraph(list) && !list.ReadOnly;
+    internal bool IsWritableTaskList(Collection list) => IsGraph(list) && !list.ReadOnly;
 
     /// <summary>Opens the event editor in the host, closing the task editor first.</summary>
     private void ShowEventEditor()
@@ -79,13 +79,20 @@ public sealed partial class MainWindow
     }
 
     /// <summary>Completes or reopens a To Do task from its checkbox in the Tasks view or on the calendar.</summary>
-    private void SetTaskCompleted(string itemId, bool completed)
+    private void SetTaskCompleted(string itemId, bool completed) => TrySetTaskCompleted(itemId, completed);
+
+    /// <summary>
+    /// <see cref="SetTaskCompleted"/> that returns null when done, else why not, so the tray flyout can show it
+    /// (tray-flyout prerequisite).
+    /// </summary>
+    internal string? TrySetTaskCompleted(string itemId, bool completed)
     {
         if (Store is not { } store || store.GetItem(itemId) is not { } item
             || !_collections.TryGetValue(item.CollectionId, out var list) || !IsWritableTaskList(list))
         {
-            return;
+            return "This task can't be changed here.";
         }
+        string? error = null;
         try
         {
             if (GraphTasks.Edit(item, GraphTaskMapper.Read(item) with { Completed = completed }, TimeZoneInfo.Local) is { } edited)
@@ -97,9 +104,11 @@ public sealed partial class MainWindow
         catch (Exception ex)
         {
             Log.Error(ex, "Completing task {ItemId} failed", itemId);
+            error = "Something went wrong; the task was not changed.";
         }
         RenderView();
         _taskEditor.Reload(itemId, _collections);
+        return error;
     }
 
     /// <summary>Where new tasks go: the default task list if it is a writable To Do list, else the first one.</summary>

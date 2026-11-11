@@ -15,7 +15,7 @@ The user can undo recent changes with Ctrl+Z or from the "Undo" banner that appe
 
 - R1. Undoable actions: create, edit (any field), move/resize (drag or keyboard), delete, duplicate, task complete/uncomplete, move to another calendar. Not undoable: cancelling a meeting you organise ([attendees-invitations](attendees-invitations.md) R8). Undoing a change that sent an update to attendees sends another update.
 - R2. Undo stack: per app session, last 20 actions, in memory only (cleared on quit).
-- R3. After each undoable action, an in-app banner shows "Event deleted · Undo" (or similar) for 8 seconds. Edits made in the editor panel show no banner (Ctrl+Z still undoes them). Ctrl+Z undoes the latest action while the main window has focus, except while a text box has focus, where it undoes typing ([calendar-views](calendar-views.md) R6d). The [tray-flyout](tray-flyout.md) shows the same banner for task completions made in it.
+- R3. After each undoable action, an in-app banner shows "Event deleted · Undo" (or similar) for 8 seconds. Edits made in the editor panel show no banner (Ctrl+Z still undoes them). Ctrl+Z undoes the latest action while the main window has focus, except while a text box has focus, where it undoes typing ([calendar-views](calendar-views.md) R6d). The [tray-flyout](tray-flyout.md) has no undo bar; its actions go on the main window's undo stack (tray-flyout R4b).
 - R4. Mechanics:
   - If the action's outbox entry is not yet sent, undo removes/reverts it (coalesced per [local-store-offline](local-store-offline.md)).
   - If already synced, undo enqueues the inverse: edit → write previous values; create → delete; delete → re-create from the stored previous payload (same UID on CalDAV; new id on Graph).
