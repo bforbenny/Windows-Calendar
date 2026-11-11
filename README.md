@@ -38,4 +38,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [event-location](docs/prd/event-location.md) | Plain-text location/address on events | in-progress |
 | [reminders-notifications](docs/prd/reminders-notifications.md) | Windows toast reminders | pending |
 | [search](docs/prd/search.md) | Full-text search over cached items | pending |
+| [on-device-model](docs/prd/on-device-model.md) | Shared NPU language model service, AI setting, eval harness, spike gate | pending |
+| [nl-quick-add](docs/prd/nl-quick-add.md) | NPU model refines quick add for free English phrasing | pending |
+| [nl-search](docs/prd/nl-search.md) | Rule and NPU filter chips for search; attendee indexing | pending |
 | [timezone-handling](docs/prd/timezone-handling.md) | Correct TZ handling, per-event TZ, secondary TZ column | pending |

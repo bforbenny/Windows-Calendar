@@ -34,7 +34,7 @@ A single text box turns a typed phrase into an event (or a task) with date, time
 
 ## Out of scope
 
-- AI/LLM parsing, languages other than English.
+- AI refinement: see [nl-quick-add](nl-quick-add.md). Languages other than English.
 - Attendees/invitees in quick add.
 - Complex recurrence (`every 2nd Tuesday`, `until`, counts) — use the full editor.
 
