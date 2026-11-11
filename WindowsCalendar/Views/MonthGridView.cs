@@ -147,15 +147,25 @@ internal sealed class MonthGridView : UserControl, IScrollingView, IDragHost
         {
             return;
         }
-        var rowHeight = Math.Max(100, height / VisibleWeeks);
-        var width = Scroll.ViewportWidth > 0 ? Scroll.ViewportWidth : _strip.ActualWidth;
-        if (!force && Math.Abs(rowHeight - _rowHeight) < 0.5 && Math.Abs(width - _width) < 0.5)
+        var rowHeight = ViewParts.WholePixels(Math.Max(100, height / VisibleWeeks), this);
+        var width = ViewParts.ItemsWidth(Scroll);
+        var resized = Math.Abs(rowHeight - _rowHeight) >= 0.5;
+        if (!force && !resized && Math.Abs(width - _width) < 0.5)
         {
             return;
         }
         _capacity = Math.Max(1, (int)((rowHeight - DayNumberHeight) / (ChipHeight + ChipSpacing)));
         (_rowHeight, _width) = (rowHeight, width);
-        _strip.SetCount(_weekCount);
+        if (resized)
+        {
+            // New row height: the strip starts over, so offsets map to weeks by the new height.
+            Serilog.Log.Information("Month view row height {Height:F1}", rowHeight);
+            _strip.Reset(_weekCount);
+        }
+        else
+        {
+            _strip.SetCount(_weekCount);
+        }
         ApplyAnchor();
     }
 

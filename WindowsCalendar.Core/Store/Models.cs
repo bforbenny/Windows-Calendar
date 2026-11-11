@@ -53,6 +53,9 @@ public sealed record Collection(
     bool ColourOverride = false,
     string? ServerColour = null);
 
+/// <summary>A user-defined calendar set (calendar-sets R2); "All" is built in and not stored.</summary>
+public sealed record CalendarSet(string Id, string Name, int Position);
+
 /// <summary>
 /// A cached event or task (local-store-offline R2): the raw server payload plus normalised columns.
 /// RemoteId is the CalDAV UID or Graph id; null until the server knows the item. SeriesId is the Graph id of an

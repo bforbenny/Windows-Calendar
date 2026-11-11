@@ -632,11 +632,12 @@ public sealed partial class LocalStore : IDisposable
     }
 
     /// <summary>
-    /// Occurrences overlapping [from, to) in collections that are not hidden, with the fields the views draw,
+    /// Occurrences overlapping [from, to) in collections that are not hidden (or in all, with
+    /// <paramref name="includeHidden"/>, for reminders: calendar-sets R7), with the fields the views draw,
     /// ordered by start (calendar-views R12: one query per render). An MS365 occurrence without its own show-as
     /// takes its series' (event-show-as).
     /// </summary>
-    public IReadOnlyList<OccurrenceView> GetOccurrenceViews(DateTimeOffset from, DateTimeOffset to)
+    public IReadOnlyList<OccurrenceView> GetOccurrenceViews(DateTimeOffset from, DateTimeOffset to, bool includeHidden = false)
     {
         lock (_gate)
         {
@@ -651,10 +652,10 @@ public sealed partial class LocalStore : IDisposable
                 FROM occurrences o JOIN items i ON i.id = o.item_id
                 LEFT JOIN items m ON i.series_id IS NOT NULL AND m.collection_id = i.collection_id AND m.remote_id = i.series_id AND m.deleted = 0
                 WHERE i.deleted = 0 AND o.start_utc < $to AND o.end_utc >= $from
-                  AND NOT EXISTS (SELECT 1 FROM meta WHERE key = 'hidden:' || i.collection_id)
+                  AND ($all OR NOT EXISTS (SELECT 1 FROM meta WHERE key = 'hidden:' || i.collection_id))
                 ORDER BY o.start_utc, o.item_id;
                 """,
-                ("$from", from.ToUnixTimeMilliseconds()), ("$to", to.ToUnixTimeMilliseconds()));
+                ("$from", from.ToUnixTimeMilliseconds()), ("$to", to.ToUnixTimeMilliseconds()), ("$all", includeHidden));
             using var r = cmd.ExecuteReader();
             var list = new List<OccurrenceView>();
             while (r.Read())
@@ -668,8 +669,11 @@ public sealed partial class LocalStore : IDisposable
         }
     }
 
-    /// <summary>Live tasks in task lists that are not hidden, dated or not (tasks interim: the Tasks view).</summary>
-    public IReadOnlyList<Item> GetTasks()
+    /// <summary>
+    /// Live tasks in task lists that are not hidden (or in all, with <paramref name="includeHidden"/>, for reminders:
+    /// calendar-sets R7), dated or not (tasks interim: the Tasks view).
+    /// </summary>
+    public IReadOnlyList<Item> GetTasks(bool includeHidden = false)
     {
         lock (_gate)
         {
@@ -677,8 +681,8 @@ public sealed partial class LocalStore : IDisposable
                 $"""
                 SELECT {ItemColumns} FROM items i
                 WHERE i.deleted = 0 AND i.kind = 'Task'
-                  AND NOT EXISTS (SELECT 1 FROM meta WHERE key = 'hidden:' || i.collection_id);
-                """);
+                  AND ($all OR NOT EXISTS (SELECT 1 FROM meta WHERE key = 'hidden:' || i.collection_id));
+                """, ("$all", includeHidden));
             using var r = cmd.ExecuteReader();
             var items = new List<Item>();
             while (r.Read())
@@ -898,7 +902,7 @@ public sealed partial class LocalStore : IDisposable
         }
     }
 
-    // ---- Collection visibility (calendar-views R2; interim until calendar-sets) ----
+    // ---- Collection visibility (calendar-views R2): the sidebar ticks; calendar sets rewrite them (calendar-sets R5) ----
 
     public IReadOnlySet<string> GetHiddenCollectionIds()
     {
@@ -1531,7 +1535,9 @@ public sealed partial class LocalStore : IDisposable
             ("$id", a.Id), ("$type", a.Type.ToString()), ("$name", a.DisplayName), ("$url", a.ServerUrl),
             ("$user", a.Username), ("$email", a.Email));
 
-    private void InsertCollection(SqliteTransaction? tx, Collection c) =>
+    /// <summary>A new collection joins only "All": while a user-defined set is active it starts hidden (calendar-sets R9).</summary>
+    private void InsertCollection(SqliteTransaction? tx, Collection c)
+    {
         Execute(_connection, tx,
             """
             INSERT INTO collections (id, account_id, kind, name, colour, shape, reminders_on, read_only, remote_ref, source_url,
@@ -1541,6 +1547,11 @@ public sealed partial class LocalStore : IDisposable
             ("$id", c.Id), ("$account", c.AccountId), ("$kind", c.Kind.ToString()), ("$name", c.Name),
             ("$colour", c.Colour), ("$shape", c.Shape), ("$reminders", c.RemindersOn), ("$readOnly", c.ReadOnly),
             ("$remote", c.RemoteRef), ("$source", c.SourceUrl), ("$override", c.ColourOverride), ("$server", c.ServerColour));
+        if (ActiveSet(tx) is not null)
+        {
+            SetMeta(tx, "hidden:" + c.Id, "1");
+        }
+    }
 
     private string? GetMeta(SqliteTransaction? tx, string key)
     {

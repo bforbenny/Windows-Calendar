@@ -94,6 +94,12 @@ internal sealed class VirtualStrip : ItemsControl
         ItemsSource = Enumerable.Range(0, count).ToList();
     }
 
+    /// <summary>
+    /// Shows items 0 .. <paramref name="count"/> - 1 from scratch, after the item size changed: the panel forgets the
+    /// sizes it measured, so two strips that follow each other map an offset to the same item again.
+    /// </summary>
+    public void Reset(int count) => ItemsSource = Enumerable.Range(0, count).ToList();
+
     /// <summary>Rebuilds the content of every item that exists now (new data, size or theme).</summary>
     public void RebindAll()
     {

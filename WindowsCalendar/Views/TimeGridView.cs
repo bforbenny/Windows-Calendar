@@ -187,13 +187,14 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
     /// <summary>Recomputes the column width from the viewport; the columns are rebound with it and the data.</summary>
     private void Relayout(bool force = false)
     {
-        var viewport = Scroll.ViewportWidth > 0 ? Scroll.ViewportWidth : _body.ActualWidth;
+        var viewport = ViewParts.ItemsWidth(Scroll);
         if (viewport <= 0)
         {
             return;
         }
-        var width = Math.Max(VisibleDays * 40, viewport) / VisibleDays;
-        if (!force && Math.Abs(width - _columnWidth) < 0.5)
+        var width = ViewParts.WholePixels(Math.Max(VisibleDays * 40, viewport) / VisibleDays, this);
+        var resized = Math.Abs(width - _columnWidth) >= 0.5;
+        if (!force && !resized)
         {
             return;
         }
@@ -204,8 +205,18 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
             _laneCanvas.Children.Remove(card);
         }
         _laneCards.Clear();
-        _body.SetCount(_count);
-        _headers.SetCount(_count);
+        if (resized)
+        {
+            // New item size: both strips start over, so the headers stay over their days.
+            Serilog.Log.Information("Week view column width {Width:F1}", width);
+            _body.Reset(_count);
+            _headers.Reset(_count);
+        }
+        else
+        {
+            _body.SetCount(_count);
+            _headers.SetCount(_count);
+        }
         ShowLane();
         ApplyAnchor();
     }
@@ -288,9 +299,6 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
         column.Background = ViewParts.DayShade(date, isToday, _holidays.ContainsKey(date)) ?? ViewParts.Clickable;
         column.Tag = date;
 
-        // The left divider.
-        column.Children.Add(new Rectangle { Width = 1, Fill = Theme.Brush("DividerBrush"), HorizontalAlignment = HorizontalAlignment.Left });
-
         // A working day: the time before Start and after End is shaded (calendar-shading R2), under the hour lines.
         var hours = ViewParts.Working;
         if (hours.IsWorkingDay(date) && !_holidays.ContainsKey(date))
@@ -312,6 +320,9 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
             lines.Children.Add(line);
         }
         column.Children.Add(lines);
+
+        // The left divider, over the off-hours shade so the shade does not hide it.
+        column.Children.Add(new Rectangle { Width = 1, Fill = Theme.Brush("DividerBrush"), HorizontalAlignment = HorizontalAlignment.Left });
 
         var panel = new DayColumnPanel { Margin = new Thickness(1, 0, 0, 0) };
         var dayStart = date.ToDateTime(TimeOnly.MinValue);

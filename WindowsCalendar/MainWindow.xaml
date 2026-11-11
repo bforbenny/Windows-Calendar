@@ -159,13 +159,22 @@
                             BorderThickness="0,0,1,0">
                         <Grid>
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <!-- Calendar set selector and its options menu, also Ctrl+1 … Ctrl+9 (calendar-sets R3, R4). -->
+                            <DockPanel x:Name="SetBar" Margin="12,8,12,0" Visibility="Collapsed">
+                                <ui:Button x:Name="SetMenuButton" DockPanel.Dock="Right" Margin="4,0,0,0" Click="OnSetMenu"
+                                           ToolTip="Calendar set options" AutomationProperties.Name="Calendar set options">
+                                    <TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE712;" FontSize="16" />
+                                </ui:Button>
+                                <ComboBox x:Name="SetSelector" SelectionChanged="OnSetSelected" AutomationProperties.Name="Calendar set" />
+                            </DockPanel>
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                                 <StackPanel x:Name="AccountList" Margin="12,8" />
                             </ScrollViewer>
-                            <ui:Button x:Name="AddAccountLink" Grid.Row="1" Margin="8" Content="Add account" Appearance="Transparent"
+                            <ui:Button x:Name="AddAccountLink" Grid.Row="2" Margin="8" Content="Add account" Appearance="Transparent"
                                        Visibility="Collapsed" Click="OnAddAccount" />
                         </Grid>
                     </Border>

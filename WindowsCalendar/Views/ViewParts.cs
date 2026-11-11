@@ -86,6 +86,25 @@ internal static class ViewParts
     }
 
     /// <summary>
+    /// The width the items get: the scroller's width less a normal vertical scroll bar when one is shown. Unlike
+    /// ViewportWidth it does not change while the scroll bar widens under the pointer, so scrolling never resizes
+    /// the columns (calendar-views R1a).
+    /// </summary>
+    public static double ItemsWidth(ScrollViewer scroll) =>
+        scroll.ActualWidth - (scroll.ComputedVerticalScrollBarVisibility == Visibility.Visible ? SystemParameters.VerticalScrollBarWidth : 0);
+
+    /// <summary>
+    /// <paramref name="size"/> rounded down to whole device pixels. Layout rounding draws each strip item at a whole
+    /// pixel size, so an item size that is not one would drift from positions computed as index × size (the all-day
+    /// lane, the anchor day) by a little more each item.
+    /// </summary>
+    public static double WholePixels(double size, Visual visual)
+    {
+        var scale = VisualTreeHelper.GetDpi(visual).DpiScaleX;
+        return Math.Floor(size * scale) / scale;
+    }
+
+    /// <summary>
     /// A strip that follows another ScrollViewer (day headers, all-day lane, hour labels): no scroll bars, no user
     /// scrolling of its own, moved by the view in the same layout pass as the main scroll.
     /// </summary>

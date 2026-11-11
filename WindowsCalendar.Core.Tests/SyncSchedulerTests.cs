@@ -59,51 +59,6 @@ public sealed class SyncSchedulerTests
         await AssertNoRun();
     }
 
-    /// <summary>A scheduler whose "first" run waits for <paramref name="release"/>; runs are written as reason:collections.</summary>
-    private SyncScheduler Targeted(TaskCompletionSource release) => new(async (r, only, _) =>
-    {
-        _runs.Writer.TryWrite(only is null ? r : $"{r}:{string.Join(",", only.Order())}");
-        if (r == "first")
-        {
-            await release.Task;
-        }
-    }, _ => { }, _time);
-
-    [Fact]
-    public async Task CollectionRequests_RunForThoseCollectionsOnly()
-    {
-        var release = new TaskCompletionSource();
-        using var scheduler = Targeted(release);
-
-        scheduler.RequestCollection("shown", "c1");
-        Assert.Equal("shown:c1", await NextRun());
-        scheduler.Request("first");
-        Assert.Equal("first", await NextRun());
-        scheduler.RequestCollection("shown", "c2");
-        scheduler.RequestCollection("shown", "c3");
-        release.SetResult();
-
-        Assert.Equal("shown:c2,c3", await NextRun());
-        await AssertNoRun();
-    }
-
-    [Fact]
-    public async Task FullRequest_WinsOverPendingCollectionRequest()
-    {
-        var release = new TaskCompletionSource();
-        using var scheduler = Targeted(release);
-
-        scheduler.Request("first");
-        Assert.Equal("first", await NextRun());
-        scheduler.RequestCollection("shown", "c1");
-        scheduler.Request("local change");
-        scheduler.RequestCollection("shown", "c2");
-        release.SetResult();
-
-        Assert.Equal("local change", await NextRun());
-        await AssertNoRun();
-    }
-
     [Fact]
     public async Task FailingRun_IsReportedAndSchedulerKeepsGoing()
     {

@@ -5,10 +5,9 @@ using WindowsCalendar.Core.Views;
 namespace WindowsCalendar.Core.Reminders;
 
 /// <summary>
-/// Collects the reminders of visible calendars and task lists with "Reminders on" (reminders-notifications R1, R5, R7).
-/// Events come from the occurrence index, one set per occurrence; cancelled ones are not in it. Tasks come from the
-/// tasks table; completed tasks have none. Hidden calendars are not pulled by sync, so their reminders could be stale
-/// and are left out.
+/// Collects the reminders of calendars and task lists with "Reminders on" (reminders-notifications R1, R5, R7), shown or
+/// hidden: sync pulls hidden ones too (calendar-sets R7). Events come from the occurrence index, one set per occurrence;
+/// cancelled ones are not in it. Tasks come from the tasks table; completed tasks have none.
 /// </summary>
 public static class ReminderSource
 {
@@ -28,7 +27,7 @@ public static class ReminderSource
 
         var reminders = new List<Reminder>();
         var items = new Dictionary<string, Item?>();
-        foreach (var o in store.GetOccurrenceViews(from, from + LookAhead))
+        foreach (var o in store.GetOccurrenceViews(from, from + LookAhead, includeHidden: true))
         {
             if (o.Kind != ItemKind.Event || !collections.TryGetValue(o.CollectionId, out var c) || !c.Collection.RemindersOn)
             {
@@ -50,7 +49,7 @@ public static class ReminderSource
             }
         }
 
-        foreach (var task in store.GetTasks())
+        foreach (var task in store.GetTasks(includeHidden: true))
         {
             if (TaskQuery.IsCompleted(task) || !collections.TryGetValue(task.CollectionId, out var c) || !c.Collection.RemindersOn)
             {

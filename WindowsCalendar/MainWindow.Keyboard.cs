@@ -13,7 +13,7 @@ namespace WindowsCalendar;
 
 /// <summary>
 /// Keyboard shortcuts and the keyboard selection (keyboard-navigation interim): F1-F4 views, T today, F5 sync,
-/// Ctrl+G go to date, Ctrl+F / Ctrl+E search, PgUp / PgDn, ? cheat sheet; Arrows select, Enter opens, Del deletes, Ctrl+D duplicates, Ctrl+J joins, Esc clears, and
+/// Ctrl+G go to date, Ctrl+F / Ctrl+E search, Ctrl+1 … Ctrl+9 calendar sets, PgUp / PgDn, ? cheat sheet; Arrows select, Enter opens, Del deletes, Ctrl+D duplicates, Ctrl+J joins, Esc clears, and
 /// Alt(+Shift)+Arrows move or resize the selected event through the drag path (R3).
 /// </summary>
 public sealed partial class MainWindow
@@ -45,6 +45,7 @@ public sealed partial class MainWindow
         ("F5", "Sync now"),
         ("Ctrl+,", "Settings"),
         ("Ctrl+B", "Hide or show the sidebar"),
+        ("Ctrl+1 … Ctrl+9", "Switch calendar set (Ctrl+1: All)"),
         ("?", "This list"),
         ("Hold Ctrl", "Show the keys on the buttons"),
     ];
@@ -79,6 +80,11 @@ public sealed partial class MainWindow
         if (ctrl && shift && !alt && key == Key.J)
         {
             JoinNext();
+            return true;
+        }
+        // Ctrl+1 … Ctrl+9: the first nine calendar sets, All first (calendar-sets R4).
+        if (ctrl && !shift && !alt && key is >= Key.D1 and <= Key.D9 && SwitchSetAt(key - Key.D1))
+        {
             return true;
         }
         if (ctrl && !shift && !alt && key is Key.F or Key.E && SettingsHost.Visibility != Visibility.Visible)

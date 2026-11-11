@@ -10,7 +10,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | --- | --- | --- |
 | [app-platform](docs/prd/app-platform.md) | Tech stack, packaging, tray, start with Windows | in-progress |
 | [account-management](docs/prd/account-management.md) | Multiple MS365 and Radicale accounts, credential storage | in-progress |
-| [local-store-offline](docs/prd/local-store-offline.md) | SQLite cache, outbox, offline read/write | closed |
+| [local-store-offline](docs/prd/local-store-offline.md) | SQLite cache, outbox, offline read/write | updated |
 | [sync-ms365](docs/prd/sync-ms365.md) | Graph calendar and To Do sync | in-progress |
 | [sync-radicale](docs/prd/sync-radicale.md) | CalDAV sync for events and tasks | in-progress |
 | [conflict-resolution](docs/prd/conflict-resolution.md) | Server wins, local copy preserved | in-progress |
@@ -24,10 +24,10 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [duplicate-event](docs/prd/duplicate-event.md) | Duplicate an event | in-progress |
 | [undo](docs/prd/undo.md) | Undo recent changes | in-progress |
 | [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | in-progress |
-| [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | pending |
+| [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | in-progress |
 | [calendar-shading](docs/prd/calendar-shading.md) | Working hours, public holidays, week numbers | closed |
 | [app-updates](docs/prd/app-updates.md) | MSIX updates via App Installer, data across versions, new-PC install | pending |
-| [tray-flyout](docs/prd/tray-flyout.md) | Tray pop-up with today's agenda and Join | pending |
+| [tray-flyout](docs/prd/tray-flyout.md) | Tray pop-up with today's agenda and Join | closed |
 | [ui-colour-theme](docs/prd/ui-colour-theme.md) | Palette, colour roles, calendar colours and shape markers | in-progress |
 | [display-scaling](docs/prd/display-scaling.md) | Layout at 100% / 150% scaling, multi-monitor | pending |
 | [ui-style](docs/prd/ui-style.md) | Font, type ramp, spacing, motion, locale formats | pending |
@@ -36,8 +36,8 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [settings-page](docs/prd/settings-page.md) | Settings page layout and contents | in-progress |
 | [tasks](docs/prd/tasks.md) | VTODO and Microsoft To Do tasks | in-progress |
 | [event-location](docs/prd/event-location.md) | Plain-text location/address on events | in-progress |
-| [reminders-notifications](docs/prd/reminders-notifications.md) | Windows toast reminders | in-progress |
-| [search](docs/prd/search.md) | Full-text search over cached items | pending |
+| [reminders-notifications](docs/prd/reminders-notifications.md) | Windows toast reminders | updated |
+| [search](docs/prd/search.md) | Full-text search over cached items | in-progress |
 | [on-device-model](docs/prd/on-device-model.md) | Shared NPU language model service, AI setting, eval harness, spike gate | parked |
 | [nl-quick-add](docs/prd/nl-quick-add.md) | NPU model refines quick add for free English phrasing | parked |
 | [nl-search](docs/prd/nl-search.md) | Rule-based filter chips and filters for search; attendee indexing | pending |

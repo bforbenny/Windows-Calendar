@@ -252,7 +252,7 @@ public partial class App : Application
         NetworkInformation.GetInternetConnectionProfile()?.GetNetworkConnectivityLevel() == NetworkConnectivityLevel.InternetAccess;
 
     /// <summary>One sync run, with its start and end shown in the tray flyout's footer (tray-flyout R3, R4a).</summary>
-    private async Task RunSync(string reason, IReadOnlySet<string>? only, CancellationToken cancellationToken)
+    private async Task RunSync(string reason, CancellationToken cancellationToken)
     {
         _ = Dispatcher.BeginInvoke(() =>
         {
@@ -261,7 +261,7 @@ public partial class App : Application
         });
         try
         {
-            await RunSyncCore(reason, only, cancellationToken);
+            await RunSyncCore(reason, cancellationToken);
         }
         finally
         {
@@ -274,7 +274,7 @@ public partial class App : Application
         }
     }
 
-    private async Task RunSyncCore(string reason, IReadOnlySet<string>? only, CancellationToken cancellationToken)
+    private async Task RunSyncCore(string reason, CancellationToken cancellationToken)
     {
         Log.Information("Sync requested ({Reason})", reason);
         if (Store is not { } store)
@@ -294,17 +294,14 @@ public partial class App : Application
         // (reminders-notifications R2); runs come at least every 5 minutes.
         ReminderToasts.Reschedule(store, ReminderPlanner.RunningWindow);
 
-        // All accounts sync at once (local-store-offline R10); each catches its own errors. Hidden collections are
-        // not pulled; a run for a just-ticked collection syncs only its account and pulls only it.
-        var hidden = store.GetHiddenCollectionIds();
-        Func<Collection, bool> pull = c => !hidden.Contains(c.Id) && (only is null || only.Contains(c.Id));
-        var accounts = store.GetAccounts()
-            .Where(a => only is null || store.GetCollections(a.Id).Any(c => only.Contains(c.Id)));
+        // All accounts sync at once (local-store-offline R10); each catches its own errors. Every collection is pulled,
+        // shown or hidden (calendar-sets R7).
+        var accounts = store.GetAccounts();
         var auth = Ms365;
         var results = await Task.WhenAll(accounts.Select(account => account.Type switch
         {
-            AccountType.CalDAV => SyncRadicaleAsync(store, account, reason, pull, cancellationToken),
-            AccountType.MS365 when auth is not null => SyncMs365Async(store, account, auth, pull, cancellationToken),
+            AccountType.CalDAV => SyncRadicaleAsync(store, account, reason, cancellationToken),
+            AccountType.MS365 when auth is not null => SyncMs365Async(store, account, auth, cancellationToken),
             _ => Task.FromResult(false),
         }));
         if (auth is null && store.GetAccounts().Any(a => a.Type == AccountType.MS365))
@@ -353,8 +350,7 @@ public partial class App : Application
     }
 
     /// <summary>Syncs one Radicale account. Returns whether the views may have changed.</summary>
-    private async Task<bool> SyncRadicaleAsync(LocalStore store, Account account, string reason, Func<Collection, bool> pull,
-        CancellationToken cancellationToken)
+    private async Task<bool> SyncRadicaleAsync(LocalStore store, Account account, string reason, CancellationToken cancellationToken)
     {
         if (IsPaused(account.Id))
         {
@@ -374,7 +370,7 @@ public partial class App : Application
         try
         {
             // Sync now also refetches subscribed feeds at once (sync-radicale R1a).
-            var summary = await radicale.SyncAccountAsync(account, password, forceFeeds: reason == "sync now", pull, cancellationToken);
+            var summary = await radicale.SyncAccountAsync(account, password, forceFeeds: reason == "sync now", cancellationToken: cancellationToken);
             Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
             return summary.AnyChange;
         }
@@ -399,8 +395,7 @@ public partial class App : Application
     /// Syncs one MS365 account: queued changes out, then calendars in (sync-ms365). The access token is fetched silently for this run only and never
     /// logged. Needing sign-in pauses the account until restart (R11 interim); throttling backs it off (R10).
     /// </summary>
-    private async Task<bool> SyncMs365Async(LocalStore store, Account account, Ms365Auth auth, Func<Collection, bool> pull,
-        CancellationToken cancellationToken)
+    private async Task<bool> SyncMs365Async(LocalStore store, Account account, Ms365Auth auth, CancellationToken cancellationToken)
     {
         lock (_accountGate)
         {
@@ -422,7 +417,7 @@ public partial class App : Application
         try
         {
             token = await auth.GetTokenAsync(account.Username ?? "", cancellationToken);
-            var summary = await graph.SyncAccountAsync(account, token, pull, cancellationToken);
+            var summary = await graph.SyncAccountAsync(account, token, cancellationToken: cancellationToken);
             Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
             return summary.AnyChange;
         }
@@ -472,9 +467,6 @@ public partial class App : Application
 
     /// <summary>Asks for a sync now, e.g. after an account is added (local-store-offline R10).</summary>
     internal void RequestSync(string reason) => _scheduler?.Request(reason);
-
-    /// <summary>A calendar or task list was ticked: sync just it, since hidden ones are not pulled (local-store-offline R10).</summary>
-    internal void SyncCollection(string collectionId) => _scheduler?.RequestCollection("calendar shown", collectionId);
 
     /// <summary>Tray and toolbar Sync now: retry failed changes immediately (local-store-offline R7, R10).</summary>
     internal void SyncNow()

@@ -2,7 +2,7 @@
 description: Local SQLite store, offline read/write and the outbox that pushes local changes when online
 when-to-use: Before working on the data model, persistence, offline behaviour, or the change queue
 tags: [storage, sqlite, offline, outbox, data-model]
-status: closed
+status: updated
 ---
 
 # Local store and offline
@@ -41,7 +41,7 @@ All synced data is held in a local SQLite database, so the app is fully usable o
   - One sync runs at a time; a request during a run causes exactly one more run afterwards.
   - Within a run, all accounts sync in parallel. Within an account, queued changes are sent first, in outbox order; then its collections (and subscribed feeds) are pulled in parallel, at most 4 at a time per account (Graph allows 4 concurrent requests per mailbox). A failure that stops an account (sign-in, throttling, unreachable) stops only that account.
   - Each collection reports when its pull starts and ends, for the sidebar indicator ([ui-states](ui-states.md) R1).
-  - Hidden (unticked) calendars, task lists and feeds are not pulled; their queued changes are still sent. Ticking one requests a sync of just that collection: its account's queued changes are sent, then only it is pulled. A full sync requested before that run starts takes its place, so no full sync is lost.
+  - Every calendar, task list and feed is pulled, whether ticked in the sidebar or not ([calendar-sets](calendar-sets.md) R7). Changed 2026-11-11; before that, unticked ones were not pulled and ticking one synced only it.
   - Interim (until the sync engines exist): a sync only writes to the log.
 
 ## Out of scope

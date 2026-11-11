@@ -28,7 +28,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
   - the Calendars and Task lists section headings, and each account group within them, have a chevron to collapse and expand them;
   - the sidebar's shown/hidden state and every collapsed section and account group persist across restarts (stored locally in the store's `meta` table);
   - a collection's status follows its name as an icon in the secondary text colour, with a tooltip and screen-reader name giving the text: link icon for a subscribed feed, lock icon for a read-only calendar, warning icon for a feed that is not secure and so not synced;
-  - unticked calendars and task lists are not pulled from the server; ticking one syncs it straight away ([local-store-offline](local-store-offline.md) R10);
+  - unticked calendars and task lists are still synced ([calendar-sets](calendar-sets.md) R7), so ticking one shows it at once with no sync;
   - while a calendar or task list is syncing, its name shows a hue wave moving left to right ([ui-states](ui-states.md) R1); with Windows animations off, the name is shown in the accent colour instead.
 - R2a. Calendar colours and shapes, per [ui-colour-theme](ui-colour-theme.md) R6–R9:
   - each calendar or task list has one of 24 colours (8 hues × 3 levels) and a shape marker (up triangle, down triangle, square, circle, pentagon), shown by default;
@@ -57,7 +57,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
   - changing the calendar of a new event that has not synced yet re-targets its outbox create without asking; show-as values the new backend does not support reset to Busy;
   - Ctrl+Z while a text box has focus undoes typing in that box; otherwise it is the app undo ([undo](undo.md) R3);
   - meetings with attendees follow [attendees-invitations](attendees-invitations.md) R7–R8.
-- R6e. Calendar picker: the editor's Calendar drop-down lists only writable calendars that are ticked (visible) in the sidebar, plus the event's own calendar even when it is unticked. A new event pre-selects the default calendar when it is ticked, else the first ticked writable calendar in sidebar order; if no writable calendar is ticked, all writable calendars are listed. The same rule applies to every calendar picker: duplicate into another calendar ([duplicate-event](duplicate-event.md) R6) and quick add `#name` ([quick-add](quick-add.md) R2). Interim (until [calendar-sets](calendar-sets.md) exists): "ticked" means the sidebar checkbox.
+- R6e. Calendar picker: the editor's Calendar drop-down lists only writable calendars that are ticked (visible) in the sidebar, plus the event's own calendar even when it is unticked. A new event pre-selects the default calendar when it is ticked, else the first ticked writable calendar in sidebar order; if no writable calendar is ticked, all writable calendars are listed. The same rule applies to every calendar picker: duplicate into another calendar ([duplicate-event](duplicate-event.md) R6) and quick add `#name` ([quick-add](quick-add.md) R2). "Ticked" means the sidebar checkbox, which the active set sets ([calendar-sets](calendar-sets.md) R5).
 - R6a. Events can be duplicated ([duplicate-event](duplicate-event.md)). Non-working hours, public holidays and week numbers are shown per [calendar-shading](calendar-shading.md).
 - R7. Drag to move and drag the top or bottom edge to resize in Day/Week, snapping to 15 minutes (minimum length 15 minutes). Drag to move between days in Month and Agenda, keeping the time and length. A preview shows where the event will land; Esc cancels the drag; holding near the edge of the view scrolls it. For recurring events, a drag always asks for the scope (this / this and following / all), even while the editor panel has one. "This and following" on the first occurrence acts as "all". Dragging from the all-day lane into the grid makes a 1-hour timed event at the drop slot; dragging into the all-day lane makes an all-day event on that date. Moving an occurrence onto or past the previous or next occurrence is refused before saving, with a message.
 - R8. Moving an event to a different calendar within the **same** account is supported. Moving across accounts is a copy + delete with confirmation, queued as one linked outbox group (the delete is not sent if the copy fails). Between Microsoft 365 and CalDAV the fields are mapped in full, and the confirmation lists what cannot be carried over. Meetings and invitations (events with attendees or an organiser) cannot be moved to another calendar.
@@ -70,7 +70,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 
 - Week, Month and Agenda with the toolbar (Today, view switcher, period title, Sync now). No editor, create, drag or delete yet.
 - The week starts on the Windows first day of week.
-- Sidebar: checkbox, swatch and shape per calendar and task list. Hidden collections are remembered in the store's `meta` table until [calendar-sets](calendar-sets.md) takes over.
+- Sidebar: checkbox, swatch and shape per calendar and task list. Hidden collections are remembered in the store's `meta` table; [calendar-sets](calendar-sets.md) R8 keeps them as the current visibility.
 - Colours: server colours are snapped per [ui-colour-theme](ui-colour-theme.md) interim, otherwise automatic; overrides come later.
 - R1: the Tasks tab follows Agenda; open tasks with a due date show in Week, Month and Agenda per [tasks](tasks.md) interim.
 - Layout maths (overlap columns, periods) lives in `WindowsCalendar.Core` with tests; render time is logged for R12.
@@ -122,7 +122,7 @@ Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or m
 - [ ] Collapsing the Task lists section and one account group survives a restart.
 - [ ] Subscribed, read-only and not-secure collections show a link, lock or warning icon instead of a text label, with the text as a tooltip.
 - [ ] During Sync now, each calendar's name shows the hue wave only while that calendar syncs.
-- [ ] Sync now skips unticked calendars (no wave, no pull in the log); ticking one waves and syncs only that calendar.
+- [ ] Sync now also syncs unticked calendars; ticking one shows it at once, with no sync.
 - [ ] A calendar colour or shape changed in the app persists across restarts and is not changed on the server.
 - [ ] Each event card shows its calendar's shape marker before the title.
 - [ ] A single click opens the editor panel; a small drag moves the event instead.
@@ -135,3 +135,7 @@ Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or m
 
 - [local-store-offline](local-store-offline.md), [recurring-events](recurring-events.md), [timezone-handling](timezone-handling.md), [event-location](event-location.md), [reminders-notifications](reminders-notifications.md)
 - [agenda-view](agenda-view.md), [event-show-as](event-show-as.md), [online-meeting-join](online-meeting-join.md), [quick-add](quick-add.md), [undo](undo.md), [keyboard-navigation](keyboard-navigation.md), [calendar-shading](calendar-shading.md), [calendar-sets](calendar-sets.md), [duplicate-event](duplicate-event.md), [ui-colour-theme](ui-colour-theme.md), [display-scaling](display-scaling.md), [attendees-invitations](attendees-invitations.md)
+
+## Decisions
+
+- 2026-11-11: Week, Agenda and Month size their columns (rows) from the view width less a normal scroll bar, not the viewport, so the WPF-UI scroll bar widening during a scroll never resizes them; when the size does change, the scrolling strips start over. Before this, day headers and the all-day lane could drift days away from the columns after a vertical scroll.

@@ -2,7 +2,7 @@
 description: Every in-app banner floats over the calendar as a card, so banners never push the views or toolbar
 when-to-use: Before adding or changing any in-app banner, notice bar or InfoBar (undo, conflicts, offline, sign-in, sync errors)
 tags: [ui, banners, infobar, layout]
-status: updated
+status: closed
 ---
 
 # Floating banners

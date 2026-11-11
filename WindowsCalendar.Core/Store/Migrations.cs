@@ -198,6 +198,21 @@ internal static class Migrations
         );
         CREATE INDEX ix_reminder_state_fire ON reminder_state(fire_utc);
         """,
+
+        // v15: calendar sets (calendar-sets R2, R8). Members go with their set or collection; the active set is in meta.
+        """
+        CREATE TABLE calendar_sets (
+            id       TEXT PRIMARY KEY,
+            name     TEXT NOT NULL,
+            position INTEGER NOT NULL
+        );
+
+        CREATE TABLE calendar_set_members (
+            set_id        TEXT NOT NULL REFERENCES calendar_sets(id) ON DELETE CASCADE,
+            collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+            PRIMARY KEY (set_id, collection_id)
+        );
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

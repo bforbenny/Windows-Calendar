@@ -47,7 +47,7 @@ public sealed class RadicaleSync(LocalStore store, HttpClient http, TimeProvider
     /// CalDAV collection, then refreshes subscribed feeds (hourly, or now when <paramref name="forceFeeds"/>).
     /// Throws <see cref="CalDavException"/> on Radicale transport errors (e.g. WrongCredentials); work done before
     /// the error keeps its progress. A failing feed is counted, not thrown. Only collections <paramref name="pull"/>
-    /// accepts are pulled (hidden ones are not, local-store-offline R10); queued changes are sent for all.
+    /// accepts are pulled (the app pulls all, shown or hidden: local-store-offline R10); queued changes are sent for all.
     /// </summary>
     public async Task<SyncSummary> SyncAccountAsync(Account account, string password, bool forceFeeds = false,
         Func<Collection, bool>? pull = null, CancellationToken cancellationToken = default)

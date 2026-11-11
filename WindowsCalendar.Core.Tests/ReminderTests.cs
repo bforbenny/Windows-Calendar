@@ -219,15 +219,20 @@ public sealed class ReminderTests : IDisposable
     // ---- Calendar filters (R5) ----
 
     [Fact]
-    public void CalendarsWithRemindersOff_OrHidden_HaveNone()
+    public void CalendarsWithRemindersOff_HaveNone_HiddenOnesStillDo()
     {
         var ev = Ics("VEVENT", "UID:x\nDTSTART:20261112T090000Z\nDTEND:20261112T100000Z\n" + Alarm(":-PT15M"));
         _store.CreateItem(new Item("quiet1", "quiet", ItemKind.Event, null, ev));
         _store.CreateItem(new Item("shown", "cal", ItemKind.Event, null, ev));
-        Assert.Equal(["shown"], Collect().Select(r => r.ItemId));
+        _store.CreateItem(new Item("t3", "todo", ItemKind.Task, null, Ics("VTODO",
+            "UID:t3\nDUE:20261112T170000Z\nSUMMARY:Report\n" + Alarm(";RELATED=END:-PT1H")),
+            Summary: "Report", DueUtc: At(12, 17)));
+        Assert.Equal(["shown", "t3"], Collect().Select(r => r.ItemId));
 
+        // Hidden in the sidebar or by a calendar set: still synced, so still reminded (calendar-sets R7).
         _store.SetCollectionHidden("cal", true);
-        Assert.Empty(Collect());
+        _store.SetCollectionHidden("todo", true);
+        Assert.Equal(["shown", "t3"], Collect().Select(r => r.ItemId));
     }
 
     // ---- State (R2, R4) ----

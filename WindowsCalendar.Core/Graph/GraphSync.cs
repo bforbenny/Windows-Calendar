@@ -41,7 +41,7 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
 
     /// <summary>
     /// Syncs one account with an access token obtained for this run. Only calendars and task lists <paramref name="pull"/>
-    /// accepts are pulled (hidden ones are not, local-store-offline R10); queued changes are sent for all.
+    /// accepts are pulled (the app pulls all, shown or hidden: local-store-offline R10); queued changes are sent for all.
     /// </summary>
     public async Task<SyncSummary> SyncAccountAsync(Account account, string accessToken, Func<Collection, bool>? pull = null,
         CancellationToken cancellationToken = default)

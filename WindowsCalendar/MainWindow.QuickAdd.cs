@@ -238,7 +238,6 @@ public sealed partial class MainWindow
         Store?.SetCollectionHidden(id, false);
         ShowAccounts();
         RenderView();
-        ((App)Application.Current).SyncCollection(id);
         BannerFade.SetOpen(HiddenBar, false);
         _hiddenId = null;
     }

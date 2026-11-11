@@ -2,7 +2,7 @@
 description: Windows toast reminders for events and tasks, firing even when the main window is closed
 when-to-use: Before working on reminders, alarms, VALARM/reminder mapping, or toast notifications
 tags: [reminders, notifications, toast, valarm]
-status: closed
+status: updated
 ---
 
 # Reminders and notifications
@@ -19,7 +19,7 @@ Event and task reminders show as Windows toast notifications with Snooze and Dis
   - Window: while the app runs, toasts are scheduled 2 hours ahead and topped up on every sync run (at least every 5 minutes, and after every local change), so a long sleep releases at most 2 hours of reminders on wake. On Quit the window widens to 48 hours, so reminders keep firing for up to 48 hours after Quit ([settings-page](settings-page.md) R7).
   - System changes: one shared hook in the app listens for Windows timezone or clock changes (`SystemEvents.TimeChanged`) and resume from sleep (`SystemEvents.PowerModeChanged`). It rebuilds the occurrence index, reschedules reminders, and refreshes the views and the [tray-flyout](tray-flyout.md). [timezone-handling](timezone-handling.md) R6 uses the same hook.
   - Late reminder: when a reminder's time is already past at scheduling (e.g. an event created 5 min ahead with a 15 min reminder), it shows at once if the event has not started yet and the reminder time passed less than 2 hours ago, else it is skipped. The 2-hour cap stops a first run or a long time off from bringing a flood; R6 covers those. A reminder already scheduled or shown is recorded (R4 table) and never shown late again.
-  - Hidden calendars and task lists get no reminders: sync does not pull them, so their reminders could be stale.
+  - Calendars and task lists hidden in the sidebar or by the active set still get reminders, since sync pulls them too ([calendar-sets](calendar-sets.md) R7). Changed 2026-11-11; before that, hidden ones got none.
   - The prerequisite-check code (the `test` toast group and `ScheduleTestToastsIfRequested`) is removed when the scheduler lands.
   - Toast actions are handled by a COM activator declared in the package manifest (`windows.comServer` + `windows.toastNotificationActivation`), implemented in the app with `INotificationActivationCallback` and no toolkit package. When the app is not running, Windows starts it with an activation argument; it starts in tray mode, handles the action, and stays in the tray.
 - R3. Toast content: title, time range (in the display timezone), location, calendar name. Actions: a snooze-time picker (5 / 10 / 15 min, 1 h; default 5 min) with a Snooze button, Dismiss, and Join when the event has a meeting link, else Open; clicking the toast body opens the item ([online-meeting-join](online-meeting-join.md)). If the app is not running, a toast action starts it in tray mode to handle the action: Join launches the link, Open shows the main window on that event with the editor open, Snooze and Dismiss are recorded. Clicking the missed-reminder summary (R6) opens the Agenda view on today.

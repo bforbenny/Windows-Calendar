@@ -119,19 +119,30 @@ internal sealed class AgendaView : UserControl, IScrollingView, IDragHost
 
     private void Relayout(bool force = false)
     {
-        var viewport = Scroll.ViewportWidth > 0 ? Scroll.ViewportWidth : _body.ActualWidth;
+        var viewport = ViewParts.ItemsWidth(Scroll);
         if (viewport <= 0)
         {
             return;
         }
-        var width = Math.Max(VisibleDays * 40, viewport) / VisibleDays;
-        if (!force && Math.Abs(width - _columnWidth) < 0.5)
+        var width = ViewParts.WholePixels(Math.Max(VisibleDays * 40, viewport) / VisibleDays, this);
+        var resized = Math.Abs(width - _columnWidth) >= 0.5;
+        if (!force && !resized)
         {
             return;
         }
         _columnWidth = width;
-        _body.SetCount(_count);
-        _headers.SetCount(_count);
+        if (resized)
+        {
+            // New item size: both strips start over, so the headers stay over their days.
+            Serilog.Log.Information("Agenda view column width {Width:F1}", width);
+            _body.Reset(_count);
+            _headers.Reset(_count);
+        }
+        else
+        {
+            _body.SetCount(_count);
+            _headers.SetCount(_count);
+        }
         ApplyAnchor(toTop: false);
     }
 

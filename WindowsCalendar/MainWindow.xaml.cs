@@ -596,8 +596,8 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     /// <summary>
     /// Sidebar (calendar-views R2): a Calendars and a Task lists section, each grouped by account, with a visibility
-    /// checkbox, colour and shape per collection. Hidden collections are remembered (interim until calendar-sets).
-    /// Shows the first-launch text when there are no accounts (ui-states R5).
+    /// checkbox, colour and shape per collection, under the calendar set selector (calendar-sets R4). Shows the
+    /// first-launch text when there are no accounts (ui-states R5).
     /// </summary>
     private void ShowAccounts()
     {
@@ -649,6 +649,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             }
         }
 
+        ShowSets(accounts.Count > 0);
         EmptyPanel.Visibility = accounts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         ViewHost.Visibility = accounts.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
         AddAccountLink.Visibility = accounts.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
@@ -737,14 +738,12 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             AutomationProperties.SetName(check, $"{collection.Name}, {status}");
         }
+        // A tick only shows or hides (calendar-sets R7) and may mark the active set "(modified)" (R5).
         check.Click += (_, _) =>
         {
             Store?.SetCollectionHidden(collection.Id, check.IsChecked != true);
+            ShowSets(true);
             RenderView();
-            if (check.IsChecked == true)
-            {
-                ((App)Application.Current).SyncCollection(collection.Id);
-            }
         };
         return check;
     }
