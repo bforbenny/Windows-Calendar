@@ -1,42 +1,37 @@
 using System;
 using System.Globalization;
+using System.Linq;
+using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 
 namespace WindowsCalendar.Views;
 
 /// <summary>
-/// A time of day for the editor (WPF has no time picker): a drop-down of 15-minute steps that also takes a typed time,
-/// read when Enter is pressed or focus leaves. An unreadable entry shows the previous time again.
+/// A time of day (WPF has no time picker; calendar-views R6): an hour drop-down of 24 entries in the Windows time
+/// format and a minute drop-down in 5-minute steps. A minute off the steps is shown as its own entry, never rounded.
 /// </summary>
-internal sealed class TimeBox : ComboBox
+internal sealed class TimeBox : UserControl
 {
+    private readonly ComboBox _hour = new() { MinWidth = 88 };
+    private readonly ComboBox _minute = new() { MinWidth = 72, Margin = new Thickness(4, 0, 0, 0) };
     private TimeSpan _time;
     private bool _setting;
 
     public TimeBox()
     {
-        IsEditable = true;
-        MinWidth = 110;
-        for (var i = 0; i < 96; i++)
+        var twelveHour = !CultureInfo.CurrentCulture.DateTimeFormat.ShortTimePattern.Contains('H');
+        for (var h = 0; h < 24; h++)
         {
-            Items.Add(Format(TimeSpan.FromMinutes(15 * i)));
+            var label = DateTime.Today.AddHours(h).ToString(twelveHour ? "h tt" : "HH", CultureInfo.CurrentCulture);
+            _hour.Items.Add(new ComboBoxItem { Content = label, Tag = h });
         }
-        SelectionChanged += (_, _) =>
-        {
-            if (!_setting && SelectedIndex >= 0)
-            {
-                Set(TimeSpan.FromMinutes(15 * SelectedIndex));
-            }
-        };
-        LostKeyboardFocus += (_, _) => ReadTyped();
-        KeyDown += (_, e) =>
-        {
-            if (e.Key == Key.Enter)
-            {
-                ReadTyped();
-            }
-        };
+        _hour.SelectionChanged += (_, _) => ReadPicked();
+        _minute.SelectionChanged += (_, _) => ReadPicked();
+        var row = new StackPanel { Orientation = Orientation.Horizontal };
+        row.Children.Add(_hour);
+        row.Children.Add(_minute);
+        Content = row;
+        Show(_time);
     }
 
     /// <summary>Raised when the time changes, also when set from code.</summary>
@@ -52,25 +47,38 @@ internal sealed class TimeBox : ComboBox
     {
         var changed = value != _time;
         _time = value;
-        _setting = true;
-        Text = Format(value);
-        _setting = false;
+        Show(value);
         if (changed)
         {
             TimeChanged?.Invoke();
         }
     }
 
-    private void ReadTyped()
+    private void Show(TimeSpan time)
     {
-        if (!IsEditable || Text == Format(_time))
+        _setting = true;
+        if (MinuteItem(time.Minutes) is null)
         {
-            return;
+            // Rebuilt only from code: a picked minute is always in the list.
+            _minute.Items.Clear();
+            foreach (var m in Enumerable.Range(0, 12).Select(i => i * 5).Append(time.Minutes).Distinct().Order())
+            {
+                _minute.Items.Add(new ComboBoxItem { Content = m.ToString("00", CultureInfo.CurrentCulture), Tag = m });
+            }
         }
-        Set(DateTime.TryParse(Text, CultureInfo.CurrentCulture, DateTimeStyles.NoCurrentDateDefault, out var parsed)
-            ? parsed.TimeOfDay
-            : _time);
+        _hour.SelectedIndex = time.Hours;
+        _minute.SelectedItem = MinuteItem(time.Minutes);
+        _setting = false;
     }
 
-    private static string Format(TimeSpan time) => DateTime.Today.Add(time).ToString("t", CultureInfo.CurrentCulture);
+    private ComboBoxItem? MinuteItem(int minute) =>
+        _minute.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (int)i.Tag == minute);
+
+    private void ReadPicked()
+    {
+        if (!_setting && _hour.SelectedItem is ComboBoxItem { Tag: int h } && _minute.SelectedItem is ComboBoxItem { Tag: int m })
+        {
+            Set(new TimeSpan(h, m, 0));
+        }
+    }
 }
