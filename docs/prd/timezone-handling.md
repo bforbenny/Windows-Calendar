@@ -25,7 +25,7 @@ Times display correctly across DST and backends. Graph uses Windows timezone IDs
   - A floating CalDAV event shows "Floating (no timezone)" and a Graph custom zone (e.g. `tzone://Microsoft/Custom`) shows "Custom (kept)" as an extra entry; either is kept unless the user picks another zone.
   - Allowed at any edit scope ([recurring-events](recurring-events.md)): whole series (exception dates, `UNTIL` and Graph `recurrenceTimeZone` converted; changed occurrences that cannot be kept are listed as lost, as a repeat-rule change does), this occurrence (the occurrence gets its own zone: a CalDAV override with its own `DTSTART;TZID`, a Graph instance PATCH with its own `start.timeZone`), this and following (the series splits and the new series uses the new zone).
   - `EventFields` carries the start and end zones through the CalDAV, Graph, recurrence and transfer code, which today all use the Windows timezone.
-- R8. **Secondary timezone column:** an optional second time ruler in the Day/Week views showing a user-chosen timezone, with a label (e.g. "UTC", "London"). Toggle and timezone are set in Settings > Appearance ([settings-page](settings-page.md) R2).
+- R8. **Secondary timezone column:** an optional second time ruler in the Day/Week views showing a user-chosen timezone, with a label (e.g. "UTC", "London"). Toggle and timezone are set in Settings > Appearance ([settings-page](settings-page.md) R2) or the calendar set's ⋯ menu, and are saved per calendar set, with "All" holding the default ([calendar-sets](calendar-sets.md) R11).
   - One ruler serves all visible days, so its labels use today's offset when today is on screen, else the first visible day's. When the offset between the two zones changes within the visible days (a DST change in either zone), a short note under the ruler label says from which day it differs (e.g. "+1 h from Sun").
 - R9. Events whose timezone differs from the display timezone show their original-timezone time in the event details.
 
@@ -47,7 +47,7 @@ Fixes needed in built code (slice 1):
 Each slice is built, tested and checked in the app before the next starts.
 
 1. Fixes F1–F6, and tests: a weekly 09:00 Sydney series across DST in both backends, unknown TZIDs and Graph custom zones, separate end zones, the occurrence index after a zone change. Built 2026-11-11 (package 1.0.17.0) with automated tests passing; in-app checks skipped by the user, not verified (timezone change while open, Graph all-day after a zone change, separate end zone in Outlook, Outlook custom zone, CalDAV custom VTIMEZONE, series move across March).
-2. Display: R9, R8 (ruler and Settings > Appearance).
+2. Display: R9, R8 (ruler, Settings > Appearance, and the per-set ruler of [calendar-sets](calendar-sets.md) R11).
 3. R7 for single events and whole series, with the separate end timezone.
 4. R7 for this occurrence and this and following.
 
@@ -76,3 +76,4 @@ Each slice is built, tested and checked in the app before the next starts.
 - 2026-11-11: the secondary ruler uses today's offset (else the first visible day's) and notes a mid-week offset change, rather than per-day labels (user's choice).
 - 2026-11-11: the whole of R7, including the occurrence and this-and-following scopes, is in scope, built as slices 3 and 4 (user's choice).
 - 2026-11-11: a time edit on an MS365 event in a custom or unknown zone (e.g. `tzone://Microsoft/Custom`) writes UTC, keeping the exact times; Graph takes no custom zone on a write, so the zone itself is lost and a series' local time moves by an hour across DST (user's choice over the Windows zone).
+- 2026-11-11: the secondary ruler (on/off and zone) is saved per calendar set ([calendar-sets](calendar-sets.md) R11); the display timezone stays the Windows timezone (user's choice).
