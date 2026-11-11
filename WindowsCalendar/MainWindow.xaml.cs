@@ -177,7 +177,6 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _editor.OpenChanged += PlaceEditor;
         SetupTasks();
         SetupKeyHints();
-        SizeChanged += (_, _) => PlaceEditor();
 
         // Redraw in the new theme when Windows switches light/dark or high contrast (app-platform R2a).
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += (_, e) =>
@@ -257,17 +256,9 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
     }
 
-    /// <summary>
-    /// The editor pushes the views narrower at 1200 epx and wider, and slides over them below that (calendar-views R6c).
-    /// </summary>
-    private void PlaceEditor()
-    {
+    /// <summary>The editor overlays the views on the right at every width, so they never resize (calendar-views R6c).</summary>
+    private void PlaceEditor() =>
         EditorHost.Visibility = _editor.IsOpen || _taskEditor.IsOpen ? Visibility.Visible : Visibility.Collapsed;
-        var push = ((FrameworkElement)Content).ActualWidth >= 1200;
-        Grid.SetColumn(EditorHost, push ? 1 : 0);
-        Grid.SetColumnSpan(EditorHost, push ? 1 : 2);
-        EditorHost.HorizontalAlignment = push ? HorizontalAlignment.Stretch : HorizontalAlignment.Right;
-    }
 
     /// <summary>
     /// "N conflicts" banner (conflict-resolution R5, interim): closable for the session, shown again when the count grows.
@@ -549,11 +540,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         Store?.SetUiFlag(SidebarHiddenFlag, !show);
     }
 
-    private void ShowSidebar(bool show)
-    {
-        Sidebar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        SidebarColumn.Width = new GridLength(show ? 260 : 0);
-    }
+    private void ShowSidebar(bool show) => Sidebar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>A collection's pull started or ended (ui-states R1): its sidebar name shows the hue wave meanwhile.</summary>
     public void SetCollectionSyncing(string collectionId, bool active)

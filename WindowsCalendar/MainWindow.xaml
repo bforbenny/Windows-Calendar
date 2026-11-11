@@ -12,7 +12,7 @@
     WindowStartupLocation="CenterScreen"
     UseLayoutRounding="True">
 
-    <!-- Mica shows through the title bar and sidebar only; the content area is solid (app-platform R2). -->
+    <!-- Mica shows through the title bar only; the content area is solid (app-platform R2). -->
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -22,29 +22,12 @@
         <ui:TitleBar x:Name="AppTitleBar" Title="WindowsCalendar" />
 
         <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition x:Name="SidebarColumn" Width="260" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-
-            <!-- Sidebar (calendar-views R2). Interim: accounts and their collections (account-management). -->
-            <Grid x:Name="Sidebar" Grid.Column="0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel x:Name="AccountList" Margin="12,8" />
-                </ScrollViewer>
-                <ui:Button x:Name="AddAccountLink" Grid.Row="1" Margin="8" Content="Add account" Appearance="Transparent"
-                           Visibility="Collapsed" Click="OnAddAccount" />
-            </Grid>
 
             <!-- Settings page: replaces the toolbar and views while open (settings-page R1). -->
-            <Border x:Name="SettingsHost" Grid.Column="1" Panel.ZIndex="1" Visibility="Collapsed"
+            <Border x:Name="SettingsHost" Panel.ZIndex="1" Visibility="Collapsed"
                     Background="{DynamicResource SurfaceBaseBrush}" />
 
-            <Grid x:Name="ContentArea" Grid.Column="1" Background="{DynamicResource SurfaceBaseBrush}">
+            <Grid x:Name="ContentArea" Background="{DynamicResource SurfaceBaseBrush}">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
@@ -122,11 +105,6 @@
                 </Grid>
 
                 <Grid x:Name="Body" Grid.Row="1">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-
                     <Grid x:Name="ViewHost" />
 
                     <!-- First launch, no accounts (ui-states R5). -->
@@ -139,14 +117,32 @@
                         </StackPanel>
                     </StackPanel>
 
-                    <!-- Event and task editor (calendar-views R6c): pushes the views at 1200 epx and wider, slides over them below. -->
-                    <Border x:Name="EditorHost" Grid.Column="1" Visibility="Collapsed"
+                    <!-- Sidebar (calendar-views R2, R2b): overlays the views on the left, below the toolbar, so they never resize.
+                         Interim: accounts and their collections (account-management). -->
+                    <Border x:Name="Sidebar" Width="260" HorizontalAlignment="Left"
+                            Background="{DynamicResource SurfaceBaseBrush}" BorderBrush="{DynamicResource DividerBrush}"
+                            BorderThickness="0,0,1,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <StackPanel x:Name="AccountList" Margin="12,8" />
+                            </ScrollViewer>
+                            <ui:Button x:Name="AddAccountLink" Grid.Row="1" Margin="8" Content="Add account" Appearance="Transparent"
+                                       Visibility="Collapsed" Click="OnAddAccount" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Event and task editor (calendar-views R6c): overlays the views on the right at every width. -->
+                    <Border x:Name="EditorHost" HorizontalAlignment="Right" Visibility="Collapsed"
                             Background="{DynamicResource SurfaceBaseBrush}" BorderBrush="{DynamicResource DividerBrush}"
                             BorderThickness="1,0,0,0" />
 
                     <!-- Banners float over the views and editor, bottom centre, so nothing moves (floating-banners R1-R4).
                          Lasting conditions above, passing ones (undo) below. Only the cards take clicks. -->
-                    <StackPanel x:Name="BannerStack" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                    <StackPanel x:Name="BannerStack" HorizontalAlignment="Center" VerticalAlignment="Bottom"
                                 Margin="24" MinWidth="320" MaxWidth="520">
                         <!-- Conflicts (conflict-resolution R5, interim: banner only). -->
                         <ui:InfoBar x:Name="ConflictBar" Severity="Warning" IsClosable="True" Margin="0,0,0,8"

@@ -24,7 +24,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
   - two sections, Calendars and Task lists, each grouped by account; every calendar and task list has a visibility checkbox and colour swatch (its shape marker); the checkbox is the only per-calendar visibility control and works as an override of the active set ([calendar-sets](calendar-sets.md) R5);
   - a mini month navigator.
 - R2b. Sidebar layout:
-  - a hamburger button at the far left of the toolbar (and Ctrl+B, [keyboard-navigation](keyboard-navigation.md)) hides the sidebar fully, so the views take the whole width, and shows it again;
+  - a hamburger button at the far left of the toolbar (and Ctrl+B, [keyboard-navigation](keyboard-navigation.md)) hides the sidebar fully and shows it again; the sidebar is an overlay on the left of the views, below the toolbar, so showing or hiding it never resizes the views; it has a solid surface with a divider on its right edge and stays open until hidden again (no light dismiss);
   - the Calendars and Task lists section headings, and each account group within them, have a chevron to collapse and expand them;
   - the sidebar's shown/hidden state and every collapsed section and account group persist across restarts (stored locally in the store's `meta` table);
   - a collection's status follows its name as an icon in the secondary text colour, with a tooltip and screen-reader name giving the text: link icon for a subscribed feed, lock icon for a read-only calendar, warning icon for a feed that is not secure and so not synced;
@@ -46,7 +46,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
   - keyboard: arrows select, Enter opens;
   - the opened event is also the selected event (Del, Ctrl+D, Ctrl+J act on it);
   - read-only events (R9) open the editor in view-only mode, with Join and (for attendee meetings) your own reminder still available.
-- R6c. The editor is a side panel on the right, 400 epx wide. At window width ≥ 1200 epx it pushes the grid narrower; below 1200 epx it slides over the grid. Esc or the close button closes it.
+- R6c. The editor is a side panel on the right, 400 epx wide, that overlays the views at every window width, so opening or closing it never resizes them. Esc or the close button closes it.
 - R6d. The editor auto-saves; there is no Save button:
   - each field change is saved when the field loses focus (or immediately for pickers and checkboxes), queued in the outbox, and is one undo step ([undo](undo.md));
   - for a recurring event, the scope (this / this and following / all) is asked once, at the first change, and applies to every change until the panel closes or switches to another event;
@@ -116,6 +116,7 @@ Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or m
 
 - [ ] All views render events from both MS365 and Radicale in the correct calendar colours.
 - [ ] The hamburger button and Ctrl+B hide and show the sidebar; the state survives a restart.
+- [x] The sidebar and the editor panel overlay the views; showing or hiding either never resizes the grid.
 - [ ] Collapsing the Task lists section and one account group survives a restart.
 - [ ] Subscribed, read-only and not-secure collections show a link, lock or warning icon instead of a text label, with the text as a tooltip.
 - [ ] During Sync now, each calendar's name shows the hue wave only while that calendar syncs.

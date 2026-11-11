@@ -28,7 +28,7 @@ The app is used on two displays: an external 1920×1080 monitor at 100% scaling 
   - the size, position and maximised state are restored on start;
   - if the saved position is not on any connected display (e.g. after undocking), the window opens centred on the primary display at a size that fits;
   - while running, if a display is removed (e.g. undocking), Windows moves the window; if it then extends past the work area, it is resized to fit.
-- R4. Responsive sidebar: at window width ≥ 1200 epx the sidebar is expanded (about 260 epx); below 1200 epx it collapses to an icon rail, and can be opened as an overlay. Crossing 1200 epx with the editor open switches it between push and overlay ([calendar-views](calendar-views.md) R6c) without losing focus or an unsaved field value.
+- R4. Responsive sidebar: at window width ≥ 1200 epx the sidebar is expanded (about 260 epx); below 1200 epx it collapses to an icon rail, and can be opened as an overlay. The sidebar and the editor are overlays that never resize the views ([calendar-views](calendar-views.md) R2b, R6c).
 - R5. Day/Week time grid:
   - hour height 64 epx (shows about 7–8 hours at 1504×1003 maximised); with the text thresholds of [calendar-views](calendar-views.md) R4a, a 15-minute event shows its title and events of 22.5 minutes or longer also show the time;
   - on open, on switching to Week, and on Today, the grid scrolls to one hour before the current time.

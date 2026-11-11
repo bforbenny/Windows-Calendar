@@ -35,7 +35,7 @@ All user settings live on one Settings page inside the main window, laid out lik
 
 ## Interim (first slice)
 
-- R1: a gear button beside Sync now in the toolbar, or Ctrl+,, opens the page in place of the toolbar and views; the sidebar stays. Back or Esc returns.
+- R1: a gear button beside Sync now in the toolbar, or Ctrl+,, opens the page in place of the toolbar and views, covering the sidebar overlay too. Back or Esc returns.
 - R2: only the Working hours and Appearance (week numbers) sections exist; the others come with their features. The colour, shape and holiday calendar settings stay in the sidebar right-click menu for now.
 - R5: stored in the local store's meta table.
 - R6 comes with [display-scaling](display-scaling.md).
