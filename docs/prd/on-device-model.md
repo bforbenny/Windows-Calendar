@@ -15,7 +15,7 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 
 - R1. Runtime: Windows AI `LanguageModel` (`Microsoft.Windows.AI.Text`), using `GenerateStructuredJsonResponseAsync` (JSON-Schema-constrained output) with Temperature 0 and TopK 1. Schemas use only `type`, `properties`, `required`, `enum`, `items`; empty values are "" or 0. No model file, server or driver is shipped.
 - R1a. Packaging in the WPF app ([app-platform](app-platform.md) R2, R3):
-  - reference only the `Microsoft.WindowsAppSDK.AI` component package (2.6.4 or later, for no LAF unlock), which depends on `.Base` and `.Foundation` only; never the `Microsoft.WindowsAppSDK` metapackage or `.WinUI`, so no WinUI code returns (WinUI was dropped for its dimmed-scrolling bug);
+  - reference only the `Microsoft.WindowsAppSDK.AI` component package (2.6.5, the latest stable on 2026-11-11; 2.6.4 or later needs no LAF unlock, per the Windows App SDK 2.6.4 release notes; approved by the user on 2026-11-11), which depends on `.Base` and `.Foundation` only; never the `Microsoft.WindowsAppSDK` metapackage or `.WinUI`, so no WinUI code returns (WinUI was dropped for its dimmed-scrolling bug);
   - the app stays packaged (MSIX identity is required); the manifest keeps the `systemAIModels` capability and `MaxVersionTested` 10.0.26226.0 or later, and the project sets `AppxOSMinVersionReplaceManifestVersion` and `AppxOSMaxVersionTestedReplaceManifestVersion` to false so the build does not overwrite them;
   - the package then depends on the Windows App Runtime framework package again; installing it on a new PC follows [app-updates](app-updates.md);
   - the AI code lives only in the app project, behind the R10 interface; `WindowsCalendar.Core` gains no Windows App SDK reference.
@@ -30,6 +30,9 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 - R10. Testability: features call the service through an interface, so merge, validation and UI logic are unit-tested with a fake.
 - R11. Eval harness: phrase sets with a fixed reference time and expected fields live in the repo (one per feature). A Debug-only command runs a set against the real model in the packaged app and writes a pass/fail report with latency to LocalState.
 - R12. Spike gate: before any feature code, a Release (ReadyToRun) MSIX build of the WPF app on the Ryzen AI 7 350 first confirms that the R1a package set builds, installs and reports a ready state (if the component package alone does not work, stop and revisit R1a before trying the metapackage), then runs ~30 sample phrases through the service. Record ready state, cold and warm latency (p50/p95), and invalid-JSON rate, for structured output and plain generation. Go only if warm p95 ≤ 1.5 s and invalid JSON ≤ 5%; otherwise stop and revisit this PRD.
+  - The spike is short and does not block other work: [quick-add](quick-add.md) and [reminders-notifications](reminders-notifications.md) go ahead in parallel. Only the NL features wait for the result.
+  - Measure each request mode with two schemas: the full [nl-quick-add](nl-quick-add.md) R6 schema and a reduced one holding only the fields the rules left empty (most phrases need only the date fields). Bound every request with a 10 s timeout and count timeouts as failures, so the known hang (WindowsAppSDK issue #6871) shows in the numbers.
+  - Known evidence before the spike (2026-11-11): issue #6871, on a Ryzen AI 7 PRO 350 with SDK 2.5.4-experimental, reports structured JSON sometimes not completing within 25 s, and 3–8 s when it does complete (plain generation 7.9 s). Phi Silica is to be replaced by Aion Instruct on retail devices in January 2027; a no-go result is re-checked once Aion Instruct is on this PC.
 
 ## Out of scope
 
@@ -55,4 +58,4 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 
 - Windows build required for Phi Silica on retail Windows 11: confirm in the spike.
 - Whether the single-project MSIX build tools add the Windows App Runtime package dependency automatically when only `Microsoft.WindowsAppSDK.AI` is referenced: confirm in the spike.
-- Microsoft's Aion Instruct model may replace Phi Silica (timeline unconfirmed); re-run the eval sets when it does.
+- Microsoft's Aion Instruct model replaces Phi Silica on retail devices in January 2027 (Microsoft's Phi Silica page, checked 2026-11-11), and needs no LAF token. Not yet known: whether it keeps the same `LanguageModel` API. Re-run the eval sets when it arrives.

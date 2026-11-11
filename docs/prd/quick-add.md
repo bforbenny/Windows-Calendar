@@ -14,23 +14,31 @@ A single text box turns a typed phrase into an event (or a task) with date, time
 ## Requirements
 
 - R1. Available in: the quick-create popup ([calendar-views](calendar-views.md) R5), the toolbar (Ctrl+N focuses it), and the [tray-flyout](tray-flyout.md).
+  - Quick-create popup: clicking or dragging an empty slot opens a small popup anchored to the slot, with the quick-add box pre-set to that slot and the calendar shown. Esc or clicking outside closes it without saving. This replaces opening the full editor on a slot click.
+  - Toolbar: the box sits in the toolbar next to New. Ctrl+N focuses it instead of pressing New; the New button and its drop-down stay, and the key hints and shortcut cheat sheet are updated ([keyboard-navigation](keyboard-navigation.md)).
 - R2. Recognised tokens (English, case-insensitive):
   - Dates: `today`, `tomorrow`, weekday names (next occurrence), `next <weekday>`, `in <n> days/weeks`, `5 Dec` / `Dec 5`, numeric dates in the Windows short-date order (e.g. `5/12` = 5 December for en-AU).
   - Times: `1pm`, `1:30pm`, `13:00`, `noon`, `midnight`; ranges `1-2pm`, `1pm to 3pm`, `9:00-10:30`.
   - Duration: `for 30m`, `for 1h`, `for 90 min`, `for 2 hours`.
   - All-day: `all day`, or a date with no time.
-  - Location: text after ` at ` or ` @ ` that is not a time (e.g. `at Cafe Rio`).
+  - Location: text after ` @ `, or after ` at ` when the next word starts with a capital letter or a digit and is not a time (`at Cafe Rio`, `at 12 Main St`). `look at budget` keeps "at budget" in the title. The location runs to the next recognised token or the end.
   - Calendar: `#name` (prefix match on calendar name; writable calendars only). Match order: the default calendar, then calendars in the active set in sidebar order, then the rest; first match wins. `#account/name` picks a calendar in a named account.
   - Recurrence: `every day`, `every <weekday>`, `every week`, `every month`, `weekdays`.
-  - Task: a leading `task ` or `todo ` creates a task with the parsed date as due date, in the default task list (or `#list`).
+  - Task: a leading `task ` or `todo ` creates a task with the parsed date as due date, in the default task list (or `#list`). Only writable Microsoft To Do lists can receive tasks (Radicale task lists are view-only, [tasks](tasks.md)); `#` on a task matches To Do lists only.
 - R3. All remaining text becomes the title.
-- R4. As you type, a preview shows what the parser understood: highlighted tokens plus resolved fields (e.g. "Fri 6 Nov, 13:00–14:00 · Cafe Rio · Work"). Enter saves; Ctrl+Enter or "More details" opens the full editor pre-filled. The preview always shows the target calendar, and shows an error instead of saving when the title is empty. If the item lands in a calendar hidden by the active set, a toast says "Added to <calendar> (hidden in this set)" with a Show button.
+- R4. As you type, a preview under the box shows what the parser understood as a row of field chips (e.g. "Fri 6 Nov · 13:00–14:00 · Cafe Rio · Work · Every weekday"). Words inside the box are not highlighted (a WPF text box cannot colour parts of its text). Enter saves; Ctrl+Enter or "More details" opens the full editor pre-filled. The preview always shows the target calendar, and shows an error instead of saving when the title is empty. If the item lands in a calendar hidden in the sidebar, the in-app banner says "Added to <calendar> (hidden)" with a Show button.
+  - Interim (until [calendar-sets](calendar-sets.md) exists): "hidden" means unticked in the sidebar, and the `#name` match order skips the active set step.
 - R5. Defaults: no date → today (or the slot clicked in the quick-create popup; typed date and time override the slot); in the Tasks view, text without a prefix creates a task; time with no end → default duration of 60 minutes; no `#` → default calendar ([account-management](account-management.md) R9); event timezone → system timezone.
 - R6. Ambiguity rules are fixed and documented:
   - times win over location (`at 3pm` is a time);
   - a time with no date means today, even if that time has passed;
-  - a weekday name means its next occurrence, or today if it is today.
-- R7. The parser is a pure function with unit tests covering every token in R2, including en-AU and en-US date orders.
+  - a weekday name means its next occurrence, or today if it is today; `next <weekday>` means the one after that;
+  - a day-month date (`5 Dec`, `5/12`) already past this year means next year;
+  - a bare number is a time only after `at` (`at 3`) or in a range (`9-5`); with no am/pm, 1–6 means pm, 7–11 means am and 12 means noon (a range end takes the later reading, so `9-5` is 09:00–17:00); elsewhere a bare number stays in the title;
+  - a weekday or month name counts as a date only when it stands alone as a word and is not followed by `'s`, so `Sun cream` and `May's party` stay in the title, but `lunch sun` is Sunday. Short forms that are common words (`sun`, `sat`, `wed`, `mar`, `may`) count only when they are the last word or are next to another date or time token;
+  - a range whose end is before its start ends on the next day (`11pm-1am`);
+  - a range wins over a duration (`1-2pm for 30m` is 13:00–14:00); the duration word is left in the title.
+- R7. The parser is a pure function in `WindowsCalendar.Core` (phrase, now, short-date order, calendar and list names → result with each field and the text span it came from), with unit tests covering every token in R2 and every rule in R6, including en-AU and en-US date orders. The spans let [nl-quick-add](nl-quick-add.md) tell which words the rules used.
 
 ## Out of scope
 
@@ -44,6 +52,9 @@ A single text box turns a typed phrase into an event (or a task) with date, time
 - [ ] "task submit report tomorrow" creates a task due tomorrow.
 - [ ] "Standup weekdays 9:15 for 15m" creates a weekday-recurring 15-minute event.
 - [ ] Works with the network off.
+- [ ] "look at budget tomorrow" creates an event titled "look at budget" with no location.
+- [ ] Clicking an empty Week slot opens the quick-create popup on that slot; Ctrl+Enter there opens the full editor pre-filled.
+- [ ] Ctrl+N focuses the toolbar quick-add box.
 
 ## Dependencies
 
