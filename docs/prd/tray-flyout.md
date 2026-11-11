@@ -2,7 +2,7 @@
 description: Tray icon flyout showing today's agenda with Join buttons, tasks due, quick add and sync status
 when-to-use: Before working on the tray icon, the tray flyout window, or tray menu behaviour
 tags: [ui, tray, agenda, quick-add]
-status: in-progress
+status: closed
 ---
 
 # Tray flyout
@@ -35,8 +35,11 @@ Left-clicking the tray icon opens a compact flyout with what is on today, Join b
 - R5. Respects calendar visibility and the active calendar set ([calendar-sets](calendar-sets.md)).
   - Interim (until [calendar-sets](calendar-sets.md) exists): only the sidebar ticks apply.
 - R6. Works offline and with the main window hidden; opens in < 150 ms. The flyout window is created once, on first open, and hidden rather than closed, so later opens only refresh its content. Each open logs "Tray flyout opened in N ms".
-- R7. Tray icon tooltip shows the next event and its start time, updated every minute.
+- R7. ~~Tray icon tooltip shows the next event and its start time, updated every minute.~~ Not built (2026-11-11, user's choice); the tooltip stays "WindowsCalendar".
 - R8. Fully keyboard operable (Tab/arrows, Enter, Esc).
+  - Opening puts focus on the first row (all-day, event or task); with no rows, on the quick-add box.
+  - Up/Down move from row to row, stop at the first and last row, and scroll the row into view. Tab reaches Join, the task checkboxes, quick add and the footer. Enter opens the row, Space ticks a focused checkbox, Esc hides the flyout.
+  - A refresh while open (minute tick, sync, tick, quick add) keeps focus on the same row; if that row is gone, on the row now in its place.
 
 ## Prerequisite
 
@@ -48,7 +51,7 @@ Each slice is built, tested and checked in the app before the next starts.
 
 1. Flyout window and list: R1, R2, R2a, R3 (list content and Join), R3a, R4, R6.
 2. Actions and refresh: R3 (task ticks, quick add, footer), R4a, R4b.
-3. Finish: R5 check, R7, R8.
+3. Finish: R5 check, R8.
 
 ## Out of scope
 
@@ -73,4 +76,5 @@ Each slice is built, tested and checked in the app before the next starts.
 - 2026-11-11: single click opens the flyout at once instead of waiting out the double-click time, so the 150 ms target (R6) holds; a double-click then opens the main window.
 - 2026-11-11: the flyout goes through `App` to the hidden main window rather than moving that code out of the window, since the window always exists.
 - 2026-11-11: the footer's sync status is kept in memory from app start; saved status and account errors come with [ui-states](ui-states.md).
+- 2026-11-11: R7 (next event in the tray tooltip) not built, by the user's choice.
 - 2026-11-11: H.NotifyIcon.Wpf's tray popup was skipped (R2a): it is a Popup, not a window, so it suits neither keyboard focus (R8), closing on a click outside, nor a window that is created once and hidden (R6).

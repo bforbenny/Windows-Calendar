@@ -53,6 +53,7 @@ internal sealed class SettingsPage : UserControl
         _sections.Items.Add("Working hours");
         _sections.Items.Add("Appearance");
         _sections.Items.Add("Calendars");
+        _sections.Items.Add("About");
         _sections.SelectionChanged += (_, _) => ShowSection();
 
         var body = new Grid { Margin = new Thickness(12, 0, 24, 24) };
@@ -98,8 +99,39 @@ internal sealed class SettingsPage : UserControl
         {
             1 => Appearance(),
             2 => CalendarsSection(),
+            3 => AboutSection(),
             _ => WorkingHoursSection(),
         };
+
+    // ---- About (settings-page R2, R7) ----
+
+    /// <summary>The package version, Open log folder, and what uninstalling deletes.</summary>
+    private static SpacedStack AboutSection()
+    {
+        var panel = Section("About", null);
+        var v = global::Windows.ApplicationModel.Package.Current.Id.Version;
+        var version = new TextBlock { Text = $"WindowsCalendar\nVersion {v.Major}.{v.Minor}.{v.Build}.{v.Revision}" };
+        version.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+        panel.Children.Add(version);
+
+        var logs = new Button { Content = "Open log folder", HorizontalAlignment = HorizontalAlignment.Left };
+        logs.Click += (_, _) =>
+        {
+            var folder = System.IO.Path.Combine(global::Windows.Storage.ApplicationData.Current.LocalFolder.Path, "Logs");
+            System.IO.Directory.CreateDirectory(folder);
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(folder) { UseShellExecute = true });
+        };
+        panel.Children.Add(logs);
+
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Uninstalling deletes unsynced changes, conflict copies, colours, shapes, calendar sets and settings; "
+                + "only what is on the servers is kept. Reminders keep firing for up to 48 hours after Quit.",
+            Foreground = Theme.Brush("TextSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        return panel;
+    }
 
     // ---- Calendars (reminders-notifications R5; settings-page interim) ----
 

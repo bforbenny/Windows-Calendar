@@ -105,12 +105,28 @@ public sealed partial class TrayFlyout : Window
         root.Children.Add(header);
         root.Children.Add(footer);
         root.Children.Add(quick);
-        root.Children.Add(new ScrollViewer
+        var scroll = new ScrollViewer
         {
             Content = _list,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             Padding = new Thickness(8, 0, 8, 8),
-        });
+        };
+        // R8: Up/Down move from row to row (the scroll viewer would otherwise scroll), stopping at the ends.
+        scroll.PreviewKeyDown += (_, e) =>
+        {
+            if (e.Key is not (Key.Up or Key.Down) || FocusedRow() is not { } row)
+            {
+                return;
+            }
+            var rows = Rows();
+            var i = rows.IndexOf(row) + (e.Key == Key.Down ? 1 : -1);
+            if (i >= 0 && i < rows.Count)
+            {
+                FocusRow(rows[i]);
+            }
+            e.Handled = true;
+        };
+        root.Children.Add(scroll);
         Content = root;
 
         SourceInitialized += (_, _) => RoundCorners();
@@ -228,16 +244,45 @@ public sealed partial class TrayFlyout : Window
         FitToContent();
         Show();
         Activate();
+        FocusRow(Rows().FirstOrDefault());
         StartMinuteTimer();
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
             Log.Information("Tray flyout opened in {Ms} ms", watch.ElapsedMilliseconds));
     }
 
-    /// <summary>Rebuilds the list while the flyout is open, and resizes it to fit (R4a).</summary>
+    /// <summary>
+    /// Rebuilds the list while the flyout is open, and resizes it to fit (R4a). A row with keyboard focus keeps it; if
+    /// that row is gone, the row now in its place gets it (R8).
+    /// </summary>
     private void RefreshVisible()
     {
+        var focused = FocusedRow();
+        var key = focused?.Tag;
+        var index = focused is null ? -1 : Rows().IndexOf(focused);
         Refresh();
         FitToContent();
+        if (focused is not null)
+        {
+            var rows = Rows();
+            FocusRow(rows.FirstOrDefault(r => Equals(r.Tag, key)) ?? rows.ElementAtOrDefault(Math.Min(index, rows.Count - 1)));
+        }
+    }
+
+    /// <summary>The focusable rows of the list (all-day, events, tasks), top to bottom.</summary>
+    private List<Button> Rows() => _list.Children.OfType<Button>().ToList();
+
+    private Button? FocusedRow() => _list.Children.OfType<Button>().FirstOrDefault(r => r.IsKeyboardFocusWithin);
+
+    /// <summary>Focuses a row and scrolls it into view; with no row, the quick-add box (R8).</summary>
+    private void FocusRow(Button? row)
+    {
+        if (row is null)
+        {
+            _quick.FocusBox();
+            return;
+        }
+        row.Focus();
+        row.BringIntoView();
     }
 
     /// <summary>Height fits the content up to 560 epx (R2), then placed next to the tray icon.</summary>
@@ -341,7 +386,8 @@ public sealed partial class TrayFlyout : Window
         var details = string.IsNullOrWhiteSpace(e.Location) ? e.TimeText() : $"{e.TimeText()} · {e.Location}";
         text.Children.Add(Line(details, "CaptionTextBlockStyle", "TextSecondaryBrush"));
         row.Children.Add(text);
-        return ItemButton(row, e.Description(), () => ((App)Application.Current).OpenItem(o.ItemId, o.StartUtc, o.RecurrenceUtc));
+        return ItemButton(row, e.Description(), $"{o.ItemId}|{o.StartUtc:o}",
+            () => ((App)Application.Current).OpenItem(o.ItemId, o.StartUtc, o.RecurrenceUtc));
     }
 
     /// <summary>
@@ -375,13 +421,15 @@ public sealed partial class TrayFlyout : Window
             overdue ? "NowLineBrush" : "TextSecondaryBrush"));
         row.Children.Add(text);
         var name = $"Task {title}, {(overdue ? "overdue" : "due today")}, {collection.Name}";
-        return ItemButton(row, name, () => ((App)Application.Current).OpenItem(task.Id, task.DueUtc, null));
+        return ItemButton(row, name, task.Id, () => ((App)Application.Current).OpenItem(task.Id, task.DueUtc, null));
     }
 
-    private Button ItemButton(UIElement content, string name, Action open)
+    /// <summary>A list row; <paramref name="key"/> finds the same row again after a refresh (R8).</summary>
+    private Button ItemButton(UIElement content, string name, string key, Action open)
     {
         var button = new Button
         {
+            Tag = key,
             Content = content,
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
