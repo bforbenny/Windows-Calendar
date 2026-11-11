@@ -2,7 +2,7 @@
 description: Tasks/to-dos from Radicale (VTODO) and Microsoft To Do, shown and edited in one tasks UI
 when-to-use: Before working on task lists, task editing, or task sync mapping
 tags: [tasks, vtodo, todo, ui]
-status: closed
+status: updated
 ---
 
 # Tasks
@@ -33,7 +33,8 @@ Tasks from Radicale VTODO collections and Microsoft To Do lists appear in a unif
 - R4. Priority mapping: VTODO 1-4 → high, 5 / 0 → normal, 6-9 → low.
 - R5. Fields that a backend does not support are hidden in the editor for that task (e.g. no percent-complete for To Do).
 - R6. Tasks with a due date show in the Day/Week/Month views as a distinct checkbox item, toggleable in settings (default on). A date-only due task sits in the all-day lane; a task with a due time sits at that time. Completed tasks are hidden from the calendar views.
-- R7. Recurring tasks: display and complete only (see [recurring-events](recurring-events.md) R8).
+- R7. Recurring tasks: completing advances to the next instance per server behaviour ([recurring-events](recurring-events.md) R8).
+- R7b. Repeat on Microsoft To Do tasks (reopened 2026-11-11): the task editor shows the event editor's Repeat panel (Doesn't repeat / Daily / Weekly on chosen days / Monthly / Yearly, interval, ends) under the due date, mapped to the todoTask `recurrence` (patternedRecurrence: pattern from the rule, range start = the due date). Setting a repeat on a task with no due date sets the due date to today, or to the first chosen weekday for Weekly. Changing the rule applies to the task as a whole; there is no this-and-following for tasks. Radicale task rules stay view-only. Quick add can set a repeat on a task ([quick-add](quick-add.md) R2).
 - R7a. Special To Do lists such as Flagged emails are read-only ([sync-ms365](sync-ms365.md) R9).
 - R8. Subtasks/checklist items: displayed read-only in v1.
 - R9. Unknown VTODO properties are preserved on edit (see [sync-radicale](sync-radicale.md) R8).
@@ -45,7 +46,7 @@ Tasks from Radicale VTODO collections and Microsoft To Do lists appear in a unif
 - New task from the toolbar's New button ([calendar-views](calendar-views.md) interim) opens the task editor on a blank task in the default task list (or the first writable To Do list). It is created once it has a title; closing the panel while the title is empty discards it. With no writable To Do list, New task is disabled.
 - Until a new event or task is created, the panel heading is a drop-down ("New event" / "New task") that switches to the other kind, keeping the typed title; the other fields start from their defaults.
 - R1, R2, R5: clicking a task opens the task editor in the event editor's place, with the same auto-save. Fields: title, completed, due date (date only for To Do), importance (Low / Normal / High) and notes. The task list is shown but cannot be changed. Delete asks for confirmation, like events.
-- View-only in the editor and calendar (the checkbox is disabled): Radicale tasks (their writes come later), Flagged emails tasks (R7a) and read-only lists. Recurring To Do tasks can only be completed or reopened (R7).
+- View-only in the editor and calendar (the checkbox is disabled): Radicale tasks (their writes come later), Flagged emails tasks (R7a) and read-only lists. Recurring To Do tasks can only be completed or reopened (R7); editing their rule comes with R7b.
 - R6: open tasks with a due date show in Week (all-day lane, or at the due time for a Radicale task with one), Month and Agenda as an item with a checkbox before the title in the list colour. Ticking it completes a To Do task without opening the editor; clicking elsewhere on the item opens the editor. Likewise in the Tasks view, the checkbox only completes or reopens, and clicking the rest of the row opens the editor. Task items cannot be dragged. Completed tasks are hidden from these views. The settings toggle comes with [settings-page](settings-page.md); until then they are always shown.
 - Tasks are placed on their due date, not their start date.
 - Undo for task changes, reminders (R2), checklist items (R8) and Radicale task writes come later.
@@ -53,7 +54,7 @@ Tasks from Radicale VTODO collections and Microsoft To Do lists appear in a unif
 ## Out of scope
 
 - Editing subtasks/checklist items.
-- Editing recurrence rules for tasks.
+- Editing recurrence rules for Radicale tasks (VTODO RRULE).
 - Moving tasks between accounts.
 - Legacy Outlook tasks API (deprecated; To Do API only).
 
@@ -62,6 +63,12 @@ Tasks from Radicale VTODO collections and Microsoft To Do lists appear in a unif
 - [ ] Create/complete/delete a task on each backend, offline and online; the change is visible in Microsoft To Do / another CalDAV client.
 - [ ] A task with a due date appears on the calendar on that date.
 - [ ] Priority round-trips per the R4 mapping.
+- [ ] Setting Weekly on Friday on a To Do task in the editor shows it repeating in Microsoft To Do; completing it there or here brings the next Friday's instance after sync.
+- [ ] Changing a repeating To Do task back to "Doesn't repeat" removes the repeat in Microsoft To Do.
+
+## Open questions
+
+- R7b: does Graph accept and keep `endDate` and `numbered` recurrence ranges on todoTask? If To Do keeps only `noEnd`, the panel hides "Ends" for tasks. Check against a real To Do list before building.
 
 ## Dependencies
 

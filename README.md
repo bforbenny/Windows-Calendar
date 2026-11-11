@@ -20,7 +20,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [attendees-invitations](docs/prd/attendees-invitations.md) | Read-only attendees, needs-response marker, Open in Outlook, organiser guards | in-progress |
 | [event-show-as](docs/prd/event-show-as.md) | Busy / Free / Tentative / Out of office | in-progress |
 | [online-meeting-join](docs/prd/online-meeting-join.md) | Join button for Teams/Zoom/Meet/Webex links | in-progress |
-| [quick-add](docs/prd/quick-add.md) | Typed quick add, offline rule-based parser | closed |
+| [quick-add](docs/prd/quick-add.md) | Typed quick add, offline rule-based parser | updated |
 | [duplicate-event](docs/prd/duplicate-event.md) | Duplicate an event | in-progress |
 | [undo](docs/prd/undo.md) | Undo recent changes | in-progress |
 | [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | in-progress |
@@ -34,7 +34,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [ui-states](docs/prd/ui-states.md) | Loading, empty, offline, error and first-launch states | pending |
 | [floating-banners](docs/prd/floating-banners.md) | Banners float over the calendar and never push the layout | closed |
 | [settings-page](docs/prd/settings-page.md) | Settings page layout and contents | in-progress |
-| [tasks](docs/prd/tasks.md) | VTODO and Microsoft To Do tasks | closed |
+| [tasks](docs/prd/tasks.md) | VTODO and Microsoft To Do tasks | updated |
 | [event-location](docs/prd/event-location.md) | Plain-text location/address on events | in-progress |
 | [reminders-notifications](docs/prd/reminders-notifications.md) | Windows toast reminders | pending |
 | [search](docs/prd/search.md) | Full-text search over cached items | pending |

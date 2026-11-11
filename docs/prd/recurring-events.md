@@ -31,7 +31,7 @@ Recurring events can be created, edited and deleted with three scopes: **this oc
   - Not offered for meetings with attendees that you organise ([attendees-invitations](attendees-invitations.md) R8).
   - Undo restores the dropped overrides ([undo](undo.md) R5).
 - R7. Recurrence rules received from servers that the editor cannot represent (e.g. complex BYSETPOS, RDATE lists) are displayed and preserved. Editing such a series is limited to this-occurrence plus non-recurrence fields, with a notice.
-- R8. Recurring tasks: display and complete only (completing advances to the next instance per server behaviour). Completed offline, the task shows as completed until the next sync brings the next instance. Rule editing for tasks is out of scope for v1. See [tasks](tasks.md).
+- R8. Recurring tasks: display and complete only (completing advances to the next instance per server behaviour). Completed offline, the task shows as completed until the next sync brings the next instance. Rule editing for Microsoft To Do tasks is in [tasks](tasks.md) R7b; Radicale task rules stay view-only.
 
 ## Interim (CalDAV: this occurrence, this and following, entire series)
 
