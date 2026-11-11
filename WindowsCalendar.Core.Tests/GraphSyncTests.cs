@@ -22,9 +22,24 @@ public sealed class GraphSyncTests : IDisposable
         private readonly Dictionary<string, List<string>> _pages = [];
         private readonly Dictionary<string, string?> _pageEnds = [];
 
+        // The delta path each page round was asked on; its deltaLink points back there, like Graph's.
+        private readonly Dictionary<string, string> _pageBase = [];
+
         public Dictionary<string, (DateTimeOffset Start, DateTimeOffset End, string Json, int Version)> Events { get; } = [];
         public List<(string Id, string Name, bool CanEdit, bool IsDefault)> Calendars { get; } = [("cal1", "Calendar", true, true)];
         public List<string> Requests { get; } = [];
+
+        /// <summary>Colleagues whose primary calendar the user may read: email to display name (ms365-colleague-calendars).</summary>
+        public Dictionary<string, string> Colleagues { get; } = [];
+
+        /// <summary>Colleague mailboxes that refuse the user (403).</summary>
+        public HashSet<string> Forbidden { get; } = [];
+
+        /// <summary>Colleagues whose calendar is listed but whose events are refused (shared as free/busy).</summary>
+        public HashSet<string> FreeBusyOnly { get; } = [];
+
+        /// <summary>Owner address of a listed calendar, by calendar id.</summary>
+        public Dictionary<string, string> Owners { get; } = [];
         public List<string?> Authorizations { get; } = [];
         public int Version { get; private set; }
         public int PageSize { get; set; } = 50;
@@ -102,11 +117,38 @@ public sealed class GraphSyncTests : IDisposable
             {
                 return written;
             }
+            if (uri.AbsolutePath.StartsWith("/v1.0/users/", StringComparison.Ordinal))
+            {
+                // A colleague's mailbox: refused, their primary calendar, or (below) its calendarView delta.
+                var email = Uri.UnescapeDataString(uri.AbsolutePath.Split('/')[3]);
+                if (Forbidden.Contains(email))
+                {
+                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden));
+                }
+                if (uri.AbsolutePath.EndsWith("/calendar", StringComparison.Ordinal))
+                {
+                    return Colleagues.TryGetValue(email, out var owner)
+                        ? Json($$$"""{"id":"AAMk-{{{email}}}","name":"Calendar","owner":{"name":"{{{owner}}}","address":"{{{email}}}"}}""")
+                        : Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+                }
+                if (uri.AbsolutePath.EndsWith("/calendarView", StringComparison.Ordinal))
+                {
+                    return FreeBusyOnly.Contains(email)
+                        ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden))
+                        : Json("""{"value":[]}""");
+                }
+            }
             if (uri.AbsolutePath == "/v1.0/me/calendars")
             {
-                var list = string.Join(",", Calendars.Select(c =>
-                    $$"""{"id":"{{c.Id}}","name":"{{c.Name}}","canEdit":{{(c.CanEdit ? "true" : "false")}},"isDefaultCalendar":{{(c.IsDefault ? "true" : "false")}}}"""));
-                return Json($$"""{"value":[{{list}}]}""");
+                // Pages of $top (10 by default), with a nextLink while more remain.
+                var top = int.TryParse(query["$top"], out var t) ? t : 10;
+                var skip = int.TryParse(query["$skip"], out var s) ? s : 0;
+                var list = string.Join(",", Calendars.Skip(skip).Take(top).Select(c =>
+                    $$"""{"id":"{{c.Id}}","name":"{{c.Name}}","canEdit":{{(c.CanEdit ? "true" : "false")}},"isDefaultCalendar":{{(c.IsDefault ? "true" : "false")}}{{(Owners.TryGetValue(c.Id, out var o) ? $$""","owner":{"name":"x","address":"{{o}}"}""" : "")}}}"""));
+                var next = skip + top < Calendars.Count
+                    ? $$""","@odata.nextLink":"https://graph.microsoft.com/v1.0/me/calendars?$top={{top}}&$skip={{skip + top}}" """
+                    : "";
+                return Json($$"""{"value":[{{list}}]{{next}}}""");
             }
             if (uri.AbsolutePath == "/v1.0/fake/page")
             {
@@ -141,6 +183,7 @@ public sealed class GraphSyncTests : IDisposable
                 var key = Guid.NewGuid().ToString("N");
                 _pages[key] = entries;
                 _pageEnds[key] = next;
+                _pageBase[key] = uri.AbsolutePath;
                 return Page(key);
             }
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
@@ -223,9 +266,10 @@ public sealed class GraphSyncTests : IDisposable
                 var more = Guid.NewGuid().ToString("N");
                 _pages[more] = rest;
                 _pageEnds[more] = _pageEnds[key];
+                _pageBase[more] = _pageBase[key];
                 return Json($$"""{"value":{{value}},"@odata.nextLink":"https://graph.microsoft.com/v1.0/fake/page?p={{more}}"}""");
             }
-            return Json($$"""{"value":{{value}},"@odata.deltaLink":"https://graph.microsoft.com/v1.0/me/calendars/cal1/calendarView/delta?$deltatoken={{_pageEnds[key]}}"}""");
+            return Json($$"""{"value":{{value}},"@odata.deltaLink":"https://graph.microsoft.com{{_pageBase[key]}}?$deltatoken={{_pageEnds[key]}}"}""");
         }
 
         private static Task<HttpResponseMessage> Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
@@ -400,6 +444,109 @@ public sealed class GraphSyncTests : IDisposable
 
         Assert.Equal(1, summary.CalendarListChanges);
         Assert.True(_store.GetCollections("a1").Single(c => c.RemoteRef == "cal2").ReadOnly);
+    }
+
+    private Collection AddAmy() =>
+        _store.AddDiscoveredCollection("a1", new DiscoveredCollection("user:amy@example.test", "Amy", CollectionKind.Calendar, true));
+
+    [Fact]
+    public async Task ColleagueCalendar_SyncsFromTheColleaguesMailbox_AndSurvivesRediscovery()
+    {
+        var amy = AddAmy();
+        _graph.Put("e1", Nov10, Nov10.AddHours(1));
+
+        await SyncAsync();
+        await SyncAsync();
+
+        var stored = Assert.Single(_store.GetCollections("a1"), c => c.RemoteRef == "user:amy@example.test");
+        Assert.Equal((amy.Id, "Amy", true), (stored.Id, stored.Name, stored.ReadOnly));
+        Assert.Contains("e1", _store.GetRemoteEtags([amy.Id]).Keys);
+        Assert.Contains(_graph.Requests, r => Uri.UnescapeDataString(r).StartsWith("/v1.0/users/amy@example.test/calendarView/delta?", StringComparison.Ordinal));
+        Assert.DoesNotContain(_graph.Requests, r => r.Contains("user%3A", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ColleagueCalendar_LostAccess_KeepsItsEventsAndIsReported()
+    {
+        var amy = AddAmy();
+        _graph.Put("e1", Nov10, Nov10.AddHours(1));
+        await SyncAsync();
+        _graph.Forbidden.Add("amy@example.test");
+        var failed = new List<(string, int?)>();
+        _sync.PullFailed += (id, status) => failed.Add((id, status));
+
+        await SyncAsync();
+
+        Assert.Contains("e1", _store.GetRemoteEtags([amy.Id]).Keys);
+        Assert.Equal([(amy.Id, (int?)403)], failed);
+        Assert.Contains(_store.GetCollections("a1"), c => c.Id == amy.Id);
+    }
+
+    [Fact]
+    public async Task FindColleague_ReadsTheOwnersName_OrNullWithoutAccess()
+    {
+        _graph.Colleagues["amy@example.test"] = "Amy Lee";
+        _graph.Forbidden.Add("bob@example.test");
+        var client = new GraphClient(new HttpClient(_graph), "token-1");
+
+        _graph.Colleagues["cy@example.test"] = "Cy";
+        _graph.FreeBusyOnly.Add("cy@example.test");
+
+        var (access, amy) = await GraphSync.FindColleagueAsync(client, " Amy@Example.test ", default);
+
+        Assert.Equal(ColleagueAccess.Events, access);
+        Assert.Equal(("user:amy@example.test", "Amy Lee", true, CollectionKind.Calendar), (amy!.RemoteRef, amy.Name, amy.ReadOnly, amy.Kind));
+        Assert.Equal((ColleagueAccess.NotAvailable, null), await GraphSync.FindColleagueAsync(client, "bob@example.test", default));
+        Assert.Equal((ColleagueAccess.NotAvailable, null), await GraphSync.FindColleagueAsync(client, "nobody@example.test", default));
+        Assert.Equal((ColleagueAccess.FreeBusyOnly, null), await GraphSync.FindColleagueAsync(client, "cy@example.test", default));
+    }
+
+    [Fact]
+    public async Task ListedOwners_AreTheOwnersOfListedCalendars_InLowerCase()
+    {
+        _graph.Owners["cal1"] = "Ben@Example.test";
+
+        var owners = await GraphSync.ListedOwnersAsync(new GraphClient(new HttpClient(_graph), "token-1"), default);
+
+        Assert.Equal(["ben@example.test"], owners);
+    }
+
+    [Fact]
+    public async Task RemoveCollection_DeletesTheColleagueCalendarAndItsEventsOnly()
+    {
+        var amy = AddAmy();
+        _graph.Put("e1", Nov10, Nov10.AddHours(1));
+        await SyncAsync();
+
+        _store.RemoveCollection(amy.Id);
+
+        Assert.DoesNotContain(_store.GetCollections("a1"), c => c.Id == amy.Id);
+        Assert.Empty(_store.GetRemoteEtags([amy.Id]));
+        Assert.Contains("e1", Cached());
+    }
+
+    [Fact]
+    public async Task AccountRemovedDuringSync_ThrowsAccountRemoved()
+    {
+        _graph.Put("e1", Nov10, Nov10.AddHours(1));
+        var sync = new GraphSync(_store, new HttpClient(new OnFirstRequest(_graph,
+            r => r.RequestUri!.AbsolutePath.EndsWith("/calendarView/delta", StringComparison.Ordinal),
+            () => _store.RemoveAccount("a1"))), _time);
+
+        await Assert.ThrowsAsync<Sync.AccountRemovedException>(() => sync.SyncAccountAsync(_account, "token-1"));
+    }
+
+    [Fact]
+    public async Task Discovery_ReadsEveryPageOfCalendars()
+    {
+        for (var i = 2; i <= 12; i++)
+        {
+            _graph.Calendars.Add(($"cal{i}", $"Calendar {i}", false, false));
+        }
+
+        await SyncAsync();
+
+        Assert.Equal(12, _store.GetCollections("a1").Count(c => c.Kind == CollectionKind.Calendar));
     }
 
     [Fact]
@@ -682,6 +829,25 @@ public sealed class GraphEventMapperTests
     private static readonly TimeZoneInfo Singapore = TimeZoneInfo.FindSystemTimeZoneById("Asia/Singapore");
 
     private static Item? Map(string json) => GraphEventMapper.Map(JsonDocument.Parse(json).RootElement, "c1", Singapore);
+
+    [Fact]
+    public void NullFields_AsInAColleaguesCalendar_AreRead()
+    {
+        // Seen 2026-11-11 from /users/{email}/calendarView/delta: objects sent as null.
+        const string json = """
+            {"id":"e1","subject":"Busy","type":"singleInstance","isAllDay":false,"isOnlineMeeting":true,"isOrganizer":false,
+             "isReminderOn":true,"reminderMinutesBeforeStart":null,"responseStatus":null,"onlineMeeting":null,
+             "location":null,"body":null,"organizer":null,"attendees":null,"onlineMeetingUrl":null,
+             "start":{"dateTime":"2026-11-10T01:00:00.0000000","timeZone":"UTC"},
+             "end":{"dateTime":"2026-11-10T01:30:00.0000000","timeZone":"UTC"}}
+            """;
+
+        var item = Map(json)!;
+
+        Assert.Equal("e1", item.RemoteId);
+        Assert.Null(JoinLink.FromGraph(JsonDocument.Parse(json).RootElement));
+        Assert.Equal(WindowsCalendar.Core.Reminders.ReminderChoice.None, GraphEventMapper.Reminder(JsonDocument.Parse(json).RootElement));
+    }
 
     [Fact]
     public void Timed_IsUtcAndKeepsPayload()

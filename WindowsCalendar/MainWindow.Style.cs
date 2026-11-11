@@ -40,6 +40,14 @@ public sealed partial class MainWindow
         {
             AddHolidayItems(menu, collection);
         }
+        if (Core.Graph.GraphSync.ColleagueEmail(collection) is not null)
+        {
+            // ms365-colleague-calendars R8.
+            var remove = new MenuItem { Header = "Remove…", Icon = ViewParts.Icon("", 14) };
+            remove.Click += async (_, _) => await RemoveColleagueAsync(collection);
+            menu.Items.Add(new Separator());
+            menu.Items.Add(remove);
+        }
         return menu;
     }
 

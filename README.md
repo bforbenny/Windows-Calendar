@@ -12,6 +12,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [account-management](docs/prd/account-management.md) | Multiple MS365 and Radicale accounts, credential storage | in-progress |
 | [local-store-offline](docs/prd/local-store-offline.md) | SQLite cache, outbox, offline read/write | updated |
 | [sync-ms365](docs/prd/sync-ms365.md) | Graph calendar and To Do sync | in-progress |
+| [ms365-colleague-calendars](docs/prd/ms365-colleague-calendars.md) | Colleague MS365 calendars added by email | closed |
 | [sync-radicale](docs/prd/sync-radicale.md) | CalDAV sync for events and tasks | in-progress |
 | [conflict-resolution](docs/prd/conflict-resolution.md) | Server wins, local copy preserved | in-progress |
 | [recurring-events](docs/prd/recurring-events.md) | Recurrence model and edit scopes incl. "this and following" | in-progress |
@@ -24,7 +25,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [duplicate-event](docs/prd/duplicate-event.md) | Duplicate an event | in-progress |
 | [undo](docs/prd/undo.md) | Undo recent changes | in-progress |
 | [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | in-progress |
-| [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | closed |
+| [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | updated |
 | [calendar-shading](docs/prd/calendar-shading.md) | Working hours, public holidays, week numbers | closed |
 | [app-updates](docs/prd/app-updates.md) | MSIX updates via App Installer, data across versions, new-PC install | pending |
 | [tray-flyout](docs/prd/tray-flyout.md) | Tray pop-up with today's agenda and Join | closed |

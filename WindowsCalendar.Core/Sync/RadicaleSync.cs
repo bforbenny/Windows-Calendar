@@ -48,11 +48,24 @@ public sealed class RadicaleSync(LocalStore store, HttpClient http, TimeProvider
     /// Throws <see cref="CalDavException"/> on Radicale transport errors (e.g. WrongCredentials); work done before
     /// the error keeps its progress. A failing feed is counted, not thrown. Only collections <paramref name="pull"/>
     /// accepts are pulled (the app pulls all, shown or hidden: local-store-offline R10); queued changes are sent for all.
+    /// Throws <see cref="AccountRemovedException"/> if the account was removed while it synced.
     /// </summary>
     public async Task<SyncSummary> SyncAccountAsync(Account account, string password, bool forceFeeds = false,
         Func<Collection, bool>? pull = null, CancellationToken cancellationToken = default)
     {
-        pull ??= _ => true;
+        try
+        {
+            return await SyncAccountCoreAsync(account, password, forceFeeds, pull ?? (_ => true), cancellationToken);
+        }
+        catch (Exception ex) when (AccountRemovedException.Caused(ex, store, account.Id))
+        {
+            throw new AccountRemovedException(ex);
+        }
+    }
+
+    private async Task<SyncSummary> SyncAccountCoreAsync(Account account, string password, bool forceFeeds,
+        Func<Collection, bool> pull, CancellationToken cancellationToken)
+    {
         var listChanges = 0;
         if (account.ServerUrl is { } server)
         {

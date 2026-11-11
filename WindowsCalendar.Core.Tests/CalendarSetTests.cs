@@ -44,6 +44,62 @@ public sealed class CalendarSetTests : IDisposable
         return _store.CreateCalendarSet(" Work ");
     }
 
+    private Collection Named(string name) =>
+        _store.GetAccounts().SelectMany(a => _store.GetCollections(a.Id)).Single(c => c.Name == name);
+
+    [Fact]
+    public void ReAddedAccount_GetsItsSetsTicksAndSettingsBack()
+    {
+        var work = SaveWork();
+        _store.SetCollectionColour(Id("work"), "Teal/L1");
+        _store.SetCollectionShape(Id("work"), "Square");
+        _store.SetCollectionRemindersOn(Id("work"), false);
+
+        _store.RemoveAccount("a1");
+        _store.AddDiscoveredAccount(Radicale("a3"), [Cal("home"), Cal("work")]);
+
+        var c = Named("work");
+        Assert.Equal(("Teal/L1", true, "Square", false), (c.Colour, c.ColourOverride, c.Shape, c.RemindersOn));
+        Assert.Equal(["home"], Hidden());
+        Assert.False(_store.IsActiveSetModified());
+        // Membership, not just the tick: switching away and back shows the same.
+        _store.SwitchToSet(null);
+        _store.SwitchToSet(work.Id);
+        Assert.Equal(["home"], Hidden());
+    }
+
+    [Fact]
+    public void ReAddedAccount_CollectionFoundOnALaterSync_IsRestoredToo()
+    {
+        SaveWork();
+        _store.SetCollectionShape(Id("work"), "Square");
+        _store.RemoveAccount("a1");
+
+        // MS365 task lists, for one, are first found by the account's first sync, not when it is added.
+        _store.AddDiscoveredAccount(Radicale("a3"), [Cal("home")]);
+        _store.SyncCollections("a3", [Cal("home"), Cal("work")]);
+
+        Assert.Equal("Square", Named("work").Shape);
+        Assert.Equal(["home"], Hidden());
+        Assert.False(_store.IsActiveSetModified());
+    }
+
+    [Fact]
+    public void ReAdd_RestoresOnlyMatchingCollectionsOfTheSameAccount()
+    {
+        SaveWork();
+        _store.RemoveAccount("a1");
+
+        // Another sign-in name on the same server gets nothing back.
+        _store.AddDiscoveredAccount(Radicale("a3") with { Username = "amy" }, [Cal("work")]);
+        Assert.Contains("work", Hidden());
+        _store.RemoveAccount("a3");
+
+        // The same account: "work" comes back in Work; "new" joins only "All" (R9).
+        _store.AddDiscoveredAccount(Radicale("a4"), [Cal("work"), Cal("new")]);
+        Assert.Equal(["new"], Hidden());
+    }
+
     [Fact]
     public void SaveAsNewSet_HoldsTheTickedCollections_AndBecomesActive()
     {
@@ -146,7 +202,7 @@ public sealed class CalendarSetTests : IDisposable
         {
             c.Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "DROP TABLE calendar_set_members; DROP TABLE calendar_sets; PRAGMA user_version = 14;";
+            cmd.CommandText = "DROP TABLE removed_collections; DROP TABLE calendar_set_members; DROP TABLE calendar_sets; PRAGMA user_version = 14;";
             cmd.ExecuteNonQuery();
         }
 

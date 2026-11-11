@@ -114,7 +114,7 @@ public static class GraphEventMapper
     /// <summary>The event's one reminder (reminders-notifications R5a): minutes before the start when on, else none.</summary>
     internal static Reminders.ReminderChoice Reminder(JsonElement ev) =>
         ev.TryGetProperty("isReminderOn", out var on) && on.ValueKind == JsonValueKind.True
-        && ev.TryGetProperty("reminderMinutesBeforeStart", out var m) && m.TryGetInt32(out var minutes)
+        && ev.TryGetProperty("reminderMinutesBeforeStart", out var m) && m.ValueKind == JsonValueKind.Number && m.TryGetInt32(out var minutes)
             ? Reminders.ReminderChoice.Before(minutes)
             : Reminders.ReminderChoice.None;
 

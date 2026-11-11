@@ -42,13 +42,28 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
     /// <summary>
     /// Syncs one account with an access token obtained for this run. Only calendars and task lists <paramref name="pull"/>
     /// accepts are pulled (the app pulls all, shown or hidden: local-store-offline R10); queued changes are sent for all.
+    /// Throws <see cref="AccountRemovedException"/> if the account was removed while it synced.
     /// </summary>
     public async Task<SyncSummary> SyncAccountAsync(Account account, string accessToken, Func<Collection, bool>? pull = null,
         CancellationToken cancellationToken = default)
     {
+        try
+        {
+            return await SyncAccountCoreAsync(account, accessToken, pull, cancellationToken);
+        }
+        catch (Exception ex) when (AccountRemovedException.Caused(ex, store, account.Id))
+        {
+            throw new AccountRemovedException(ex);
+        }
+    }
+
+    private async Task<SyncSummary> SyncAccountCoreAsync(Account account, string accessToken, Func<Collection, bool>? pull,
+        CancellationToken cancellationToken)
+    {
         var client = new GraphClient(http, accessToken);
         var found = new List<DiscoveredCollection>(await DiscoverAsync(client, cancellationToken));
         found.AddRange(await DiscoverListsAsync(client, account.Id, cancellationToken));
+        found.AddRange(StoredColleagues(account.Id));
         var changes = store.SyncCollections(account.Id, found);
         var collections = store.GetCollections(account.Id);
         var (sent, conflicts, failed) = await PushAsync(client, collections, cancellationToken);
@@ -80,17 +95,17 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
     /// <summary>
     /// The account's calendars (R1): <c>canEdit</c> false is read-only, <c>isDefaultCalendar</c> the default,
     /// <c>hexColor</c> the server colour (ui-colour-theme R9). If Graph rejects <c>hexColor</c>, the list is read
-    /// again without it.
+    /// again without it. Pages of 100 are asked for, and nextLink is followed.
     /// </summary>
     public static async Task<IReadOnlyList<DiscoveredCollection>> DiscoverAsync(GraphClient client, CancellationToken cancellationToken)
     {
         try
         {
-            return await DiscoverAsync(client, "/me/calendars?$select=id,name,canEdit,isDefaultCalendar,hexColor", cancellationToken);
+            return await DiscoverAsync(client, "/me/calendars?$top=100&$select=id,name,canEdit,isDefaultCalendar,hexColor", cancellationToken);
         }
         catch (GraphException ex) when (ex.Error == GraphError.Http && ex.Status == HttpStatusCode.BadRequest)
         {
-            return await DiscoverAsync(client, "/me/calendars?$select=id,name,canEdit,isDefaultCalendar", cancellationToken);
+            return await DiscoverAsync(client, "/me/calendars?$top=100&$select=id,name,canEdit,isDefaultCalendar", cancellationToken);
         }
     }
 
@@ -147,7 +162,8 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
             state.Remove(key);
         }
 
-        int fetched = 0, restarts = 0, unchanged = 0;
+        int fetched = 0, restarts = 0, unchanged = 0, unreadable = 0;
+        int? failedStatus = null;
         foreach (var chunk in wanted)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -157,7 +173,8 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
             var series = new HashSet<string>();
             try
             {
-                var (next, applied, gone, restarted) = await PullChunkAsync(client, calendar, chunk, old, series, cancellationToken);
+                var (next, applied, gone, restarted, skipped) = await PullChunkAsync(client, calendar, chunk, old, series, cancellationToken);
+                unreadable += skipped;
                 applied += await KeepMastersAsync(client, calendar, series, next.Ids, gone, cancellationToken);
                 state[key] = next;
                 candidates.UnionWith(gone);
@@ -169,8 +186,17 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
             {
                 // The chunk starts afresh next time; its ids stay until then.
                 state[key] = new ChunkState(null, old?.Ids ?? []);
+                if (ex.Error == GraphError.Http)
+                {
+                    failedStatus ??= (int?)ex.Status ?? 0;
+                }
             }
             store.SetSyncState(calendar.Id, StateKey, Save(state));
+        }
+        if (failedStatus is { } failed)
+        {
+            // Once per calendar and sync, not per chunk (ms365-colleague-calendars R7).
+            PullFailed?.Invoke(calendar.Id, failed);
         }
 
         var held = state.Values.SelectMany(s => s.Ids).ToHashSet();
@@ -217,14 +243,15 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
             Removed = summary.Removed + removed,
             FullResyncs = summary.FullResyncs + restarts,
             Unchanged = summary.Unchanged + unchanged,
+            Unreadable = summary.Unreadable + unreadable,
         };
     }
 
     /// <summary>
     /// One delta round of a chunk: from its deltaLink, or from scratch. Returns the new state, the number of events
-    /// applied, the ids the chunk no longer holds, and whether it had to restart (R3).
+    /// applied, the ids the chunk no longer holds, whether it had to restart (R3), and how many events were unreadable.
     /// </summary>
-    private async Task<(ChunkState State, int Applied, HashSet<string> Gone, bool Restarted)> PullChunkAsync(
+    private async Task<(ChunkState State, int Applied, HashSet<string> Gone, bool Restarted, int Unreadable)> PullChunkAsync(
         GraphClient client, Collection calendar, DateOnly chunk, ChunkState? old, HashSet<string> seriesIds,
         CancellationToken cancellationToken)
     {
@@ -234,7 +261,7 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
             var fresh = old?.Delta is null;
             var ids = fresh ? new HashSet<string>() : new HashSet<string>(old!.Ids);
             var gone = new HashSet<string>();
-            var applied = 0;
+            int applied = 0, unreadable = 0;
             string? url = fresh ? InitialUrl(calendar, chunk) : old!.Delta;
             string? previous = null;
             var pages = 0;
@@ -267,7 +294,19 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
                             {
                                 continue;
                             }
-                            var item = ev.TryGetProperty("@removed", out _) ? null : GraphEventMapper.Map(ev, calendar.Id, _time.LocalTimeZone);
+                            Item? item;
+                            try
+                            {
+                                item = ev.TryGetProperty("@removed", out _) ? null : GraphEventMapper.Map(ev, calendar.Id, _time.LocalTimeZone);
+                            }
+                            catch (Exception ex) when (ex is InvalidOperationException or FormatException or KeyNotFoundException or ArgumentException)
+                            {
+                                // An event in an unexpected shape is skipped; its stored version, if any, stays (sync-ms365).
+                                ids.Add(id);
+                                gone.Remove(id);
+                                unreadable++;
+                                continue;
+                            }
                             if (item is null)
                             {
                                 ids.Remove(id);
@@ -310,7 +349,7 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
                     // A fresh round lists everything: what it did not return is gone from this chunk.
                     gone.UnionWith(old.Ids.Where(id => !ids.Contains(id)));
                 }
-                return (new ChunkState(deltaLink, ids), applied, gone, restarted);
+                return (new ChunkState(deltaLink, ids), applied, gone, restarted, unreadable);
             }
             if (restarted)
             {
@@ -357,7 +396,7 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
     {
         try
         {
-            using var doc = await client.GetAsync($"/me/events/{Uri.EscapeDataString(remoteId)}", cancellationToken);
+            using var doc = await client.GetAsync($"{Mailbox(calendar)}/events/{Uri.EscapeDataString(remoteId)}", cancellationToken);
             return GraphEventMapper.Map(doc.RootElement, calendar.Id, _time.LocalTimeZone);
         }
         catch (GraphException ex) when (ex.Error == GraphError.Http && ex.Status is HttpStatusCode.NotFound)
@@ -478,8 +517,11 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
     {
         var start = chunk.ToDateTime(TimeOnly.MinValue);
         var end = chunk.AddDays(ChunkDays).ToDateTime(TimeOnly.MinValue);
-        return $"/me/calendars/{Uri.EscapeDataString(calendar.RemoteRef)}/calendarView/delta"
-            + $"?startDateTime={start:yyyy-MM-ddTHH:mm:ss}Z&endDateTime={end:yyyy-MM-ddTHH:mm:ss}Z";
+        // A colleague's primary calendar (ms365-colleague-calendars R5) is the calendarView of their mailbox.
+        var view = ColleagueEmail(calendar) is null
+            ? $"/me/calendars/{Uri.EscapeDataString(calendar.RemoteRef)}/calendarView/delta"
+            : $"{Mailbox(calendar)}/calendarView/delta";
+        return view + $"?startDateTime={start:yyyy-MM-ddTHH:mm:ss}Z&endDateTime={end:yyyy-MM-ddTHH:mm:ss}Z";
     }
 
     private static string Key(DateOnly chunk) => chunk.ToString("yyyy-MM-dd");

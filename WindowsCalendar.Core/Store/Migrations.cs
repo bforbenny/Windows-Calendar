@@ -213,6 +213,25 @@ internal static class Migrations
             PRIMARY KEY (set_id, collection_id)
         );
         """,
+
+        // v16: what a removed account's collections had, restored when the same account is added again (calendar-sets
+        // R8). Keyed by the account's type, sign-in name and server URL ('' when none); set_ids is comma-separated.
+        """
+        CREATE TABLE removed_collections (
+            account_type    TEXT NOT NULL,
+            username        TEXT NOT NULL,
+            server_url      TEXT NOT NULL,
+            remote_ref      TEXT NOT NULL,
+            kind            TEXT NOT NULL,
+            colour          TEXT NOT NULL,
+            shape           TEXT NOT NULL,
+            colour_override INTEGER NOT NULL,
+            reminders_on    INTEGER NOT NULL,
+            hidden          INTEGER NOT NULL,
+            set_ids         TEXT NOT NULL,
+            PRIMARY KEY (account_type, username, server_url, remote_ref, kind)
+        );
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

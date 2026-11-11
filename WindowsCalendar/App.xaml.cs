@@ -408,6 +408,10 @@ public partial class App : Application
             Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
             return summary.AnyChange;
         }
+        catch (AccountRemovedException)
+        {
+            Log.Information("Account {AccountId} removed during sync", account.Id);
+        }
         catch (CalDavException ex) when (ex.Error == CalDavError.WrongCredentials)
         {
             // sync-radicale R11 interim: no retry loop; the Sign in bar comes with ui-states.
@@ -444,6 +448,8 @@ public partial class App : Application
             Log.Warning("Calendar {CollectionId} chunk {Chunk} restarted: {Reason}", collectionId, chunk, why);
         graph.MastersFetched += (collectionId, count) =>
             Log.Information("Calendar {CollectionId}: {Count} series masters fetched by id", collectionId, count);
+        graph.PullFailed += (collectionId, status) =>
+            Log.Warning("Calendar {CollectionId} could not be read ({Status}); its events are kept and it is retried next sync", collectionId, status);
         graph.ListsUnavailable += accountId =>
             Log.Warning("Account {AccountId}: To Do lists could not be read; task lists kept as they were", accountId);
         graph.CollectionSyncing += OnCollectionSyncing;
@@ -454,6 +460,10 @@ public partial class App : Application
             var summary = await graph.SyncAccountAsync(account, token, cancellationToken: cancellationToken);
             Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
             return summary.AnyChange;
+        }
+        catch (AccountRemovedException)
+        {
+            Log.Information("Account {AccountId} removed during sync", account.Id);
         }
         catch (MsalUiRequiredException ex)
         {

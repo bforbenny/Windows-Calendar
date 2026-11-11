@@ -43,6 +43,8 @@ The user can connect any number of Microsoft 365 work accounts and any number of
 - Account status (R10) and account editing (R12) come with [sync-radicale](sync-radicale.md) and [settings-page](settings-page.md).
 - MS365 (with [sync-ms365](sync-ms365.md) slice 1): R2 sign-in through MSAL with the WAM broker, from the first-launch panel and the sidebar's add-account menu. The client ID and tenant ID (R3) are read from `ms365.json` shipped with the app; the user fills them in before building. The account stores its display name and email (`/me` `mail`, else `userPrincipalName`) and the sign-in name in `username`, used to find the account in the broker for silent sign-in. Tokens stay in WAM (R6). Removing an MS365 account also signs it out of the app (MSAL `RemoveAsync`).
 - MS365 after a restart: the broker lists the accounts Windows knows (`ListOperatingSystemAccounts`), so silent sign-in finds the account without the app storing tokens. If an account still needs to sign in, Add account with the same account signs it in again and resumes its sync instead of adding a duplicate.
+- R8 removal during a running sync: the sync of that account stops writing once the account is gone. Its failure is logged as "removed during sync" (information, no details), not as a sync error, and the other accounts' results and the view refresh still apply.
+- R8 remove then re-add: see [calendar-sets](calendar-sets.md) R8 for what is remembered and restored.
 - R11 is in place for Radicale: the collection list is re-read at the start of every sync (Sync now included), matched by URL and kind. A listing with no collections at all removes nothing, so a server hiccup cannot wipe the account.
 
 ## Out of scope
@@ -50,7 +52,7 @@ The user can connect any number of Microsoft 365 work accounts and any number of
 - Personal Microsoft accounts (MSA), MS365 accounts in other tenants, and Google accounts.
 - Automatic copying or mirroring of items between accounts.
 - Creating or deleting calendars on the server (v1 uses existing collections only).
-- Shared/delegated MS365 calendars of other users.
+- Shared/delegated MS365 calendars of other users, other than those listed by `/me/calendars` and colleague primary calendars added by email ([ms365-colleague-calendars](ms365-colleague-calendars.md)).
 
 ## Acceptance criteria
 
@@ -60,6 +62,7 @@ The user can connect any number of Microsoft 365 work accounts and any number of
 - [ ] After a reboot, sync resumes without prompting (credentials taken from OS storage).
 - [ ] No password or token appears in the SQLite file, settings file, or logs.
 - [x] Removing an account asks for confirmation and removes its vault entries and cached items.
+- [x] Removing an account while it is syncing logs "removed during sync" and no "Sync run failed" error; other accounts still sync.
 
 ## Dependencies
 

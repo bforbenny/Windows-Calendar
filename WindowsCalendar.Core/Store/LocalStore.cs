@@ -158,7 +158,7 @@ public sealed partial class LocalStore : IDisposable
     /// <summary>
     /// Saves a new account and the collections found on its server in one transaction. Each collection gets a
     /// local id, its snapped server colour or else the next automatic colour, the next automatic shape
-    /// (ui-colour-theme R8, R9) and reminders on. If no default calendar
+    /// (ui-colour-theme R8, R9) and reminders on, unless it is restored from a removed same account (calendar-sets R8). If no default calendar
     /// or task list is set yet, the server's main one (or else the first writable one) becomes the default
     /// (account-management R9).
     /// </summary>
@@ -179,17 +179,7 @@ public sealed partial class LocalStore : IDisposable
                 }
             }
 
-            var added = new List<Collection>();
-            foreach (var f in found)
-            {
-                var (colour, shape) = CollectionStyle.Next(inUse.Count, inUse);
-                inUse.Add((colour, shape));
-                var server = CalendarColours.Snap(f.ServerColour);
-                var c = new Collection(Guid.NewGuid().ToString("N"), account.Id, f.Kind, f.Name, server ?? colour, shape, true, f.ReadOnly,
-                    f.RemoteRef, f.SourceUrl, ServerColour: server);
-                InsertCollection(tx, c);
-                added.Add(c);
-            }
+            var added = found.Select(f => InsertNewCollection(tx, account.Id, f, inUse)).ToList();
 
             foreach (var (key, kind) in DefaultKeys)
             {
@@ -206,6 +196,51 @@ public sealed partial class LocalStore : IDisposable
             }
             tx.Commit();
             return added;
+        }
+    }
+
+    /// <summary>
+    /// Adds one collection the user chose to an existing account (ms365-colleague-calendars R1, R3), styled like any
+    /// newly found collection; it joins only "All" (calendar-sets R9).
+    /// </summary>
+    public Collection AddDiscoveredCollection(string accountId, DiscoveredCollection found)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            var inUse = new HashSet<(string, string)>();
+            using (var cmd = Command(_connection, tx, "SELECT colour, shape FROM collections;"))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    inUse.Add((r.GetString(0), r.GetString(1)));
+                }
+            }
+            var c = InsertNewCollection(tx, accountId, found, inUse);
+            tx.Commit();
+            return c;
+        }
+    }
+
+    /// <summary>
+    /// Deletes one collection and everything cached for it from this PC (ms365-colleague-calendars R8); its unsent
+    /// changes go too. A default that pointed to it moves on (account-management R9).
+    /// </summary>
+    public void RemoveCollection(string collectionId)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            Execute(_connection, tx,
+                """
+                DELETE FROM outbox WHERE item_id IN (SELECT id FROM items WHERE collection_id = $c);
+                DELETE FROM meta WHERE key = 'hidden:' || $c;
+                DELETE FROM collections WHERE id = $c;
+                """,
+                ("$c", collectionId));
+            ReassignDefaults(tx);
+            tx.Commit();
         }
     }
 
@@ -271,6 +306,19 @@ public sealed partial class LocalStore : IDisposable
         lock (_gate)
         {
             using var tx = _connection.BeginTransaction();
+            // What its collections had, for a later re-add of the same account (calendar-sets R8).
+            Execute(_connection, tx,
+                """
+                DELETE FROM removed_collections WHERE (account_type, username, server_url) IN (
+                    SELECT type, COALESCE(username, ''), COALESCE(server_url, '') FROM accounts WHERE id = $a);
+                INSERT INTO removed_collections
+                SELECT a.type, COALESCE(a.username, ''), COALESCE(a.server_url, ''), c.remote_ref, c.kind, c.colour, c.shape,
+                    c.colour_override, c.reminders_on,
+                    EXISTS (SELECT 1 FROM meta WHERE key = 'hidden:' || c.id),
+                    COALESCE((SELECT group_concat(set_id) FROM calendar_set_members WHERE collection_id = c.id), '')
+                FROM collections c JOIN accounts a ON a.id = c.account_id WHERE c.account_id = $a;
+                """,
+                ("$a", accountId));
             // The outbox has no foreign key to items, so its entries go first; the rest cascades.
             Execute(_connection, tx,
                 """
@@ -314,11 +362,7 @@ public sealed partial class LocalStore : IDisposable
                 var match = existing.FirstOrDefault(c => c.RemoteRef == f.RemoteRef && c.Kind == f.Kind);
                 if (match is null)
                 {
-                    var (colour, shape) = CollectionStyle.Next(inUse.Count, inUse);
-                    inUse.Add((colour, shape));
-                    var server = CalendarColours.Snap(f.ServerColour);
-                    InsertCollection(tx, new Collection(Guid.NewGuid().ToString("N"), accountId, f.Kind, f.Name, server ?? colour, shape,
-                        true, f.ReadOnly, f.RemoteRef, f.SourceUrl, ServerColour: server));
+                    InsertNewCollection(tx, accountId, f, inUse);
                     added++;
                 }
                 else
@@ -1537,6 +1581,71 @@ public sealed partial class LocalStore : IDisposable
             ("$user", a.Username), ("$email", a.Email));
 
     /// <summary>A new collection joins only "All": while a user-defined set is active it starts hidden (calendar-sets R9).</summary>
+    private sealed record RememberedCollection(string Colour, string Shape, bool Override, bool RemindersOn, bool Hidden,
+        IReadOnlyList<string> SetIds);
+
+    // The removed_collections rows of the account that $a was added as (same type, sign-in name and server URL).
+    private const string RememberedWhere =
+        """
+        (account_type, username, server_url) = (SELECT type, COALESCE(username, ''), COALESCE(server_url, '') FROM accounts WHERE id = $a)
+        AND remote_ref = $r AND kind = $k
+        """;
+
+    /// <summary>
+    /// Inserts a newly found collection: its snapped server colour or else the next automatic colour, the next automatic
+    /// shape and reminders on (ui-colour-theme R8, R9) — or, if a removed account that was the same one had it, what it had
+    /// then: colour, shape, Reminders on, tick and set memberships (calendar-sets R8). That memory is used once.
+    /// </summary>
+    private Collection InsertNewCollection(SqliteTransaction tx, string accountId, DiscoveredCollection f, HashSet<(string, string)> inUse)
+    {
+        var key = new (string, object?)[] { ("$a", accountId), ("$r", f.RemoteRef), ("$k", f.Kind.ToString()) };
+        RememberedCollection? m = null;
+        using (var cmd = Command(_connection, tx,
+            $"SELECT colour, shape, colour_override, reminders_on, hidden, set_ids FROM removed_collections WHERE {RememberedWhere};", key))
+        using (var r = cmd.ExecuteReader())
+        {
+            if (r.Read())
+            {
+                m = new RememberedCollection(r.GetString(0), r.GetString(1), r.GetBoolean(2), r.GetBoolean(3), r.GetBoolean(4),
+                    r.GetString(5).Split(',', StringSplitOptions.RemoveEmptyEntries));
+            }
+        }
+
+        var server = CalendarColours.Snap(f.ServerColour);
+        var id = Guid.NewGuid().ToString("N");
+        Collection c;
+        if (m is null)
+        {
+            var (colour, shape) = CollectionStyle.Next(inUse.Count, inUse);
+            c = new Collection(id, accountId, f.Kind, f.Name, server ?? colour, shape, true, f.ReadOnly, f.RemoteRef, f.SourceUrl,
+                ServerColour: server);
+        }
+        else
+        {
+            c = new Collection(id, accountId, f.Kind, f.Name, m.Override ? m.Colour : server ?? m.Colour, m.Shape, m.RemindersOn,
+                f.ReadOnly, f.RemoteRef, f.SourceUrl, m.Override, server);
+        }
+        inUse.Add((c.Colour, c.Shape));
+        InsertCollection(tx, c);
+        if (m is null)
+        {
+            return c;
+        }
+
+        Execute(_connection, tx, "DELETE FROM meta WHERE key = $k;", ("$k", "hidden:" + id));
+        if (m.Hidden)
+        {
+            SetMeta(tx, "hidden:" + id, "1");
+        }
+        foreach (var set in m.SetIds)
+        {
+            Execute(_connection, tx, "INSERT OR IGNORE INTO calendar_set_members SELECT id, $c FROM calendar_sets WHERE id = $s;",
+                ("$c", id), ("$s", set));
+        }
+        Execute(_connection, tx, $"DELETE FROM removed_collections WHERE {RememberedWhere};", key);
+        return c;
+    }
+
     private void InsertCollection(SqliteTransaction? tx, Collection c)
     {
         Execute(_connection, tx,

@@ -39,6 +39,13 @@ public sealed partial class MainWindow
         var remove = new MenuItem { Header = "Remove account…", Icon = ViewParts.Icon("", 14) };
         remove.Click += async (_, _) => await RemoveAccountAsync(account);
         var menu = new ContextMenu { PlacementTarget = more, Placement = PlacementMode.Bottom };
+        if (account.Type == AccountType.MS365)
+        {
+            // ms365-colleague-calendars R1.
+            var colleague = new MenuItem { Header = "Add colleague's calendar…", Icon = ViewParts.Icon("", 14) };
+            colleague.Click += async (_, _) => await AddColleagueAsync(account);
+            menu.Items.Add(colleague);
+        }
         menu.Items.Add(remove);
         more.Click += (_, _) => menu.IsOpen = true;
         Grid.SetColumn(more, 1);

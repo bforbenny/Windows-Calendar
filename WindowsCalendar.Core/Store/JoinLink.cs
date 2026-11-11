@@ -82,8 +82,9 @@ public sealed partial record JoinLink(string Url, string Provider)
         }
     }
 
+    // Graph may send an object as null (e.g. responseStatus in a colleague's calendar).
     private static string? Text(JsonElement e, string name) =>
-        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        e.ValueKind == JsonValueKind.Object && e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
 
     [GeneratedRegex(@"https://[^\s<>""'\\]+", RegexOptions.IgnoreCase)]
     private static partial Regex UrlPattern();

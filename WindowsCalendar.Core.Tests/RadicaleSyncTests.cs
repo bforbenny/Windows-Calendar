@@ -214,6 +214,16 @@ public sealed class RadicaleSyncTests : IDisposable
     private IReadOnlyDictionary<string, string?> Cached() => _store.GetRemoteEtags(_collections.Select(c => c.Id).ToList());
 
     [Fact]
+    public async Task AccountRemovedDuringSync_ThrowsAccountRemoved()
+    {
+        _server.Put("e1.ics", Event("e1", "20261110T090000Z"));
+        var sync = new RadicaleSync(_store, new HttpClient(new OnFirstRequest(_server,
+            r => r.Method.Method == "REPORT", () => _store.RemoveAccount("a1"))), _time);
+
+        await Assert.ThrowsAsync<AccountRemovedException>(() => sync.SyncAccountAsync(_account, "secret"));
+    }
+
+    [Fact]
     public async Task FirstSync_PutsEventsAndTasksInMatchingCollections()
     {
         _server.Put("e1.ics", Event("e1", "20261110T090000Z"));

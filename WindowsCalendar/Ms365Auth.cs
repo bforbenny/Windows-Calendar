@@ -18,7 +18,8 @@ namespace WindowsCalendar;
 internal sealed class Ms365Auth
 {
     // offline_access is added by MSAL itself.
-    private static readonly string[] Scopes = ["Calendars.ReadWrite", "Tasks.ReadWrite", "User.Read"];
+    // Calendars.Read.Shared: colleague calendars added by email (ms365-colleague-calendars R9; admin consent granted).
+    private static readonly string[] Scopes = ["Calendars.ReadWrite", "Calendars.Read.Shared", "Tasks.ReadWrite", "User.Read"];
 
     private readonly IPublicClientApplication _app;
 
