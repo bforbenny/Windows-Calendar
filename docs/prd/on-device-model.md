@@ -2,10 +2,12 @@
 description: Shared on-device language model service (Windows AI LanguageModel on the NPU) used by natural-language quick add and search
 when-to-use: Before working on the Windows AI LanguageModel integration, the AI setting, the model request queue, the phrase eval harness, or the NPU spike
 tags: [ai, npu, platform, privacy]
-status: pending
+status: parked
 ---
 
 # On-device model
+
+> Parked on 2026-11-11: the NPU spike ([on-device-model](on-device-model.md) Spike results) was NO-GO, so the user skipped the on-device AI features. Revisit when Aion Instruct is available (January 2027).
 
 ## Summary
 

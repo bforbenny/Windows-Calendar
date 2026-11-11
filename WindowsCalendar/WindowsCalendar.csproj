@@ -15,11 +15,6 @@
     <Nullable>enable</Nullable>
     <!-- Custom Main in Program.cs handles single-instance redirection (app-platform R4). -->
     <StartupObject>WindowsCalendar.Program</StartupObject>
-    <!-- Keep the manifest's MinVersion and MaxVersionTested 10.0.26226.0 for the Windows AI APIs (on-device-model R1a). -->
-    <AppxOSMinVersionReplaceManifestVersion>false</AppxOSMinVersionReplaceManifestVersion>
-    <AppxOSMaxVersionTestedReplaceManifestVersion>false</AppxOSMaxVersionTestedReplaceManifestVersion>
-    <!-- The MSIX build tools otherwise add a Windows.Desktop device family with MaxVersionTested = TargetPlatformVersion (26100). -->
-    <AppxAddDefaultTargetDeviceFamilyItem>false</AppxAddDefaultTargetDeviceFamilyItem>
   </PropertyGroup>
 
   <ItemGroup>
@@ -39,8 +34,6 @@
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
     <!-- MS365 app registration: client and tenant id, not secrets (account-management R3). -->
     <Content Include="ms365.json" CopyToOutputDirectory="PreserveNewest" />
-    <!-- NPU spike phrase set (on-device-model R12). -->
-    <EmbeddedResource Include="Ai\spike-phrases.txt" LogicalName="WindowsCalendar.Ai.spike-phrases.txt" />
   </ItemGroup>
 
   <ItemGroup>
@@ -53,8 +46,6 @@
     <PackageReference Include="Microsoft.Identity.Client.Broker" Version="4.92.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2957" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools.MSIX" Version="1.7.251221100" />
-    <!-- Windows AI LanguageModel component only; never the metapackage or WinUI (on-device-model R1a). -->
-    <PackageReference Include="Microsoft.WindowsAppSDK.AI" Version="2.6.5" />
     <PackageReference Include="Serilog" Version="4.4.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />

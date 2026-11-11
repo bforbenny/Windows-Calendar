@@ -60,7 +60,7 @@ Frontmatter is required on every PRD:
 description: <one line — what this requirement is>
 when-to-use: <when an agent should read this file>
 tags: [<tag>, <tag>]
-status: pending | in-progress | updated | closed
+status: pending | in-progress | updated | closed | parked
 ---
 ```
 
@@ -72,7 +72,8 @@ status: pending | in-progress | updated | closed
 | `in-progress` | Implementation underway | Phase 3 starts |
 | `closed` | Implemented and verified by the user | Phase 3 closure |
 | `updated` | Was closed; scope has since changed | A closed requirement is reopened. Returns to `in-progress` when work restarts |
+| `parked` | Deliberately not being built; kept for a later revisit | The user decides to skip the requirement. A dated line under the title says why and when to revisit. Returns to `pending` when revived |
 
-Normal path: `pending → in-progress → closed`. Rework path: `closed → updated → in-progress → closed`.
+Normal path: `pending → in-progress → closed`. Rework path: `closed → updated → in-progress → closed`. Skip path: `pending | in-progress → parked → pending`.
 
 PRD files are never moved or deleted. Closure is a `status` change only.

@@ -8,13 +8,12 @@
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-  xmlns:systemai="http://schemas.microsoft.com/appx/manifest/systemai/windows10"
-  IgnorableNamespaces="uap rescap systemai com desktop">
+  IgnorableNamespaces="uap rescap com desktop">
 
   <Identity
     Name="9f8d7707-4829-4516-a409-911bae828654"
     Publisher="CN=Ben"
-    Version="1.0.8.0" />
+    Version="1.0.9.0" />
 
   <mp:PhoneIdentity PhoneProductId="9f8d7707-4829-4516-a409-911bae828654" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
@@ -68,6 +67,5 @@
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
-    <systemai:Capability Name="systemAIModels"/>
   </Capabilities>
 </Package>

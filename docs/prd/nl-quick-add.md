@@ -2,10 +2,12 @@
 description: On-device NPU model refines the quick-add rule parser so free English phrasing becomes an event or task
 when-to-use: Before working on AI refinement of quick add, how model and rule results merge, or the AI-running indicator
 tags: [quick-add, ai, npu, parsing, events, tasks]
-status: pending
+status: parked
 ---
 
 # Natural-language quick add (NPU)
+
+> Parked on 2026-11-11: the NPU spike ([on-device-model](on-device-model.md) Spike results) was NO-GO, so the user skipped the on-device AI features. Quick add stays on the rules ([quick-add](quick-add.md)). Revisit when Aion Instruct is available (January 2027).
 
 ## Summary
 

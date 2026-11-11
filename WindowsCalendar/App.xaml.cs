@@ -130,7 +130,6 @@ public partial class App : Application
 
         ToastActivator.LogScheduledCount();
         ToastActivator.ScheduleTestToastsIfRequested();
-        RunModelSpikeIfRequested();
 
         // Started by a toast action: stay hidden in the tray; the activator handles the action (reminders-notifications R2).
         if (Program.ToastLaunch)
@@ -438,22 +437,6 @@ public partial class App : Application
     }
 
     internal void ShowMainWindow() => _window?.ShowAndFocus();
-
-    /// <summary>
-    /// Spike (on-device-model R12): if LocalState\run-spike exists, deletes it and runs the model spike in the
-    /// background; the report goes to LocalState\spike-report.md.
-    /// </summary>
-    private static void RunModelSpikeIfRequested()
-    {
-        var folder = global::Windows.Storage.ApplicationData.Current.LocalFolder.Path;
-        var flag = System.IO.Path.Combine(folder, "run-spike");
-        if (!System.IO.File.Exists(flag))
-        {
-            return;
-        }
-        System.IO.File.Delete(flag);
-        _ = Task.Run(() => Ai.ModelSpike.RunAsync(folder, CancellationToken.None));
-    }
 
     private void Quit()
     {
