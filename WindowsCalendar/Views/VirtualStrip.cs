@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 
 namespace WindowsCalendar.Views;
 
@@ -49,6 +50,31 @@ internal sealed class VirtualStrip : ItemsControl
             // A follower: the wheel scrolls the main view, not this strip.
             Scroll.PreviewMouseWheel += (_, e) => e.Handled = true;
         }
+        else if (orientation == Orientation.Horizontal)
+        {
+            // WPF raises no event for the horizontal (tilt) wheel, so take WM_MOUSEHWHEEL from the window.
+            HwndSource? source = null;
+            Loaded += (_, _) =>
+            {
+                source = PresentationSource.FromVisual(this) as HwndSource;
+                source?.AddHook(TiltWheel);
+            };
+            Unloaded += (_, _) => source?.RemoveHook(TiltWheel);
+        }
+    }
+
+    private IntPtr TiltWheel(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WM_MOUSEHWHEEL = 0x020E;
+        // Over the whole view (headers included), not just the body.
+        if (msg == WM_MOUSEHWHEEL && (Parent as UIElement ?? this).IsMouseOver)
+        {
+            // High word of wParam: 120 per notch, positive = right. 48 px per notch, as the vertical wheel.
+            var delta = (short)((wParam.ToInt64() >> 16) & 0xFFFF);
+            Scroll.ScrollToHorizontalOffset(Scroll.HorizontalOffset + delta * 48 / 120.0);
+            handled = true;
+        }
+        return IntPtr.Zero;
     }
 
     /// <summary>The strip's scroller (offsets in pixels).</summary>
