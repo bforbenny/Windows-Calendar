@@ -8,13 +8,34 @@ using WindowsCalendar.Core.Store;
 namespace WindowsCalendar.Core.CalDav;
 
 /// <summary>
-/// The editor's fields (calendar-views R6, interim). Start and End are wall-clock times in the Windows timezone;
-/// for all-day events they are dates, with End exclusive. Reminder is the first reminder (reminders-notifications R5a);
-/// null leaves the event's reminders as they are (none on a new event). MoreReminders counts the other alarms, which
-/// edits keep.
+/// The editor's fields (calendar-views R6, interim). For all-day events Start and End are dates, with End exclusive.
+/// Reminder is the first reminder (reminders-notifications R5a); null leaves the event's reminders as they are (none on
+/// a new event). MoreReminders counts the other alarms, which edits keep.
+/// <para>Timezones (timezone-handling R7): with <see cref="StartZone"/> null, Start and End are wall-clock times in the
+/// Windows timezone and a write keeps the event's own zones (floating, a custom zone, a separate end zone); a new
+/// event gets the Windows timezone. With <see cref="StartZone"/> set, Start is a wall-clock time in it and End one in
+/// <see cref="EndZone"/> (StartZone when null), and a write puts the event in those zones. Reads leave both null.
+/// Zones are ignored for all-day events.</para>
 /// </summary>
 public sealed record EventFields(string Title, bool AllDay, DateTime Start, DateTime End, string? Location, string? Description,
-    ShowAs ShowAs = ShowAs.Busy, ReminderChoice? Reminder = null, int MoreReminders = 0);
+    ShowAs ShowAs = ShowAs.Busy, ReminderChoice? Reminder = null, int MoreReminders = 0,
+    TimeZoneInfo? StartZone = null, TimeZoneInfo? EndZone = null)
+{
+    /// <summary>Whether a write moves the event into the zones given (timezone-handling R7).</summary>
+    public bool ZoneSet => StartZone is not null && !AllDay;
+
+    /// <summary>The end's zone when <see cref="ZoneSet"/>.</summary>
+    public TimeZoneInfo? EffectiveEndZone => EndZone ?? StartZone;
+
+    /// <summary>The same times as wall-clock times in <paramref name="zone"/>, with no zones.</summary>
+    public EventFields Walls(TimeZoneInfo zone) => ZoneSet
+        ? this with { Start = Convert(Start, StartZone!, zone), End = Convert(End, EffectiveEndZone!, zone), StartZone = null, EndZone = null }
+        : this with { StartZone = null, EndZone = null };
+
+    /// <summary>A wall-clock time in one zone as one in another; a time skipped by a DST change moves an hour on.</summary>
+    public static DateTime Convert(DateTime wall, TimeZoneInfo from, TimeZoneInfo to) =>
+        from.Id == to.Id ? wall : DateTime.SpecifyKind(TimeZoneInfo.ConvertTime(CalDavEvents.ToUtc(wall, from), to), DateTimeKind.Unspecified);
+}
 
 /// <summary>
 /// Creates and edits CalDAV events for the editor. Edits change the stored iCalendar object in place and touch only
@@ -25,7 +46,10 @@ public static class CalDavEvents
     /// <summary>The editor's fields for an event's master component.</summary>
     public static EventFields Read(Item item, TimeZoneInfo zone) => Read(Master(CustomTimeZones.Load(item.RawPayload)!), zone);
 
-    /// <summary>A new event in the Windows timezone, with a UUID-based UID and href (sync-radicale R7).</summary>
+    /// <summary>
+    /// A new event in the Windows timezone, or the zones in <paramref name="fields"/> (timezone-handling R7), with a
+    /// UUID-based UID and href (sync-radicale R7).
+    /// </summary>
     public static Item Create(Collection collection, EventFields fields, TimeZoneInfo zone, DateTimeOffset now)
     {
         var uid = Guid.NewGuid().ToString();
@@ -52,7 +76,8 @@ public static class CalDavEvents
         var calendar = CustomTimeZones.Load(item.RawPayload)!;
         var ev = Master(calendar);
         var old = Read(ev, zone);
-        var timesChanged = old.AllDay != fields.AllDay || old.Start != fields.Start || old.End != fields.End;
+        var walls = fields.Walls(zone);
+        var timesChanged = old.AllDay != fields.AllDay || old.Start != walls.Start || old.End != walls.End || fields.ZoneSet;
         var textChanged = old.Title != fields.Title || Blank(old.Location) != Blank(fields.Location)
             || Blank(old.Description) != Blank(fields.Description) || old.ShowAs != fields.ShowAs || ReminderChanged(old, fields);
         if (!timesChanged && !textChanged)
@@ -270,7 +295,8 @@ public static class CalDavEvents
     /// All-day events get DATE values. Timed events keep their form: floating stays floating, UTC stays UTC, and
     /// a TZID event is written in its own zone, a custom VTIMEZONE in the calendar included (timezone-handling F1);
     /// a DTEND with its own TZID keeps it (F2). Only a TZID nothing resolves is written in UTC. An all-day event
-    /// becoming timed gets the Windows timezone.
+    /// becoming timed gets the Windows timezone. Zones in <paramref name="fields"/> are written as IANA TZIDs with
+    /// their VTIMEZONEs (timezone-handling R7).
     /// </summary>
     internal static void SetTimes(Calendar calendar, CalendarEvent ev, EventFields fields, TimeZoneInfo zone)
     {
@@ -283,6 +309,12 @@ public static class CalDavEvents
         {
             ev.DtStart = new CalDateTime(DateOnly.FromDateTime(fields.Start));
             ev.DtEnd = new CalDateTime(DateOnly.FromDateTime(fields.End));
+            return;
+        }
+        if (fields.ZoneSet)
+        {
+            ev.DtStart = InZone(calendar, ToUtc(fields.Start, fields.StartZone!), fields.StartZone!);
+            ev.DtEnd = InZone(calendar, ToUtc(fields.End, fields.EffectiveEndZone!), fields.EffectiveEndZone!);
             return;
         }
 
@@ -309,7 +341,13 @@ public static class CalDavEvents
             && e != tzId && CustomTimeZones.IsKnown(e) ? e : tzId;
         ev.DtStart = InZone(ToUtc(fields.Start, zone), tzId);
         ev.DtEnd = InZone(ToUtc(fields.End, zone), endTzId);
-        foreach (var id in new[] { tzId, endTzId }.Distinct())
+        AddTimeZones(calendar, tzId, endTzId);
+    }
+
+    /// <summary>A VTIMEZONE for each TZID the calendar does not define yet.</summary>
+    internal static void AddTimeZones(Calendar calendar, params string[] tzIds)
+    {
+        foreach (var id in tzIds.Distinct())
         {
             if (!calendar.TimeZones.Any(z => z.TzId == id))
             {
@@ -359,8 +397,22 @@ public static class CalDavEvents
 
     internal static string? Blank(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
 
-    private static string? IanaId(TimeZoneInfo zone) =>
+    internal static string? IanaId(TimeZoneInfo zone) =>
         zone.HasIanaId ? zone.Id : TimeZoneInfo.TryConvertWindowsIdToIanaId(zone.Id, out var iana) ? iana : null;
+
+    /// <summary>
+    /// A UTC instant in a chosen zone (timezone-handling R7): its IANA TZID, with a VTIMEZONE added; UTC for UTC or a
+    /// zone with no IANA id.
+    /// </summary>
+    internal static CalDateTime InZone(Calendar calendar, DateTime utc, TimeZoneInfo zone)
+    {
+        if (zone.Id is "UTC" or "Etc/UTC" || IanaId(zone) is not { } id)
+        {
+            return new CalDateTime(utc, "UTC");
+        }
+        AddTimeZones(calendar, id);
+        return InZone(utc, id);
+    }
 
     internal static DateTime ToUtc(DateTime wall, TimeZoneInfo zone)
     {

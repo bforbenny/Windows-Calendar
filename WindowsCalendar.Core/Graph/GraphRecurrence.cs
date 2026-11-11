@@ -97,7 +97,7 @@ public static class GraphRecurrence
             default:
                 throw new ArgumentException("A rule that repeats is needed.", nameof(rule));
         }
-        var range = new JsonObject { ["startDate"] = Iso(start), ["recurrenceTimeZone"] = zone.Id };
+        var range = new JsonObject { ["startDate"] = Iso(start), ["recurrenceTimeZone"] = Views.TimeZoneLabels.WindowsId(zone) };
         if (rule.Count is { } count)
         {
             range["type"] = "numbered";
@@ -174,8 +174,9 @@ public static class GraphRecurrence
     {
         var first = GraphEventMapper.Read(master, null, zone);
         var old = Occurrence(master, recurrence, zone);
-        var edited = GraphEvents.Edit(master, null, fields with { AllDay = first.AllDay, Start = first.Start, End = first.End }, zone);
-        if (fields.AllDay == old.AllDay && fields.Start == old.Start && fields.End == old.End)
+        var edited = GraphEvents.Edit(master, null,
+            fields with { AllDay = first.AllDay, Start = first.Start, End = first.End, StartZone = null, EndZone = null }, zone);
+        if (fields.AllDay == old.AllDay && fields.Start == old.Start && fields.End == old.End && !fields.ZoneSet)
         {
             return edited;
         }
@@ -186,6 +187,10 @@ public static class GraphRecurrence
         var ev = GraphEvents.Parse((edited ?? master).RawPayload);
         var changed = GraphEvents.Changed(ev);
         var own = GraphEvents.OwnZone(ev, zone);
+        if (fields.ZoneSet)
+        {
+            return ChangeZone(master, ev, changed, first, old, fields, zone, own);
+        }
         EventFields moved;
         if (fields.AllDay)
         {
@@ -215,6 +220,40 @@ public static class GraphRecurrence
         return GraphEvents.WithChanged(master, ev, changed, zone);
     }
 
+    /// <summary>
+    /// The whole series in the zones of <paramref name="fields"/> (timezone-handling R7): the master keeps its wall-clock
+    /// time, moved by the occurrence's own wall-clock change, in the new zone, so the pattern's dates stay; the range's
+    /// recurrenceTimeZone becomes the new zone and its start date follows the start. Exchange drops the series'
+    /// exceptions (the caller asks first, as for a time change).
+    /// </summary>
+    private static Item ChangeZone(Item master, JsonObject ev, HashSet<string> changed, EventFields first, EventFields old, EventFields fields,
+        TimeZoneInfo zone, TimeZoneInfo own)
+    {
+        DateTime OwnWall(DateTime wall) => EventFields.Convert(wall, zone, own);
+        var start = OwnWall(first.Start) + (fields.Start - OwnWall(old.Start));
+        var length = GraphEventMapper.Local(fields.End, fields.EffectiveEndZone!) - GraphEventMapper.Local(fields.Start, fields.StartZone!);
+        var end = TimeZoneInfo.ConvertTime(GraphEventMapper.Local(start, fields.StartZone!) + length, fields.EffectiveEndZone!).DateTime;
+        GraphEvents.SetTimes(ev, fields with { Start = start, End = end }, zone, own);
+        changed.UnionWith(["start", "end", "isAllDay"]);
+        if (ev["recurrence"] is JsonObject recurrenceNode)
+        {
+            var days = Date(start).DayNumber - Date(OwnWall(first.Start)).DayNumber;
+            if (days != 0)
+            {
+                var rule = ReadRule(recurrenceNode, StartDate(master, GraphEvents.Parse(master.RawPayload), zone))
+                    ?? throw new EditRefusedException("This repeat pattern can't be moved to another day. Change this event instead.");
+                ev["recurrence"] = Recurrence(Shift(rule, days), Date(start), fields.StartZone!);
+            }
+            else if (recurrenceNode["range"] is JsonObject range)
+            {
+                range["startDate"] = Iso(Date(start));
+                range["recurrenceTimeZone"] = Views.TimeZoneLabels.WindowsId(fields.StartZone!);
+            }
+            changed.Add("recurrence");
+        }
+        return GraphEvents.WithChanged(master, ev, changed, zone);
+    }
+
     // ---- This and following (R6) ----
 
     /// <summary>
@@ -235,7 +274,8 @@ public static class GraphRecurrence
             return null;
         }
         var rule = ReadRule(recurrenceNode, startDate);
-        if (rule is null && (Str(recurrenceNode["range"]?["type"]) == "numbered" || Date(fields.Start) != Date(occurrence.Start)))
+        var walls = fields.Walls(zone);
+        if (rule is null && (Str(recurrenceNode["range"]?["type"]) == "numbered" || Date(walls.Start) != Date(occurrence.Start)))
         {
             throw new EditRefusedException("This repeat pattern can't be split here. Change this event or the whole series instead.");
         }
@@ -243,17 +283,24 @@ public static class GraphRecurrence
         var following = GraphEvents.Parse(GraphEvents.MoveTo(master, collection, zone).RawPayload);
         GraphEvents.SetText(following, fields);
         GraphEvents.SetTimes(following, fields, zone, own, GraphEvents.OwnEndZone(ev, zone));
-        var newDate = OwnDate(fields.Start, zone, own, fields.AllDay);
+        // A new timezone is the new series' own, its dates and recurrenceTimeZone included (timezone-handling R7).
+        var newOwn = fields.ZoneSet ? fields.StartZone! : own;
+        var newDate = OwnDate(walls.Start, zone, newOwn, fields.AllDay);
         if (rule is not null)
         {
             var left = rule.Count is { } count ? Math.Max(1, count - Dates(rule, startDate).TakeWhile(d => d < at).Count()) : (int?)null;
             // Weekdays shift by the days moved in the series' own zone (timezone-handling F4).
             var days = newDate.DayNumber - at.DayNumber;
-            following["recurrence"] = Recurrence(Shift(rule, days) with { Count = left }, newDate, RangeZone(recurrenceNode, own));
+            following["recurrence"] = Recurrence(Shift(rule, days) with { Count = left }, newDate,
+                fields.ZoneSet ? newOwn : RangeZone(recurrenceNode, own));
         }
         else
         {
             following["recurrence"]!["range"]!["startDate"] = Iso(newDate);
+            if (fields.ZoneSet)
+            {
+                following["recurrence"]!["range"]!["recurrenceTimeZone"] = Views.TimeZoneLabels.WindowsId(newOwn);
+            }
         }
         var created = GraphEventMapper.Rebuild(new Item(Guid.NewGuid().ToString("N"), collection.Id, ItemKind.Event, null, "{}"),
             following.ToJsonString(), zone);

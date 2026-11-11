@@ -42,7 +42,7 @@ internal sealed partial class EventEditor
         // A series moves to another calendar in Outlook (its exceptions would be lost here). Meetings and invitations
         // are read-only, so they stay in their calendar (calendar-views R8).
         var movable = !_readOnly && master is null && !item.IsRecurring;
-        _zones = TimeZoneLabels.EventZones(item);
+        ShowZones(item);
         Show("Event", GraphEventMapper.Read(item, master, zone), CalendarChoices(collection, movable), collection.Id);
         _calendar.IsEnabled = movable;
         var message = collection.ReadOnly ? "This calendar is read-only."
@@ -105,6 +105,7 @@ internal sealed partial class EventEditor
         }
         Changed?.Invoke();
         RefreshRule();
+        RefreshZones();
     }
 
     /// <summary>
@@ -140,11 +141,13 @@ internal sealed partial class EventEditor
                     return;
                 }
                 _scope = scope;
+                UpdateZoneControls();
                 fields = ReadFields();
                 master = Store?.GetItem(master.Id) ?? master;
             }
             var store = Store!;
-            var moved = fields.AllDay != current.AllDay || fields.Start != current.Start || fields.End != current.End;
+            // A new timezone moves the series' times, so Exchange drops its exceptions too (timezone-handling R7).
+            var moved = fields.AllDay != current.AllDay || fields.Start != current.Start || fields.End != current.End || fields.ZoneSet;
             var series = store.GetSeriesItems(collection.Id, master.RemoteId ?? "");
 
             if (_scope == EditScope.Occurrence)
@@ -186,15 +189,16 @@ internal sealed partial class EventEditor
                 if (GraphRecurrence.EditSeries(master, recurrence, fields, zone) is { } edited)
                 {
                     store.UpdateItem(edited);
-                    _recurrence = recurrence + (Utc(fields.Start) - Utc(current.Start));
+                    _recurrence = recurrence + (Utc(fields.Walls(zone).Start) - Utc(current.Start));
                 }
                 // From the first occurrence, "this and following" is the whole series.
                 _scope = EditScope.Series;
             }
-            _shownStart = fields.Start;
+            _shownStart = FormStart();
             Log.Information("Repeating event {ItemId} changed ({Scope})", master.Id, _scope);
             Changed?.Invoke();
             RefreshRule();
+            RefreshZones();
         }
         catch (EditRefusedException ex)
         {

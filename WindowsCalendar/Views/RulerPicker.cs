@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
@@ -18,23 +19,29 @@ internal static class RulerPicker
     public static TimeZoneInfo? Zone(LocalStore? store) =>
         store?.GetRuler() is { On: true, ZoneId: { } id } && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var zone) ? zone : null;
 
+    /// <summary>
+    /// The Windows timezones by display name, each tagged with its id (R8; the event editor's picker, R7). Typing jumps
+    /// to a display name, e.g. "(UTC+10" (no new package for a filtered search).
+    /// </summary>
+    public static ComboBox ZoneBox(string name)
+    {
+        var zones = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, IsTextSearchEnabled = true };
+        AutomationProperties.SetName(zones, name);
+        foreach (var zone in TimeZoneInfo.GetSystemTimeZones())
+        {
+            zones.Items.Add(new ComboBoxItem { Content = zone.DisplayName, Tag = zone.Id });
+        }
+        return zones;
+    }
+
     /// <summary>The controls, showing the current ruler; <paramref name="changed"/> runs after each saved change.</summary>
     public static SpacedStack Build(LocalStore store, Action changed)
     {
         var current = store.GetRuler();
         var toggle = new Wpf.Ui.Controls.ToggleSwitch { Content = "Secondary timezone", IsChecked = current.On };
-        // Typing jumps to a display name, e.g. "(UTC+10" (no new package for a filtered search).
-        var zones = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, IsTextSearchEnabled = true, IsEnabled = current.On };
-        AutomationProperties.SetName(zones, "Secondary timezone zone");
-        foreach (var zone in TimeZoneInfo.GetSystemTimeZones())
-        {
-            var item = new ComboBoxItem { Content = zone.DisplayName, Tag = zone.Id };
-            zones.Items.Add(item);
-            if (zone.Id == (current.ZoneId ?? "UTC"))
-            {
-                zones.SelectedItem = item;
-            }
-        }
+        var zones = ZoneBox("Secondary timezone zone");
+        zones.IsEnabled = current.On;
+        zones.SelectedItem = zones.Items.OfType<ComboBoxItem>().FirstOrDefault(i => (string)i.Tag == (current.ZoneId ?? "UTC"));
 
         void Save()
         {

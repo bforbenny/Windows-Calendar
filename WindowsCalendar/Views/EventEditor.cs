@@ -39,7 +39,7 @@ internal sealed partial class EventEditor : UserControl
     private readonly TimeBox _startTime = new() { VerticalAlignment = VerticalAlignment.Bottom };
     private readonly DatePicker _endDate = new();
     private readonly TimeBox _endTime = new() { VerticalAlignment = VerticalAlignment.Bottom };
-    // The times in the event's own timezone, when it is not the Windows one (timezone-handling R9).
+    // The times in the Windows timezone, when the pickers show another zone (timezone-handling R7, R9).
     private readonly TextBlock _zoneNote = new()
     {
         Style = Theme.Style("CaptionTextBlockStyle"),
@@ -61,8 +61,6 @@ internal sealed partial class EventEditor : UserControl
     private readonly RepeatPanel _repeat = new();
 
     private string? _itemId;
-    // The open event's start and end zone ids as stored (timezone-handling R9); none for a new event.
-    private (string? Start, string? End) _zones;
     // The rule as saved; null when the controls can't show it (R7).
     private RepeatRule? _savedRule;
     // Opened as a new or single event: rule changes save at once, with no scope question.
@@ -108,6 +106,7 @@ internal sealed partial class EventEditor : UserControl
         form.Children.Add(_allDay);
         form.Children.Add(ViewParts.Field("Start", DateTimeRow(_startDate, _startTime)));
         form.Children.Add(ViewParts.Field("End", DateTimeRow(_endDate, _endTime)));
+        BuildZones(form);
         form.Children.Add(_zoneNote);
         form.Children.Add(_repeat);
         form.Children.Add(ViewParts.Field("Location", _location));
@@ -283,7 +282,7 @@ internal sealed partial class EventEditor : UserControl
         _ruleAutosave = recurrence is null;
         // Meetings and invitations stay in their calendar (calendar-views R8).
         var meeting = Core.Sync.EventTransfer.IsMeeting(item);
-        _zones = TimeZoneLabels.EventZones(item);
+        ShowZones(item);
         Show("Event", fields, CalendarChoices(collection, !meeting), collection.Id);
         _calendar.IsEnabled = !_readOnly && !meeting;
         var message = collection.SourceUrl is not null ? "This is a subscribed calendar and can't be edited here."
@@ -329,7 +328,7 @@ internal sealed partial class EventEditor : UserControl
         _occurrenceId = null;
         _savedRule = repeat ?? RepeatRule.None;
         _ruleAutosave = true;
-        _zones = default;
+        ShowZones(null);
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
         Show("New event", fields ?? new EventFields(title, allDay, start, end, null, null, allDay ? ShowAs.Free : ShowAs.Busy), choices, defaultId);
         _notice.IsOpen = false;
@@ -394,12 +393,9 @@ internal sealed partial class EventEditor : UserControl
             return;
         }
         _loading = true;
-        _allDay.IsChecked = fields.AllDay;
-        _startDate.SelectedDate = fields.Start.Date;
-        _startTime.Time = fields.Start.TimeOfDay;
-        _endDate.SelectedDate = fields.AllDay ? fields.End.Date.AddDays(-1) : fields.End.Date;
-        _endTime.Time = fields.End.TimeOfDay;
-        _shownStart = fields.Start;
+        // An undo may have changed the zone (timezone-handling R7).
+        ShowZones(ZoneItem(item));
+        ShowTimes(fields);
         ShowTimePickers();
         _loading = false;
         RefreshRule();
@@ -458,7 +454,7 @@ internal sealed partial class EventEditor : UserControl
         }
         _reminder.IsEnabled = !_readOnly || _reminderOnly;
         _repeat.Visibility = _savedRule is null ? Visibility.Collapsed : Visibility.Visible;
-        _repeat.Show(_savedRule ?? RepeatRule.None, DateOnly.FromDateTime(fields.Start));
+        _repeat.Show(_savedRule ?? RepeatRule.None, DateOnly.FromDateTime(FormStart()));
         _repeat.SetEnabled(!_readOnly);
         ShowTimePickers();
         RefreshJoin();
@@ -476,15 +472,11 @@ internal sealed partial class EventEditor : UserControl
         var loading = _loading;
         _loading = true;
         _title.Text = fields.Title;
-        _allDay.IsChecked = fields.AllDay;
-        _startDate.SelectedDate = fields.Start.Date;
-        _startTime.Time = fields.Start.TimeOfDay;
-        // All-day end dates are shown inclusive.
-        _endDate.SelectedDate = fields.AllDay ? fields.End.Date.AddDays(-1) : fields.End.Date;
-        _endTime.Time = fields.End.TimeOfDay;
+        // A change put back (cancelled or refused) puts the zones back too (timezone-handling R7).
+        RevertZones();
+        ShowTimes(fields);
         _location.Text = fields.Location ?? "";
         _description.Text = (fields.Description ?? "").Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
-        _shownStart = fields.Start;
         ShowShowAs(fields.ShowAs);
         ShowReminder(fields.Reminder ?? ReminderChoice.None, fields.MoreReminders);
         ShowTimePickers();
@@ -527,25 +519,8 @@ internal sealed partial class EventEditor : UserControl
     private void ShowTimePickers()
     {
         _startTime.Visibility = _endTime.Visibility = _allDay.IsChecked == true ? Visibility.Collapsed : Visibility.Visible;
+        UpdateZoneControls();
         ShowZoneNote();
-    }
-
-    /// <summary>
-    /// The shown times in the event's own timezone (and end timezone) when that is not the Windows one, e.g.
-    /// "09:00 – 10:00 New York time" (timezone-handling R9). Nothing for all-day, floating and custom-zone events.
-    /// </summary>
-    private void ShowZoneNote()
-    {
-        var local = TimeZoneInfo.Local;
-        DateTimeOffset At(DatePicker date, TimeBox time)
-        {
-            var wall = (date.SelectedDate?.Date ?? DateTime.Today) + time.Time;
-            return new DateTimeOffset(wall, local.GetUtcOffset(wall));
-        }
-        var text = _allDay.IsChecked == true ? null
-            : TimeZoneLabels.OriginalTime(At(_startDate, _startTime), At(_endDate, _endTime), _zones.Start, _zones.End, local);
-        _zoneNote.Text = text ?? "";
-        _zoneNote.Visibility = text is null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     /// <summary>Moving the start keeps the duration: the end moves with it.</summary>
@@ -555,31 +530,35 @@ internal sealed partial class EventEditor : UserControl
         {
             return;
         }
-        var fields = ReadFields();
-        var shift = fields.Start - _shownStart;
+        // In the pickers' own zones (timezone-handling R7).
+        var start = FormStart();
+        var shift = start - _shownStart;
         if (shift != TimeSpan.Zero)
         {
-            var end = fields.End + shift;
+            var end = FormEnd() + shift;
             _loading = true;
-            _endDate.SelectedDate = fields.AllDay ? end.Date.AddDays(-1) : end.Date;
+            _endDate.SelectedDate = _allDay.IsChecked == true ? end.Date.AddDays(-1) : end.Date;
             _endTime.Time = end.TimeOfDay;
             _loading = false;
         }
-        _repeat.SetStart(DateOnly.FromDateTime(fields.Start));
+        _repeat.SetStart(DateOnly.FromDateTime(start));
         Save();
     }
 
-    /// <summary>The form as editor fields. An end not after the start is moved to one hour (or one day) later.</summary>
+    /// <summary>
+    /// The form as editor fields. An end not after the start is moved to one hour (or one day) later. Times are in the
+    /// Windows timezone, or in the chosen zones when they differ from the saved ones (timezone-handling R7).
+    /// </summary>
     private EventFields ReadFields()
     {
         var allDay = _allDay.IsChecked == true;
-        var startDate = _startDate.SelectedDate?.Date ?? DateTime.Today;
-        var endDate = _endDate.SelectedDate?.Date ?? startDate;
-        var start = allDay ? startDate : startDate + _startTime.Time;
-        var end = allDay ? endDate.AddDays(1) : endDate + _endTime.Time;
-        if (end <= start)
+        var start = FormStart();
+        var end = FormEnd();
+        var startZone = FormStartZone;
+        var endZone = FormEndZone;
+        if (EventFields.Convert(end, endZone, startZone) <= start)
         {
-            end = allDay ? start.AddDays(1) : start.AddHours(1);
+            end = allDay ? start.AddDays(1) : EventFields.Convert(start.AddHours(1), startZone, endZone);
             var loading = _loading;
             _loading = true;
             _endDate.SelectedDate = allDay ? start.Date : end.Date;
@@ -587,7 +566,14 @@ internal sealed partial class EventEditor : UserControl
             _loading = loading;
         }
         var description = _description.Text.Replace("\r\n", "\n").Replace("\r", "\n");
-        return new EventFields(_title.Text.Trim(), allDay, start, end, _location.Text.Trim(), description, ReadShowAs(), ReadReminder());
+        var zoned = !allDay && ZonesChosen();
+        if (!zoned)
+        {
+            start = EventFields.Convert(start, startZone, TimeZoneInfo.Local);
+            end = EventFields.Convert(end, endZone, TimeZoneInfo.Local);
+        }
+        return new EventFields(_title.Text.Trim(), allDay, start, end, _location.Text.Trim(), description, ReadShowAs(), ReadReminder(),
+            StartZone: zoned ? startZone : null, EndZone: zoned ? endZone : null);
     }
 
     private void Save()
@@ -597,7 +583,7 @@ internal sealed partial class EventEditor : UserControl
             return;
         }
         var fields = ReadFields();
-        _shownStart = fields.Start;
+        _shownStart = FormStart();
         ShowZoneNote();
         var now = DateTimeOffset.UtcNow;
         var zone = TimeZoneInfo.Local;
@@ -671,6 +657,7 @@ internal sealed partial class EventEditor : UserControl
             }
             Changed?.Invoke();
             RefreshRule();
+            RefreshZones();
         }
         catch (Exception ex)
         {
@@ -712,6 +699,7 @@ internal sealed partial class EventEditor : UserControl
                     return;
                 }
                 _scope = scope;
+                UpdateZoneControls();
                 // The form may have changed while the question was open.
                 fields = ReadFields();
                 item = Store?.GetItem(item.Id) ?? item;
@@ -736,10 +724,11 @@ internal sealed partial class EventEditor : UserControl
                 }
                 _recurrence = split.Recurrence;
                 _scope = EditScope.Series;
-                _shownStart = fields.Start;
+                _shownStart = FormStart();
                 Log.Information("Repeating event {ItemId} split", item.Id);
                 Changed?.Invoke();
                 RefreshRule();
+                RefreshZones();
                 return;
             }
             if (_scope == EditScope.Occurrence)
@@ -750,6 +739,14 @@ internal sealed partial class EventEditor : UserControl
             {
                 to = CalDavRecurrence.MovedRecurrence(item, recurrence, fields, zone);
                 edited = CalDavRecurrence.EditSeries(item, recurrence, fields, zone, DateTimeOffset.UtcNow);
+                // Overrides a new timezone can't keep are listed, as for a repeat change (timezone-handling R7).
+                if (edited is not null && fields.ZoneSet
+                    && (!await LostDialog.ConfirmAsync("Change the series?", "Change", CalDavRecurrence.LostOverrides(item, edited))
+                        || _itemId != item.Id))
+                {
+                    ShowFields(current);
+                    return;
+                }
             }
             if (edited is null)
             {
@@ -757,10 +754,11 @@ internal sealed partial class EventEditor : UserControl
             }
             Store!.UpdateItem(edited);
             _recurrence = to;
-            _shownStart = fields.Start;
+            _shownStart = FormStart();
             Log.Information("Repeating event {ItemId} changed ({Scope})", item.Id, _scope);
             Changed?.Invoke();
             RefreshRule();
+            RefreshZones();
         }
         catch (EditRefusedException ex)
         {

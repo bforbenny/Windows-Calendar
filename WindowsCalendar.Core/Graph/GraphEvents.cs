@@ -34,7 +34,8 @@ public static class GraphEvents
 
     /// <summary>
     /// The event with <paramref name="fields"/>, or null when nothing changed. A stub occurrence compares against its
-    /// <paramref name="master"/>'s title, location and description. Times are written in the event's own timezone.
+    /// <paramref name="master"/>'s title, location and description. Times are written in the event's own timezone, or
+    /// the zones in <paramref name="fields"/> (timezone-handling R7).
     /// </summary>
     public static Item? Edit(Item item, Item? master, EventFields fields, TimeZoneInfo zone)
     {
@@ -77,7 +78,8 @@ public static class GraphEvents
             changed.UnionWith(SetReminder(ev, reminder));
             any = true;
         }
-        if (fields.AllDay != old.AllDay || fields.Start != old.Start || fields.End != old.End)
+        var walls = fields.Walls(zone);
+        if (fields.AllDay != old.AllDay || walls.Start != old.Start || walls.End != old.End || fields.ZoneSet)
         {
             SetTimes(ev, fields, zone, OwnZone(ev, zone), OwnEndZone(ev, zone));
             changed.UnionWith(["start", "end", "isAllDay"]);
@@ -177,6 +179,18 @@ public static class GraphEvents
         {
             ev[name] = before[name]?.DeepClone();
         }
+        // A zone change set these locally (timezone-handling R7); they go back too, but are not sent.
+        foreach (var name in new[] { "originalStartTimeZone", "originalEndTimeZone" })
+        {
+            if (before.ContainsKey(name))
+            {
+                ev[name] = before[name]?.DeepClone();
+            }
+            else
+            {
+                ev.Remove(name);
+            }
+        }
         return WithChanged(item, ev, changed, zone);
     }
 
@@ -233,10 +247,24 @@ public static class GraphEvents
     /// <summary>
     /// Start, end and all-day from <paramref name="fields"/> (wall times in <paramref name="editor"/>) as wall times in
     /// <paramref name="zone"/>, the end in <paramref name="endZone"/> when given (timezone-handling F2); all-day as
-    /// midnight-to-midnight dates (R8).
+    /// midnight-to-midnight dates (R8). Zones in <paramref name="fields"/> are written as they are, and kept as the
+    /// event's own (originalStartTimeZone / originalEndTimeZone, local only: Graph sets them) until the next sync
+    /// brings the event back (timezone-handling R7).
     /// </summary>
     internal static void SetTimes(JsonObject ev, EventFields fields, TimeZoneInfo editor, TimeZoneInfo zone, TimeZoneInfo? endZone = null)
     {
+        if (fields.ZoneSet)
+        {
+            ev["start"] = DateTimeTimeZone(fields.Start, fields.StartZone!);
+            ev["end"] = DateTimeTimeZone(fields.End, fields.EffectiveEndZone!);
+            ev["isAllDay"] = false;
+            if (ev.ContainsKey("originalStartTimeZone") || ev.ContainsKey("originalEndTimeZone"))
+            {
+                ev["originalStartTimeZone"] = Views.TimeZoneLabels.WindowsId(fields.StartZone!);
+                ev["originalEndTimeZone"] = Views.TimeZoneLabels.WindowsId(fields.EffectiveEndZone!);
+            }
+            return;
+        }
         endZone = fields.AllDay ? zone : endZone ?? zone;
         var start = fields.AllDay ? fields.Start.Date : Wall(fields.Start, editor, zone);
         var end = fields.AllDay ? fields.End.Date : Wall(fields.End, editor, endZone);
@@ -246,18 +274,20 @@ public static class GraphEvents
     }
 
     internal static JsonObject DateTimeTimeZone(DateTime wall, TimeZoneInfo zone) =>
-        new() { ["dateTime"] = wall.ToString("yyyy-MM-ddTHH:mm:ss"), ["timeZone"] = zone.Id };
+        new() { ["dateTime"] = wall.ToString("yyyy-MM-ddTHH:mm:ss"), ["timeZone"] = Views.TimeZoneLabels.WindowsId(zone) };
 
     /// <summary>
     /// The event's own timezone (R8): its originalStartTimeZone when Windows knows it; the Windows timezone when it has
     /// none or UTC. A custom or unknown zone (e.g. tzone://Microsoft/Custom) gives UTC (timezone-handling F1): Graph
     /// takes no custom zone on a write and the app can't read its rules, so the times are written as exact instants
-    /// rather than moved into the Windows timezone. The custom zone itself is lost on that write.
+    /// rather than moved into the Windows timezone. The custom zone itself is lost on that write. An event created
+    /// here has no originalStartTimeZone until it is synced; its start's timeZone is its own (timezone-handling R7).
     /// </summary>
-    internal static TimeZoneInfo OwnZone(JsonObject ev, TimeZoneInfo zone) => Resolve(ev["originalStartTimeZone"], zone);
+    internal static TimeZoneInfo OwnZone(JsonObject ev, TimeZoneInfo zone) => Resolve(ev["originalStartTimeZone"] ?? ev["start"]?["timeZone"], zone);
 
     /// <summary>The event's own end timezone (originalEndTimeZone), else its start zone (timezone-handling F2).</summary>
-    internal static TimeZoneInfo OwnEndZone(JsonObject ev, TimeZoneInfo zone) => Resolve(ev["originalEndTimeZone"], OwnZone(ev, zone));
+    internal static TimeZoneInfo OwnEndZone(JsonObject ev, TimeZoneInfo zone) =>
+        Resolve(ev["originalEndTimeZone"] ?? (ev.ContainsKey("originalStartTimeZone") ? null : ev["end"]?["timeZone"]), OwnZone(ev, zone));
 
     private static TimeZoneInfo Resolve(JsonNode? node, TimeZoneInfo fallback) =>
         node is JsonValue v && v.TryGetValue<string>(out var id) && !string.IsNullOrEmpty(id) && id is not ("UTC" or "tzone://Microsoft/Utc")

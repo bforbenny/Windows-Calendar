@@ -56,9 +56,10 @@ public static partial class EventTransfer
         var created = GraphEvents.Create(target, fields, zone);
         var ev = GraphEvents.Parse(created.RawPayload);
 
-        // Times in the event's own timezone, when Windows knows it.
+        // Times in the event's own timezone, when Windows knows it, and the end in its own (timezone-handling R7).
         var own = !fields.AllDay && master.DtStart is { TzId: { } tzId } && WindowsZone(tzId) is { } z ? z : zone;
-        GraphEvents.SetTimes(ev, fields, zone, own);
+        var ownEnd = !fields.AllDay && master.DtEnd is { IsFloating: false, TzId: { } endTzId } && WindowsZone(endTzId) is { } ez ? ez : own;
+        GraphEvents.SetTimes(ev, fields, zone, own, ownEnd);
         if (master.GeographicLocation is { } geo && ev["location"] is JsonObject location)
         {
             location["coordinates"] = new JsonObject { ["latitude"] = geo.Latitude, ["longitude"] = geo.Longitude };
@@ -151,21 +152,20 @@ public static partial class EventTransfer
             lost.Add("the description's formatting");
         }
 
-        // Written in the event's own timezone: its wall times there, with that zone's TZID.
+        // Written in the event's own timezones: its wall times there, with those zones' TZIDs (timezone-handling R7).
         var own = GraphEvents.OwnZone(ev, zone);
-        if (!fields.AllDay && own.Id != zone.Id)
+        var ownEnd = GraphEvents.OwnEndZone(ev, zone);
+        if (!fields.AllDay && (own.Id != zone.Id || ownEnd.Id != zone.Id))
         {
             fields = fields with
             {
-                Start = TimeZoneInfo.ConvertTime(GraphEventMapper.Local(fields.Start, zone), own).DateTime,
-                End = TimeZoneInfo.ConvertTime(GraphEventMapper.Local(fields.End, zone), own).DateTime,
+                Start = EventFields.Convert(fields.Start, zone, own),
+                End = EventFields.Convert(fields.End, zone, ownEnd),
+                StartZone = own,
+                EndZone = ownEnd,
             };
         }
-        else
-        {
-            own = zone;
-        }
-        var created = CalDavEvents.Create(target, fields, own, now);
+        var created = CalDavEvents.Create(target, fields, zone, now);
         var calendar = CustomTimeZones.Load(created.RawPayload)!;
         var vevent = calendar.Events.Single();
 
@@ -197,7 +197,7 @@ public static partial class EventTransfer
                 vevent.Categories.Add(category);
             }
         }
-        return new(CalDavEvents.ToItem(created.Id, created.CollectionId, created.RemoteId!, null, calendar, own), lost);
+        return new(CalDavEvents.ToItem(created.Id, created.CollectionId, created.RemoteId!, null, calendar, zone), lost);
     }
 
     private static string? Text(JsonNode? node) => node is JsonValue v && v.TryGetValue<string>(out var s) ? s : null;

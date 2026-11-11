@@ -23,7 +23,10 @@ public static partial class CalDavRecurrence
     public static EventFields ReadOccurrence(Item item, DateTimeOffset recurrence, TimeZoneInfo zone) =>
         ReadOccurrence(Load(item), recurrence, zone);
 
-    /// <summary>R4: adds or updates the occurrence's override. Null when nothing changed.</summary>
+    /// <summary>
+    /// R4: adds or updates the occurrence's override; a new timezone is the override's own (timezone-handling R7). Null
+    /// when nothing changed.
+    /// </summary>
     public static Item? EditOccurrence(Item item, DateTimeOffset recurrence, EventFields fields, TimeZoneInfo zone, DateTimeOffset now)
     {
         var calendar = Load(item);
@@ -63,8 +66,9 @@ public static partial class CalDavRecurrence
 
     /// <summary>
     /// R5: changes the whole series from one occurrence's new fields. Text goes to the master. A time change moves the
-    /// series by the same amount; a move to another day shifts the rule (see <see cref="ShiftRule"/>). Null when nothing
-    /// changed.
+    /// series by the same amount; a move to another day shifts the rule (see <see cref="ShiftRule"/>). A new timezone
+    /// moves the series into it (timezone-handling R7; <see cref="LostOverrides"/> counts what that drops). Null when
+    /// nothing changed.
     /// </summary>
     public static Item? EditSeries(Item item, DateTimeOffset recurrence, EventFields fields, TimeZoneInfo zone, DateTimeOffset now)
     {
@@ -80,7 +84,11 @@ public static partial class CalDavRecurrence
         {
             CalDavEvents.SetText(master, fields, old);
         }
-        if (timesChanged)
+        if (fields.ZoneSet)
+        {
+            ChangeZone(calendar, master, old, fields, zone);
+        }
+        else if (timesChanged)
         {
             MoveSeries(calendar, master, old, fields, zone);
         }
@@ -99,12 +107,16 @@ public static partial class CalDavRecurrence
     {
         var calendar = Load(item);
         var old = ReadOccurrence(calendar, recurrence, zone);
-        if (old.Start == fields.Start)
+        if (old.Start == fields.Start && !fields.ZoneSet)
         {
             return recurrence;
         }
         var id = Override(calendar, recurrence, zone)?.RecurrenceIdentifier!.StartTime
             ?? Instance(CalDavEvents.Master(calendar), recurrence, zone).Period.StartTime;
+        if (fields.ZoneSet)
+        {
+            return OccurrenceExpander.ToUtc(new ZoneMove(calendar, CalDavEvents.Master(calendar), old, fields, zone).Move(id), zone);
+        }
         return OccurrenceExpander.ToUtc(Shift(id, Own(fields.Start, id, zone) - Own(old.Start, id, zone)), zone);
     }
 
@@ -154,6 +166,11 @@ public static partial class CalDavRecurrence
         if (!Changed(ReadOccurrence(calendar, recurrence, zone), fields))
         {
             return null;
+        }
+        if (fields.ZoneSet && master.RecurrenceDates.GetAllDates().Any())
+        {
+            // As for the whole series (timezone-handling R7, known limit).
+            throw new EditRefusedException("This series repeats on listed dates, so its timezone can't be changed for the following events. Choose This event instead.");
         }
         var following = Following(item, split, collection, zone, now);
         var moved = MovedRecurrence(following, recurrence, fields, zone);
@@ -365,7 +382,8 @@ public static partial class CalDavRecurrence
     }
 
     private static (bool Times, bool Text) Diff(EventFields old, EventFields fields) =>
-        (old.AllDay != fields.AllDay || old.Start != fields.Start || old.End != fields.End,
+        // A new timezone is a time change (timezone-handling R7).
+        (old.AllDay != fields.AllDay || fields.ZoneSet || old.Start != fields.Start || old.End != fields.End,
          old.Title != fields.Title || CalDavEvents.Blank(old.Location) != CalDavEvents.Blank(fields.Location)
             || CalDavEvents.Blank(old.Description) != CalDavEvents.Blank(fields.Description) || old.ShowAs != fields.ShowAs
             || CalDavEvents.ReminderChanged(old, fields));
@@ -380,7 +398,8 @@ public static partial class CalDavRecurrence
         {
             return;
         }
-        var start = CalDavEvents.ToUtc(fields.Start, zone);
+        // A new timezone gives the start in it (timezone-handling R7).
+        var start = CalDavEvents.ToUtc(fields.Start, fields.ZoneSet ? fields.StartZone! : zone);
         if ((index > 0 && start <= all[index - 1].Start) || (index < all.Count - 1 && start >= all[index + 1].Start))
         {
             throw new EditRefusedException("An occurrence can't move onto or past the previous or next one in its series.");

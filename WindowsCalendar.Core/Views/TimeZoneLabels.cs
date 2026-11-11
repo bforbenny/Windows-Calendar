@@ -91,6 +91,58 @@ public static class TimeZoneLabels
         return (ev.DtStart?.TzId, ev.DtEnd?.TzId);
     }
 
-    private static string WindowsId(TimeZoneInfo zone) =>
+    /// <summary>
+    /// The event's own zones for the editor's timezone picker (R7): Start is null for a floating event
+    /// (<paramref name="Floating"/>) or a custom or unknown zone (kept); End is null when it is the start zone or can't
+    /// be shown. An MS365 event with no zone of its own, or UTC, is in the Windows timezone, as its edits write it; a
+    /// CalDAV UTC event is in UTC. All-day events give the Windows timezone. With <paramref name="recurrence"/>, a
+    /// CalDAV occurrence's override gives its own zones (slice 4).
+    /// </summary>
+    public static (TimeZoneInfo? Start, TimeZoneInfo? End, bool Floating) OwnZones(Item item, TimeZoneInfo display,
+        DateTimeOffset? recurrence = null)
+    {
+        if (item.AllDay)
+        {
+            return (display, null, false);
+        }
+        TimeZoneInfo? start, end;
+        if (item.RawPayload.TrimStart().StartsWith('{'))
+        {
+            var ev = Graph.GraphEvents.Parse(item.RawPayload);
+            var id = ev["originalStartTimeZone"]?.ToString() ?? ev["start"]?["timeZone"]?.ToString();
+            if (!string.IsNullOrWhiteSpace(id) && id is not ("UTC" or "tzone://Microsoft/Utc") && Resolve(id) is null)
+            {
+                return (null, null, false);
+            }
+            start = Graph.GraphEvents.OwnZone(ev, display);
+            end = Graph.GraphEvents.OwnEndZone(ev, display);
+            // OwnEndZone gives UTC for a custom end zone, which can't be shown.
+            end = ev["originalEndTimeZone"]?.ToString() is { } endId && Resolve(endId) is null ? null : end;
+        }
+        else
+        {
+            var calendar = CustomTimeZones.Load(item.RawPayload)!;
+            var master = (recurrence is { } r ? CalDavRecurrence.Override(calendar, r, display) : null) ?? CalDavEvents.Master(calendar);
+            if (master.DtStart is not { HasTime: true } s)
+            {
+                return (display, null, false);
+            }
+            if (s.IsFloating)
+            {
+                return (null, null, true);
+            }
+            static TimeZoneInfo? Zone(Ical.Net.DataTypes.CalDateTime t) => t.IsUtc || t.TzId is "UTC" or "Etc/UTC" ? TimeZoneInfo.Utc : Resolve(t.TzId);
+            start = Zone(s);
+            if (start is null)
+            {
+                return (null, null, false);
+            }
+            end = master.DtEnd is { HasTime: true, IsFloating: false } e ? Zone(e) : null;
+        }
+        return (start, end is null || Same(end, start) ? null : end, false);
+    }
+
+    /// <summary>The zone's Windows id (which Graph takes and the editor's picker lists), for a zone found by its IANA id too.</summary>
+    public static string WindowsId(TimeZoneInfo zone) =>
         zone.HasIanaId && TimeZoneInfo.TryConvertIanaIdToWindowsId(zone.Id, out var id) ? id : zone.Id;
 }
