@@ -19,6 +19,7 @@ internal static class Theme
     private static readonly Dictionary<string, (string Light, string Dark)> Roles = new()
     {
         ["SurfaceBaseBrush"] = ("#FFFFFF", "#121824"),
+        ["SurfaceRaisedBrush"] = ("#FFFFFF", "#222D46"),
         ["DividerBrush"] = ("#D2D4D9", "#2E3F61"),
         ["ShadeTodayBrush"] = ("#F4F7FE", "#0F1E3C"),
         ["ShadeNonWorkingBrush"] = ("#FBF6F8", "#201928"),
@@ -36,6 +37,7 @@ internal static class Theme
     private static readonly Dictionary<string, Brush> HighContrastRoles = new()
     {
         ["SurfaceBaseBrush"] = SystemColors.WindowBrush,
+        ["SurfaceRaisedBrush"] = SystemColors.WindowBrush,
         ["DividerBrush"] = SystemColors.WindowTextBrush,
         ["ShadeTodayBrush"] = SystemColors.WindowBrush,
         ["ShadeNonWorkingBrush"] = SystemColors.WindowBrush,
@@ -49,6 +51,9 @@ internal static class Theme
         ["DestructivePressedBrush"] = SystemColors.HighlightBrush,
         ["TextOnDestructiveBrush"] = SystemColors.HighlightTextBrush,
     };
+
+    private static readonly string[] PopupBackgrounds = ["ComboBoxDropDownBackground", "FlyoutBackground", "CalendarViewBackground",
+        "ContextMenuBackground", "ToolTipBackground"];
 
     /// <summary>The current theme; set by <see cref="Apply"/>.</summary>
     public static AppTheme Current { get; private set; } = AppTheme.Light;
@@ -75,6 +80,12 @@ internal static class Theme
         foreach (var (key, (light, dark)) in Roles)
         {
             resources[key] = HighContrast ? HighContrastRoles[key] : Solid(theme == AppTheme.Dark ? dark : light);
+        }
+        // WPF-UI fills drop-downs, flyouts, menus, tooltips and the date picker's calendar with translucent acrylic; popups are solid
+        // Surface.Raised (app-platform R2).
+        foreach (var key in PopupBackgrounds)
+        {
+            resources[key] = resources["SurfaceRaisedBrush"];
         }
         if (!HighContrast)
         {
