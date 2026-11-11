@@ -120,6 +120,8 @@ internal sealed class SettingsPage : UserControl
         times.Children.Add(ViewParts.Field("End", end));
         panel.Children.Add(times);
         _hoursError.IsOpen = false;
+        // The banner is reused: take it off the panel built the last time this section was shown.
+        (_hoursError.Parent as Panel)?.Children.Remove(_hoursError);
         panel.Children.Add(_hoursError);
 
         void Save()
