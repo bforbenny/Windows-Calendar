@@ -184,6 +184,20 @@ internal static class Migrations
         END;
         INSERT INTO meta (key, value) VALUES ('build-search', '1');
         """,
+
+        // v14: per-reminder local state (reminders-notifications R2, R4). One row per alarm of an occurrence, keyed by
+        // Reminder.Key; 'scheduled' marks a reminder already handed to Windows, so it is never shown twice.
+        """
+        CREATE TABLE reminder_state (
+            key            TEXT PRIMARY KEY,
+            item_id        TEXT NOT NULL,
+            occurrence_utc INTEGER,
+            fire_utc       INTEGER NOT NULL,
+            state          TEXT NOT NULL,
+            snooze_until   INTEGER
+        );
+        CREATE INDEX ix_reminder_state_fire ON reminder_state(fire_utc);
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

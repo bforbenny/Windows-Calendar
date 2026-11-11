@@ -9,11 +9,13 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using H.NotifyIcon;
 using Microsoft.Identity.Client;
+using Microsoft.Win32;
 using Serilog;
 using Windows.ApplicationModel;
 using Windows.Networking.Connectivity;
 using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
+using WindowsCalendar.Core.Reminders;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Core.Sync;
 
@@ -128,8 +130,7 @@ public partial class App : Application
                 Timeout.Infinite, executeOnlyOnce: false);
         }
 
-        ToastActivator.LogScheduledCount();
-        ToastActivator.ScheduleTestToastsIfRequested();
+        StartReminders();
 
         // Started by a toast action: stay hidden in the tray; the activator handles the action (reminders-notifications R2).
         if (Program.ToastLaunch)
@@ -175,6 +176,43 @@ public partial class App : Application
         };
     }
 
+    /// <summary>
+    /// Reminders (reminders-notifications R2, R4): prunes old state and schedules on start. The shared system-change
+    /// hook asks for a sync run when the Windows timezone or clock changes or the PC resumes; the run rebuilds the
+    /// occurrence index, reschedules reminders and refreshes the views (timezone-handling R6).
+    /// </summary>
+    private void StartReminders()
+    {
+        if (Store is not { } store)
+        {
+            return;
+        }
+        _ = Task.Run(() =>
+        {
+            store.PruneReminderState(DateTimeOffset.UtcNow.AddDays(-7));
+            ReminderToasts.Reschedule(store, ReminderPlanner.RunningWindow);
+        });
+        SystemEvents.TimeChanged += OnTimeChanged;
+        SystemEvents.PowerModeChanged += OnPowerModeChanged;
+    }
+
+    private void OnTimeChanged(object? sender, EventArgs e) => _scheduler?.Request("time changed");
+
+    private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
+    {
+        if (e.Mode == PowerModes.Resume)
+        {
+            _scheduler?.Request("resume");
+        }
+    }
+
+    /// <summary>A reminder toast's Open or body click (reminders-notifications R3): the main window on that item.</summary>
+    internal void OpenFromReminder(string itemId, DateTimeOffset? start, DateTimeOffset? recurrence)
+    {
+        ShowMainWindow();
+        _window?.OpenFromReminder(itemId, start, recurrence);
+    }
+
     private static bool IsOnline() =>
         NetworkInformation.GetInternetConnectionProfile()?.GetNetworkConnectivityLevel() == NetworkConnectivityLevel.InternetAccess;
 
@@ -194,6 +232,10 @@ public partial class App : Application
             Log.Information("Occurrence index rebuilt for {Zone}", TimeZoneInfo.Local.Id);
         }
 
+        // Every run tops up the reminder window, before the network work so local changes reschedule at once
+        // (reminders-notifications R2); runs come at least every 5 minutes.
+        ReminderToasts.Reschedule(store, ReminderPlanner.RunningWindow);
+
         // All accounts sync at once (local-store-offline R10); each catches its own errors. Hidden collections are
         // not pulled; a run for a just-ticked collection syncs only its account and pulls only it.
         var hidden = store.GetHiddenCollectionIds();
@@ -211,7 +253,12 @@ public partial class App : Application
         {
             Log.Warning("MS365 accounts not synced: ms365.json has no app registration ids");
         }
-        changed |= results.Any(c => c);
+        if (results.Any(c => c))
+        {
+            // Server changes may move, add or remove reminders.
+            ReminderToasts.Reschedule(store, ReminderPlanner.RunningWindow);
+            changed = true;
+        }
 
         if (changed && _window is { } window)
         {
@@ -442,6 +489,13 @@ public partial class App : Application
     {
         Log.Information("App quit");
         _scheduler?.Dispose();
+        SystemEvents.TimeChanged -= OnTimeChanged;
+        SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+        if (Store is { } store)
+        {
+            // Reminders keep firing for up to 48 hours after Quit (reminders-notifications R2).
+            ReminderToasts.RescheduleForQuit(store);
+        }
         Store?.Dispose();
         Log.CloseAndFlush();
         _trayIcon?.Dispose();

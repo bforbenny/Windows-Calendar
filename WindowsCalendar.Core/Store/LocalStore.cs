@@ -7,7 +7,7 @@ namespace WindowsCalendar.Core.Store;
 /// calls are synchronous and short. Every local write changes the item and the outbox in one
 /// transaction (R5).
 /// </summary>
-public sealed class LocalStore : IDisposable
+public sealed partial class LocalStore : IDisposable
 {
     /// <summary>First retry delay; each later attempt doubles it (R7).</summary>
     public static readonly TimeSpan FirstRetryDelay = TimeSpan.FromSeconds(30);

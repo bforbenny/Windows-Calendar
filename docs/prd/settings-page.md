@@ -37,6 +37,7 @@ All user settings live on one Settings page inside the main window, laid out lik
 
 - R1: a gear button beside Sync now in the toolbar, or Ctrl+,, opens the page in place of the toolbar and views, covering the sidebar overlay too. Back or Esc returns.
 - R2: only the Working hours and Appearance (week numbers) sections exist; the others come with their features. The colour, shape and holiday calendar settings stay in the sidebar right-click menu for now.
+  - Calendars section, added with [reminders-notifications](reminders-notifications.md) R5: a per-calendar list with only "Reminders on" and "Default reminder". The other Calendars settings in R2 move there with their own work.
 - R5: stored in the local store's meta table.
 - R6 comes with [display-scaling](display-scaling.md).
 

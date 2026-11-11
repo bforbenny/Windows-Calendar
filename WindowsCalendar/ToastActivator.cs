@@ -1,13 +1,9 @@
 using System;
-using System.Diagnostics;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Security;
 using System.Web;
 using System.Windows;
 using Serilog;
-using Windows.Data.Xml.Dom;
-using Windows.UI.Notifications;
 
 namespace WindowsCalendar;
 
@@ -39,7 +35,7 @@ internal interface IClassFactory
 
 /// <summary>
 /// COM activator for toast actions (reminders-notifications R2). The CLSID matches ToastActivatorCLSID and the
-/// com:Class Id in Package.appxmanifest. Interim prerequisite test: the real reminder scheduler will reuse this.
+/// com:Class Id in Package.appxmanifest. The actions themselves are handled by <see cref="ReminderToasts"/>.
 /// </summary>
 [ComVisible(true)]
 [ClassInterface(ClassInterfaceType.None)]
@@ -49,7 +45,6 @@ internal sealed class ToastActivator : INotificationActivationCallback
     internal const string ClsidText = "4d4096fe-bc21-4d6d-8f25-e48f645b4763";
     private const uint ClsctxLocalServer = 4;
     private const uint RegclsMultipleUse = 1;
-    private const string Group = "test";
 
     private static bool _startedByActivation;
 
@@ -87,10 +82,6 @@ internal sealed class ToastActivator : INotificationActivationCallback
     {
         try
         {
-            var args = HttpUtility.ParseQueryString(invokedArgs ?? "");
-            var action = args["action"] ?? "open";
-            var id = args["id"] ?? "";
-            var url = args["url"];
             var snoozeMinutes = 5;
             if (data is not null)
             {
@@ -105,106 +96,26 @@ internal sealed class ToastActivator : INotificationActivationCallback
 
             var startedByThis = _startedByActivation;
             _startedByActivation = false;
-            Log.Information("Toast activated: action {Action}, id {Id}, started by activation {Started}", action, id, startedByThis);
+            var action = HttpUtility.ParseQueryString(invokedArgs ?? "")["action"];
+            Log.Information("Toast activated: action {Action}, started by activation {Started}", action, startedByThis);
 
-            _ = Application.Current.Dispatcher.BeginInvoke(() => Handle(action, id, url, snoozeMinutes));
+            var args = invokedArgs ?? "";
+            _ = Application.Current.Dispatcher.BeginInvoke(() =>
+            {
+                try
+                {
+                    ReminderToasts.Handle(args, snoozeMinutes);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("Toast action failed: {Type}: {Message}", ex.GetType().Name, ex.Message);
+                }
+            });
         }
         catch (Exception ex)
         {
             Log.Error("Toast activation failed: {Type}: {Message}", ex.GetType().Name, ex.Message);
         }
-    }
-
-    private static void Handle(string action, string id, string? url, int snoozeMinutes)
-    {
-        try
-        {
-            switch (action)
-            {
-                case "snooze":
-                    Schedule(id, DateTimeOffset.Now.AddMinutes(snoozeMinutes));
-                    break;
-                case "join":
-                    if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http")
-                    {
-                        Process.Start(new ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true });
-                    }
-                    break;
-                case "open":
-                    (Application.Current as App)?.ShowMainWindow();
-                    break;
-                    // dismiss: nothing but the log line written in Activate.
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Error("Toast action failed: {Type}: {Message}", ex.GetType().Name, ex.Message);
-        }
-    }
-
-    /// <summary>Logs how many toasts are scheduled; called on every start.</summary>
-    internal static void LogScheduledCount()
-    {
-        try
-        {
-            Log.Information("Scheduled toasts: {Count}", ToastNotificationManager.CreateToastNotifier().GetScheduledToastNotifications().Count);
-        }
-        catch (Exception ex)
-        {
-            Log.Error("Scheduled toast count failed: {Type}: {Message}", ex.GetType().Name, ex.Message);
-        }
-    }
-
-    /// <summary>If LocalState\toast-test exists, deletes it and schedules five test toasts at +1, 3, 5, 7, 9 minutes.</summary>
-    internal static void ScheduleTestToastsIfRequested()
-    {
-        try
-        {
-            var flag = System.IO.Path.Combine(global::Windows.Storage.ApplicationData.Current.LocalFolder.Path, "toast-test");
-            if (!System.IO.File.Exists(flag))
-            {
-                return;
-            }
-            System.IO.File.Delete(flag);
-            var now = DateTimeOffset.Now;
-            for (var n = 1; n <= 5; n++)
-            {
-                Schedule($"test-{n}", now.AddMinutes(2 * n - 1));
-            }
-            Log.Information("Scheduled 5 test toasts");
-        }
-        catch (Exception ex)
-        {
-            Log.Error("Test toast scheduling failed: {Type}: {Message}", ex.GetType().Name, ex.Message);
-        }
-    }
-
-    private static void Schedule(string id, DateTimeOffset due)
-    {
-        var number = id.StartsWith("test-", StringComparison.Ordinal) ? id[5..] : "?";
-        var xml = $"""
-            <toast launch="{SecurityElement.Escape($"action=open&id={id}")}" scenario="reminder">
-              <visual><binding template="ToastGeneric">
-                <text>Test reminder {SecurityElement.Escape(number)}</text>
-                <text>{due:t}</text>
-              </binding></visual>
-              <actions>
-                <input id="snoozeMinutes" type="selection" defaultInput="5">
-                  <selection id="5" content="5 minutes" />
-                  <selection id="10" content="10 minutes" />
-                  <selection id="15" content="15 minutes" />
-                  <selection id="60" content="1 hour" />
-                </input>
-                <action content="Snooze" activationType="background" arguments="{SecurityElement.Escape($"action=snooze&id={id}")}" />
-                <action content="Dismiss" activationType="background" arguments="{SecurityElement.Escape($"action=dismiss&id={id}")}" />
-                <action content="Join" activationType="foreground" arguments="{SecurityElement.Escape($"action=join&id={id}&url=https%3A%2F%2Fexample.com")}" />
-              </actions>
-            </toast>
-            """;
-        var doc = new XmlDocument();
-        doc.LoadXml(xml);
-        var toast = new ScheduledToastNotification(doc, due) { Tag = id, Group = Group };
-        ToastNotificationManager.CreateToastNotifier().AddToSchedule(toast);
     }
 
     private sealed class Factory : IClassFactory

@@ -138,6 +138,17 @@ public sealed partial class MainWindow
         OpenResult((SearchResult)item.Tag);
     }
 
+    /// <summary>A reminder toast's Open (reminders-notifications R3): the occurrence's day, with its editor open.</summary>
+    internal void OpenFromReminder(string itemId, DateTimeOffset? start, DateTimeOffset? recurrence)
+    {
+        if (Store?.GetItem(itemId) is not { } item)
+        {
+            return;
+        }
+        OpenResult(new SearchResult(item.Id, item.CollectionId, item.Kind, item.Summary ?? "", null,
+            start ?? item.StartUtc ?? item.DueUtc, null, item.AllDay, recurrence, item.IsRecurring, false));
+    }
+
     /// <summary>Scrolls to the item's day and opens it in its editor; also used by the conflicts list.</summary>
     private void OpenResult(SearchResult result)
     {

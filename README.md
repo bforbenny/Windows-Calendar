@@ -36,7 +36,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [settings-page](docs/prd/settings-page.md) | Settings page layout and contents | in-progress |
 | [tasks](docs/prd/tasks.md) | VTODO and Microsoft To Do tasks | in-progress |
 | [event-location](docs/prd/event-location.md) | Plain-text location/address on events | in-progress |
-| [reminders-notifications](docs/prd/reminders-notifications.md) | Windows toast reminders | pending |
+| [reminders-notifications](docs/prd/reminders-notifications.md) | Windows toast reminders | in-progress |
 | [search](docs/prd/search.md) | Full-text search over cached items | pending |
 | [on-device-model](docs/prd/on-device-model.md) | Shared NPU language model service, AI setting, eval harness, spike gate | parked |
 | [nl-quick-add](docs/prd/nl-quick-add.md) | NPU model refines quick add for free English phrasing | parked |

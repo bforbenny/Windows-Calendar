@@ -93,7 +93,7 @@ public static class GraphTaskMapper
             ? DateOnly.FromDateTime(wall)
             : null;
 
-    private static DateTimeOffset? Time(JsonElement task, string name, TimeZoneInfo zone)
+    internal static DateTimeOffset? Time(JsonElement task, string name, TimeZoneInfo zone)
     {
         if (!task.TryGetProperty(name, out var t) || GraphClient.Text(t, "dateTime") is not { } text
             || !DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var wall))
