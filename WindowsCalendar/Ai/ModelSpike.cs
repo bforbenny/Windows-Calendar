@@ -24,6 +24,9 @@ internal static class ModelSpike
     /// <summary>Every request is bounded so the known hang (WindowsAppSDK issue #6871) shows as a failure (on-device-model R12).</summary>
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
 
+    // EnsureReadyAsync and CreateAsync hung for over 9 minutes on 2026-11-11; bound them so a hang is reported.
+    private static readonly TimeSpan SetupTimeout = TimeSpan.FromMinutes(2);
+
     private const double MaxWarmP95Ms = 1500;
     private const double MaxFailureRate = 0.05;
 
@@ -114,14 +117,24 @@ internal static class ModelSpike
                 return;
             }
             report.AppendLine($"- Ready state: {state}");
+            Log.Information("Model spike: ready state {State}", state);
 
-            if (state == AIFeatureReadyState.NotReady)
+            // DisabledByUser is also tried: the spike saw it with the model installed and consent allowed.
+            if (state is AIFeatureReadyState.NotReady or AIFeatureReadyState.DisabledByUser)
             {
                 var sw = Stopwatch.StartNew();
                 AIFeatureReadyResult result;
+                Log.Information("Model spike: EnsureReadyAsync called");
                 try
                 {
-                    result = await LanguageModel.EnsureReadyAsync().AsTask(ct);
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeout.CancelAfter(SetupTimeout);
+                    result = await LanguageModel.EnsureReadyAsync().AsTask(timeout.Token);
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    Finish(report, localStateDir, $"**NO-GO**: EnsureReadyAsync did not complete within {SetupTimeout.TotalSeconds:0} s.");
+                    return;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -132,7 +145,7 @@ internal static class ModelSpike
                 report.Append($"- EnsureReady: {result.Status} in {sw.ElapsedMilliseconds} ms");
                 if (result.Status != AIFeatureReadyResultState.Success)
                 {
-                    report.Append($" ({result.ExtendedError?.GetType().Name}: {result.ErrorDisplayText})");
+                    report.Append($" ({result.ExtendedError?.GetType().Name} 0x{result.ExtendedError?.HResult:X8}: {result.ErrorDisplayText})");
                 }
                 report.AppendLine();
                 if (result.Status != AIFeatureReadyResultState.Success)
@@ -152,9 +165,17 @@ internal static class ModelSpike
             }
 
             var create = Stopwatch.StartNew();
+            Log.Information("Model spike: CreateAsync called");
             try
             {
-                model = await LanguageModel.CreateAsync().AsTask(ct);
+                using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                timeout.CancelAfter(SetupTimeout);
+                model = await LanguageModel.CreateAsync().AsTask(timeout.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                Finish(report, localStateDir, $"**NO-GO**: CreateAsync did not complete within {SetupTimeout.TotalSeconds:0} s.");
+                return;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

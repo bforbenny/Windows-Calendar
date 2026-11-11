@@ -39,7 +39,15 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 - 2026-11-11, Ryzen AI 7 350, Windows 10.0.26200, `Microsoft.WindowsAppSDK.AI` 2.6.5:
   - The component package builds in Windows App SDK self-contained mode: no Windows App Runtime package dependency, runtime DLLs copied into the app, and the non-XAML `Microsoft.UI.*` files of `Microsoft.WindowsAppSDK.InteractiveExperiences` added to the package. No WinUI or `Microsoft.UI.Xaml` assemblies.
   - The two `Appx...ReplaceManifestVersion` properties have no effect with the MSIX build tools 1.7: the Windows.Desktop `MaxVersionTested` is rewritten to 10.0.26100.0. Setting it to 10.0.26226.0 by hand did not change the result below.
-  - `LanguageModel.GetReadyState()` returns `DisabledByUser`, although the systemAIModels consent is Allow both overall and for the app. No latency was measured. Result so far: NO-GO (unavailable); cause not found.
+  - `LanguageModel.GetReadyState()` returned `DisabledByUser`, although the systemAIModels consent is Allow both overall and for the app and Settings > System > AI components lists AI Phi Silica 1.2610.1069.0. Two causes were found:
+    - the MSIX build tools add a `Windows.Desktop` device family from `TargetPlatformVersion` (10.0.26100.0) unless `AppxAddDefaultTargetDeviceFamilyItem` is false; with it false, the built manifest keeps 10.0.26226.0;
+    - the `WSAIFabricSvc` Windows service was set to Disabled on this PC; `EnsureReadyAsync` then failed with 0x80070422 (service disabled). The user set it to Automatic (delayed start) and started it.
+  - After both fixes (package 1.0.8.0): ready state `Ready`, `CreateAsync` 156 ms cold. 30 phrases per mode, 10 s timeout, Temperature 0, TopK 1:
+    - structured, full schema: 30 of 30 timed out;
+    - structured, reduced schema: 30 of 30 timed out;
+    - plain generation + System.Text.Json: 25 timed out, 3 invalid JSON, 2 ok (8.2 s and 8.3 s).
+  - A cancelled request may keep the NPU busy and slow the next one, but the completed plain requests alone are over 5 times the 1.5 s limit, matching issue #6871 (plain 7.9 s).
+  - Decision: **NO-GO**. Quick add and search stay on rules and FTS; NL feature work stays parked. Re-check when Aion Instruct is on this PC (January 2027).
 
 ## Out of scope
 
@@ -48,7 +56,7 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 
 ## Acceptance criteria
 
-- [ ] Spike results (R12) recorded in this file, with the go/no-go decision.
+- [x] Spike results (R12) recorded in this file, with the go/no-go decision.
 - [ ] The built package contains no WinUI assemblies (`Microsoft.WinUI.dll`, `Microsoft.UI.Xaml.*`).
 - [ ] With the setting off, no model API is called and no model download starts.
 - [ ] With the setting on and the model unavailable, Settings shows why, and quick add and search behave as without AI.
