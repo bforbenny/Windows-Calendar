@@ -119,7 +119,9 @@ public sealed partial class MainWindow
 
     private void OnSearchResultClicked(object sender, MouseButtonEventArgs e)
     {
-        for (var hit = e.OriginalSource as DependencyObject; hit is not null; hit = VisualTreeHelper.GetParent(hit))
+        // A Run in a result row is not a Visual, so walk its logical parent instead.
+        for (var hit = e.OriginalSource as DependencyObject; hit is not null;
+            hit = hit is Visual ? VisualTreeHelper.GetParent(hit) : LogicalTreeHelper.GetParent(hit))
         {
             if (hit is ListBoxItem { Tag: SearchResult } item)
             {

@@ -144,7 +144,10 @@ internal sealed class EventDrag
             {
                 return handle;
             }
-            element = System.Windows.Media.VisualTreeHelper.GetParent(element);
+            // A Run (text content inside a TextBlock) is not a Visual, so walk its logical parent instead.
+            element = element is System.Windows.Media.Visual
+                ? System.Windows.Media.VisualTreeHelper.GetParent(element)
+                : LogicalTreeHelper.GetParent(element);
         }
         return null;
     }
