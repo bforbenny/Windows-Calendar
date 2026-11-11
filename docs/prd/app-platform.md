@@ -48,7 +48,7 @@ The WinUI 3 project was converted to WPF in place, on branch `wpf`, in three sli
 
 ## Acceptance criteria
 
-- [ ] App builds and installs from MSIX on Windows 11.
+- [ ] App builds and installs from MSIX on Windows 11. Deferred: checked with the install steps in [app-updates](app-updates.md).
 - [ ] Closing the window leaves the tray icon; reminders still fire.
 - [x] Start-with-Windows toggle works across a reboot and starts in tray.
 - [x] Second launch focuses the existing window.

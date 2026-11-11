@@ -15,9 +15,9 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 
 - R1. Views: Week (configurable first day of week, default from Windows locale), Month, Agenda (see [agenda-view](agenda-view.md)) and Tasks (see [tasks](tasks.md)). There is no Day view; where other PRDs say "Day/Week", read "Week". Toolbar with Today, view switcher, period title, quick add, Sync now, and sync status.
 - R1a. Natural scrolling, no Previous/Next: views scroll freely across the local store's occurrence window (-3 / +12 months, [local-store-offline](local-store-offline.md) R3).
-  - Week: seven day columns fill the width; scrolls horizontally through days and vertically through hours. Day headers and the all-day lane follow the horizontal scroll; hour labels follow the vertical scroll. Opens on the current week.
+  - Week: seven day columns fill the width; scrolls horizontally through days and vertically through hours. Day headers and the all-day lane follow the horizontal scroll; hour labels follow the vertical scroll. Opens with today in the middle column.
   - Month: about five weeks fill the height; scrolls vertically through weeks. Opens on the current week.
-  - The period title shows the month at the scroll position. Today scrolls back to today. Only the days near the viewport are built.
+  - The period title shows the month at the scroll position. Today scrolls back to today; in Week, today is the middle column. Only the days near the viewport are built.
   - In Month, "+n more" opens Agenda with that day as the first column.
 - R2. A sidebar contains:
   - the calendar set selector ([calendar-sets](calendar-sets.md));
