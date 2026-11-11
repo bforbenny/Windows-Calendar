@@ -477,9 +477,9 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         Log.Information("{View} view loaded in {Ms} ms ({Count} occurrences)", _view, watch.ElapsedMilliseconds, events.Count);
     }
 
-    /// <summary>Week opens on the current week at the current time; Month on the current week; Agenda on today.</summary>
+    /// <summary>Week opens with today in the middle column at the current time; Month on the current week; Agenda on today.</summary>
     private void ScrollToToday() =>
-        CurrentView.ScrollTo(_view == ViewKind.Week ? ViewPeriod.StartOfWeek(_today, WeekStart) : _today, toNow: true);
+        CurrentView.ScrollTo(_view == ViewKind.Week ? _today.AddDays(-3) : _today, toNow: true);
 
     private void ShowTitle(ViewKind view, DateOnly day)
     {
