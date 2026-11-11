@@ -13,7 +13,12 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 
 ## Requirements
 
-- R1. Runtime: Windows AI `LanguageModel` from the Windows App SDK, using `GenerateStructuredJsonResponseAsync` (JSON-Schema-constrained output) with Temperature 0 and TopK 1. Schemas use only `type`, `properties`, `required`, `enum`, `items`; empty values are "" or 0. No model file, server or driver is shipped; the manifest's existing `systemAIModels` capability is used.
+- R1. Runtime: Windows AI `LanguageModel` (`Microsoft.Windows.AI.Text`), using `GenerateStructuredJsonResponseAsync` (JSON-Schema-constrained output) with Temperature 0 and TopK 1. Schemas use only `type`, `properties`, `required`, `enum`, `items`; empty values are "" or 0. No model file, server or driver is shipped.
+- R1a. Packaging in the WPF app ([app-platform](app-platform.md) R2, R3):
+  - reference only the `Microsoft.WindowsAppSDK.AI` component package (2.6.4 or later, for no LAF unlock), which depends on `.Base` and `.Foundation` only; never the `Microsoft.WindowsAppSDK` metapackage or `.WinUI`, so no WinUI code returns (WinUI was dropped for its dimmed-scrolling bug);
+  - the app stays packaged (MSIX identity is required); the manifest keeps the `systemAIModels` capability and `MaxVersionTested` 10.0.26226.0 or later, and the project sets `AppxOSMinVersionReplaceManifestVersion` and `AppxOSMaxVersionTestedReplaceManifestVersion` to false so the build does not overwrite them;
+  - the package then depends on the Windows App Runtime framework package again; installing it on a new PC follows [app-updates](app-updates.md);
+  - the AI code lives only in the app project, behind the R10 interface; `WindowsCalendar.Core` gains no Windows App SDK reference.
 - R2. Setting: "Use on-device AI" in Settings ([settings-page](settings-page.md)), off by default. When off, the service is never called and `EnsureReadyAsync` never runs. Turning it on checks `GetReadyState()`; if `NotReady`, it calls `EnsureReadyAsync()` with progress shown in Settings. If unsupported, disabled by the user or failing, the setting shows why and the features stay on rules/FTS. Any exception from the API (including on Windows builds without it) counts as unavailable.
 - R3. Lifetime: one model instance, created on first use after the setting is on, reused for the session, disposed on exit.
 - R4. Queue: one request runs at a time. Quick-add requests take priority over search requests. A newer request from the same feature cancels its older pending or running request.
@@ -24,7 +29,7 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 - R9. Privacy: phrases, prompts and model output are never logged. Errors are logged by type only. The only exception is the eval report (R11), which contains test phrases only.
 - R10. Testability: features call the service through an interface, so merge, validation and UI logic are unit-tested with a fake.
 - R11. Eval harness: phrase sets with a fixed reference time and expected fields live in the repo (one per feature). A Debug-only command runs a set against the real model in the packaged app and writes a pass/fail report with latency to LocalState.
-- R12. Spike gate: before any feature code, a Release (trimmed, ReadyToRun) build on the Ryzen AI 7 350 runs ~30 sample phrases through the service. Record ready state, cold and warm latency (p50/p95), and invalid-JSON rate, for structured output and plain generation. Go only if warm p95 ≤ 1.5 s and invalid JSON ≤ 5%; otherwise stop and revisit this PRD.
+- R12. Spike gate: before any feature code, a Release (ReadyToRun) MSIX build of the WPF app on the Ryzen AI 7 350 first confirms that the R1a package set builds, installs and reports a ready state (if the component package alone does not work, stop and revisit R1a before trying the metapackage), then runs ~30 sample phrases through the service. Record ready state, cold and warm latency (p50/p95), and invalid-JSON rate, for structured output and plain generation. Go only if warm p95 ≤ 1.5 s and invalid JSON ≤ 5%; otherwise stop and revisit this PRD.
 
 ## Out of scope
 
@@ -34,6 +39,7 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 ## Acceptance criteria
 
 - [ ] Spike results (R12) recorded in this file, with the go/no-go decision.
+- [ ] The built package contains no WinUI assemblies (`Microsoft.WinUI.dll`, `Microsoft.UI.Xaml.*`).
 - [ ] With the setting off, no model API is called and no model download starts.
 - [ ] With the setting on and the model unavailable, Settings shows why, and quick add and search behave as without AI.
 - [ ] A model string containing a zero-width character is cleaned before use (unit test).
@@ -43,9 +49,10 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 
 ## Dependencies
 
-- [app-platform](app-platform.md), [settings-page](settings-page.md), [timezone-handling](timezone-handling.md)
+- [app-platform](app-platform.md), [app-updates](app-updates.md), [settings-page](settings-page.md), [timezone-handling](timezone-handling.md)
 
 ## Open questions
 
 - Windows build required for Phi Silica on retail Windows 11: confirm in the spike.
+- Whether the single-project MSIX build tools add the Windows App Runtime package dependency automatically when only `Microsoft.WindowsAppSDK.AI` is referenced: confirm in the spike.
 - Microsoft's Aion Instruct model may replace Phi Silica (timeline unconfirmed); re-run the eval sets when it does.
