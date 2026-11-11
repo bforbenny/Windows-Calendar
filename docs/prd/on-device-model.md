@@ -16,8 +16,9 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 - R1. Runtime: Windows AI `LanguageModel` (`Microsoft.Windows.AI.Text`), using `GenerateStructuredJsonResponseAsync` (JSON-Schema-constrained output) with Temperature 0 and TopK 1. Schemas use only `type`, `properties`, `required`, `enum`, `items`; empty values are "" or 0. No model file, server or driver is shipped.
 - R1a. Packaging in the WPF app ([app-platform](app-platform.md) R2, R3):
   - reference only the `Microsoft.WindowsAppSDK.AI` component package (2.6.5, the latest stable on 2026-11-11; 2.6.4 or later needs no LAF unlock, per the Windows App SDK 2.6.4 release notes; approved by the user on 2026-11-11), which depends on `.Base` and `.Foundation` only; never the `Microsoft.WindowsAppSDK` metapackage or `.WinUI`, so no WinUI code returns (WinUI was dropped for its dimmed-scrolling bug);
-  - the app stays packaged (MSIX identity is required); the manifest keeps the `systemAIModels` capability and `MaxVersionTested` 10.0.26226.0 or later, and the project sets `AppxOSMinVersionReplaceManifestVersion` and `AppxOSMaxVersionTestedReplaceManifestVersion` to false so the build does not overwrite them;
-  - the package then depends on the Windows App Runtime framework package again; installing it on a new PC follows [app-updates](app-updates.md);
+  - the app stays packaged (MSIX identity is required); the manifest keeps the `systemAIModels` capability and `MaxVersionTested` 10.0.26226.0 or later, and the project sets `AppxOSMinVersionReplaceManifestVersion`, `AppxOSMaxVersionTestedReplaceManifestVersion` and `AppxAddDefaultTargetDeviceFamilyItem` to false so the build does not overwrite them (the last one stops the MSIX build tools adding a `Windows.Desktop` device family with `MaxVersionTested` set to `TargetPlatformVersion`);
+  - the Windows App SDK runs self-contained: the runtime DLLs are copied into the package and there is no Windows App Runtime framework package dependency, so a new PC needs nothing extra installed ([app-updates](app-updates.md));
+  - the PC needs the `WSAIFabricSvc` Windows service enabled; when it is disabled, `GetReadyState` returns `DisabledByUser` and `EnsureReadyAsync` fails with 0x80070422;
   - the AI code lives only in the app project, behind the R10 interface; `WindowsCalendar.Core` gains no Windows App SDK reference.
 - R2. Setting: "Use on-device AI" in Settings ([settings-page](settings-page.md)), off by default. When off, the service is never called and `EnsureReadyAsync` never runs. Turning it on checks `GetReadyState()`; if `NotReady`, it calls `EnsureReadyAsync()` with progress shown in Settings. If unsupported, disabled by the user or failing, the setting shows why and the features stay on rules/FTS. Any exception from the API (including on Windows builds without it) counts as unavailable.
 - R3. Lifetime: one model instance, created on first use after the setting is on, reused for the session, disposed on exit.
@@ -71,6 +72,6 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
 
 ## Open questions
 
-- Windows build required for Phi Silica on retail Windows 11: confirm in the spike.
-- Whether the single-project MSIX build tools add the Windows App Runtime package dependency automatically when only `Microsoft.WindowsAppSDK.AI` is referenced: confirm in the spike.
+- Answered 2026-11-11: Phi Silica reports `Ready` on Windows 11 25H2 build 26200.9711 (Microsoft's troubleshooting page states 26200.7309 or later).
+- Answered 2026-11-11: the single-project MSIX build tools do not add the Windows App Runtime package dependency when only `Microsoft.WindowsAppSDK.AI` is referenced; the SDK runs self-contained.
 - Microsoft's Aion Instruct model replaces Phi Silica on retail devices in January 2027 (Microsoft's Phi Silica page, checked 2026-11-11), and needs no LAF token. Not yet known: whether it keeps the same `LanguageModel` API. Re-run the eval sets when it arrives.
