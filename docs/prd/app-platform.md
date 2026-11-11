@@ -18,11 +18,12 @@ A native Windows 11 desktop app built with C# / .NET 10 and WPF, styled with the
 - R2a. Theme: Light / Dark / Use Windows setting (default) in settings. "Use Windows setting" follows the Windows app mode and switches live without a restart; the tray flyout and toasts follow the same theme. Colours come from [ui-colour-theme](ui-colour-theme.md); the app's Navy accent overrides the Windows accent colour inside the app. High-contrast themes are honoured (palette replaced by system colours).
 - R3. Packaging: MSIX, sideloaded with a self-signed certificate. Package identity is used for toasts and startup task. Updates and install steps follow [app-updates](app-updates.md).
 - R4. Single-instance app. Launching again activates the existing instance.
+  - A named mutex marks the running instance; a second launch sets a named event that the running instance waits on to show its window, then exits.
 - R5. Closing the main window hides it to the system tray; the process keeps running background sync and reminders. Tray right-click menu: Open, Sync now, Quit. Quit warns and asks first when unsynced changes or open conflicts exist ("3 changes have not synced. They sync next time the app runs, but are lost if the app is uninstalled."). Tray left-click opens the [tray-flyout](tray-flyout.md).
   - Interim (until [tray-flyout](tray-flyout.md), sync and [local-store-offline](local-store-offline.md) exist): left-click opens the main window, "Sync now" requests a sync (logged only until the sync engines exist), and Quit exits without a warning.
 - R6. Optional "Start with Windows" (MSIX StartupTask), user-toggleable in settings, starts minimised to tray.
   - Interim (until [settings-page](settings-page.md) exists): the startup task is declared disabled by default and is turned on in Windows Settings > Apps > Startup.
-- R7. Key libraries: MSAL.NET (Microsoft sign-in with WAM broker), Microsoft Graph SDK or raw HTTP, Ical.Net 5.x (iCalendar parse/serialise, recurrence expansion), Microsoft.Data.Sqlite (local store), WPF-UI (Fluent controls and theme), H.NotifyIcon.Wpf (tray icon).
+- R7. Key libraries: MSAL.NET (Microsoft sign-in with WAM broker), Microsoft Graph SDK or raw HTTP, Ical.Net 5.x (iCalendar parse/serialise, recurrence expansion), Microsoft.Data.Sqlite (local store), WPF-UI (Fluent controls and theme), H.NotifyIcon.Wpf (tray icon), Microsoft.Windows.SDK.BuildTools.MSIX (single-project MSIX packaging; the Windows App SDK is not used). Trimming is off: WPF does not support it.
 - R8. Logging to a local rolling file under the app's LocalState folder. Logs must never contain credentials, tokens, or Authorization headers (CLAUDE.md security rules).
   - Serilog with Serilog.Sinks.File, configured in code. File `LocalState\Logs\app-YYYYMMDD.log`, one file per day, last 14 files kept. Logs app start, quit and unhandled exceptions.
 - R9. Errors on network/sync requests are logged and surfaced in the UI; no tight retry loops (exponential backoff only).
@@ -33,7 +34,7 @@ A native Windows 11 desktop app built with C# / .NET 10 and WPF, styled with the
 
 ## Interim (WPF port)
 
-The WinUI 3 project is converted to WPF in place, on branch `wpf`, in three slices. `WindowsCalendar.Core` and its tests are unchanged. The WinUI build on `main` stays the working app until the port is merged.
+The WinUI 3 project was converted to WPF in place, on branch `wpf`, in three slices. `WindowsCalendar.Core` and its tests are unchanged. Done: all three slices were checked in the app and merged into `main` on 2026-11-11.
 
 1. Window shell, theme (Light / Dark / Windows, high contrast), sidebar, toolbar and the Month, Week and Agenda views, read-only. Month is a virtualizing list of fixed-height week rows; Week and Agenda are virtualizing lists of fixed-width day columns, with headers and hour labels kept in step on the UI thread. Check: scrolling all three views, locally and over Remote Desktop, never dims. This is the go/no-go point for the port.
 2. Editing: event and task editors, the Tasks view, dialogs (with the Destructive button), drag, create, delete and undo, with the undo and conflicts banners and the keyboard selection and shortcuts that editing relies on.
