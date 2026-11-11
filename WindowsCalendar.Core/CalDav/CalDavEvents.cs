@@ -23,7 +23,7 @@ public sealed record EventFields(string Title, bool AllDay, DateTime Start, Date
 public static class CalDavEvents
 {
     /// <summary>The editor's fields for an event's master component.</summary>
-    public static EventFields Read(Item item, TimeZoneInfo zone) => Read(Master(Calendar.Load(item.RawPayload)!), zone);
+    public static EventFields Read(Item item, TimeZoneInfo zone) => Read(Master(CustomTimeZones.Load(item.RawPayload)!), zone);
 
     /// <summary>A new event in the Windows timezone, with a UUID-based UID and href (sync-radicale R7).</summary>
     public static Item Create(Collection collection, EventFields fields, TimeZoneInfo zone, DateTimeOffset now)
@@ -49,7 +49,7 @@ public static class CalDavEvents
     /// </summary>
     public static Item? Edit(Item item, EventFields fields, TimeZoneInfo zone, DateTimeOffset now)
     {
-        var calendar = Calendar.Load(item.RawPayload)!;
+        var calendar = CustomTimeZones.Load(item.RawPayload)!;
         var ev = Master(calendar);
         var old = Read(ev, zone);
         var timesChanged = old.AllDay != fields.AllDay || old.Start != fields.Start || old.End != fields.End;
@@ -76,7 +76,7 @@ public static class CalDavEvents
     /// <summary>The same event in another collection, as a new item with its own id and href (calendar-views R8).</summary>
     public static Item MoveTo(Item item, Collection target)
     {
-        var uid = Master(Calendar.Load(item.RawPayload)!).Uid!;
+        var uid = Master(CustomTimeZones.Load(item.RawPayload)!).Uid!;
         return item with { Id = Guid.NewGuid().ToString("N"), CollectionId = target.Id, RemoteId = Href(target, uid), Etag = null };
     }
 
@@ -89,7 +89,7 @@ public static class CalDavEvents
     public static Item Duplicate(Item item, DateTimeOffset? recurrence, Collection target, TimeZoneInfo zone, DateTimeOffset now,
         (bool AllDay, DateTime Start, DateTime End)? at = null)
     {
-        var calendar = Calendar.Load(item.RawPayload)!;
+        var calendar = CustomTimeZones.Load(item.RawPayload)!;
         var events = calendar.Events.ToList();
         var times = at;
         if (recurrence is { } occurrence)
@@ -263,12 +263,18 @@ public static class CalDavEvents
     internal static DateTime Wall(CalDateTime t, TimeZoneInfo zone) =>
         TimeZoneInfo.ConvertTime(OccurrenceExpander.ToUtc(t, zone), zone).DateTime;
 
+    /// <summary>Raised with the TZID when an event's own zone can't be resolved and its times are written in UTC (timezone-handling F1).</summary>
+    public static event Action<string>? ZoneNotKept;
+
     /// <summary>
     /// All-day events get DATE values. Timed events keep their form: floating stays floating, UTC stays UTC, and
-    /// a TZID event is written in its own zone. An all-day event becoming timed gets the Windows timezone.
+    /// a TZID event is written in its own zone, a custom VTIMEZONE in the calendar included (timezone-handling F1);
+    /// a DTEND with its own TZID keeps it (F2). Only a TZID nothing resolves is written in UTC. An all-day event
+    /// becoming timed gets the Windows timezone.
     /// </summary>
     internal static void SetTimes(Calendar calendar, CalendarEvent ev, EventFields fields, TimeZoneInfo zone)
     {
+        var oldEnd = ev.DtEnd;
         if (ev.Duration is not null)
         {
             ev.Duration = null;
@@ -289,19 +295,31 @@ public static class CalDavEvents
         }
 
         var tzId = current is null ? IanaId(zone) : current.TzId;
-        if (tzId is null || current is { IsUtc: true } || !TimeZoneInfo.TryFindSystemTimeZoneById(tzId, out var eventZone))
+        if (tzId is null || current is { IsUtc: true } || !CustomTimeZones.IsKnown(tzId))
         {
+            if (tzId is not null && current is { IsUtc: false })
+            {
+                ZoneNotKept?.Invoke(tzId);
+            }
             ev.DtStart = new CalDateTime(ToUtc(fields.Start, zone), "UTC");
             ev.DtEnd = new CalDateTime(ToUtc(fields.End, zone), "UTC");
             return;
         }
-        ev.DtStart = new CalDateTime(TimeZoneInfo.ConvertTimeFromUtc(ToUtc(fields.Start, zone), eventZone), tzId);
-        ev.DtEnd = new CalDateTime(TimeZoneInfo.ConvertTimeFromUtc(ToUtc(fields.End, zone), eventZone), tzId);
-        if (!calendar.TimeZones.Any(z => z.TzId == tzId))
+        var endTzId = current is not null && oldEnd is { HasTime: true, IsFloating: false, IsUtc: false, TzId: { } e }
+            && e != tzId && CustomTimeZones.IsKnown(e) ? e : tzId;
+        ev.DtStart = InZone(ToUtc(fields.Start, zone), tzId);
+        ev.DtEnd = InZone(ToUtc(fields.End, zone), endTzId);
+        foreach (var id in new[] { tzId, endTzId }.Distinct())
         {
-            calendar.AddTimeZone(VTimeZone.FromDateTimeZone(tzId));
+            if (!calendar.TimeZones.Any(z => z.TzId == id))
+            {
+                calendar.AddTimeZone(VTimeZone.FromDateTimeZone(id));
+            }
         }
     }
+
+    /// <summary>A UTC instant as a wall time in the TZID, as Ical.Net resolves it (custom VTIMEZONEs included).</summary>
+    internal static CalDateTime InZone(DateTime utc, string tzId) => new CalDateTime(utc, "UTC").ToTimeZone(tzId);
 
     /// <summary>
     /// Writes the text fields, show-as and reminder that differ from <paramref name="old"/> (all of them when null), so untouched properties
@@ -358,7 +376,7 @@ public static class CalDavEvents
 
     /// <summary>The item with an earlier payload put back, e.g. for undo (undo R4).</summary>
     public static Item Restore(Item item, string payload, TimeZoneInfo zone) =>
-        ToItem(item.Id, item.CollectionId, item.RemoteId!, item.Etag, Calendar.Load(payload)!, zone);
+        ToItem(item.Id, item.CollectionId, item.RemoteId!, item.Etag, CustomTimeZones.Load(payload)!, zone);
 
     internal static Item ToItem(string id, string collectionId, string href, string? etag, Calendar calendar, TimeZoneInfo zone)
     {

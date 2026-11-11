@@ -413,4 +413,35 @@ public sealed class CalDavRecurrenceTests
         END:VEVENT
 
         """;
+
+    [Fact]
+    public void EditSeries_MovedAcrossDifferentDstDates_LandsWhereDropped()
+    {
+        // timezone-handling F4: Mondays 09:00 New York from 2 Mar 2026; the Windows zone is London. New York starts DST
+        // on 8 Mar, London on 29 Mar. The 9 Mar occurrence (13:00 London) is dropped on Mon 30 Mar 13:00 London,
+        // which is 08:00 in New York.
+        var item = Existing("""
+            BEGIN:VEVENT
+            UID:ny
+            DTSTAMP:20260101T000000Z
+            DTSTART;TZID=America/New_York:20260302T090000
+            DTEND;TZID=America/New_York:20260302T100000
+            RRULE:FREQ=WEEKLY
+            SUMMARY:Call
+            END:VEVENT
+
+            """);
+        var rid = new DateTimeOffset(2026, 3, 9, 13, 0, 0, TimeSpan.Zero);
+        var f = CalDavRecurrence.ReadOccurrence(item, rid, London);
+        Assert.Equal(new DateTime(2026, 3, 9, 13, 0, 0), f.Start);
+        var dropped = f with { Start = new DateTime(2026, 3, 30, 13, 0, 0), End = new DateTime(2026, 3, 30, 14, 0, 0) };
+
+        var to = CalDavRecurrence.MovedRecurrence(item, rid, dropped, London);
+        var moved = CalDavRecurrence.EditSeries(item, rid, dropped, London, Now)!;
+
+        Assert.Contains("DTSTART;TZID=America/New_York:20260323T080000", moved.RawPayload);
+        Assert.Contains("DTEND;TZID=America/New_York:20260323T090000", moved.RawPayload);
+        Assert.Equal(new DateTimeOffset(2026, 3, 30, 12, 0, 0, TimeSpan.Zero), to);
+        Assert.Equal(dropped.Start, CalDavRecurrence.ReadOccurrence(moved, to, London).Start);
+    }
 }

@@ -79,7 +79,7 @@ public static class GraphEvents
         }
         if (fields.AllDay != old.AllDay || fields.Start != old.Start || fields.End != old.End)
         {
-            SetTimes(ev, fields, zone, OwnZone(ev, zone));
+            SetTimes(ev, fields, zone, OwnZone(ev, zone), OwnEndZone(ev, zone));
             changed.UnionWith(["start", "end", "isAllDay"]);
             any = true;
         }
@@ -159,7 +159,8 @@ public static class GraphEvents
         {
             fields = fields with { AllDay = t.AllDay, Start = t.Start, End = t.End };
         }
-        SetTimes(copy, fields, zone, OwnZone(master is null ? ev : Parse(master.RawPayload), zone));
+        var own = master is null ? ev : Parse(master.RawPayload);
+        SetTimes(copy, fields, zone, OwnZone(own, zone), OwnEndZone(own, zone));
         return GraphEventMapper.Rebuild(new Item(Guid.NewGuid().ToString("N"), target.Id, ItemKind.Event, null, "{}"), copy.ToJsonString(), zone);
     }
 
@@ -231,24 +232,37 @@ public static class GraphEvents
 
     /// <summary>
     /// Start, end and all-day from <paramref name="fields"/> (wall times in <paramref name="editor"/>) as wall times in
-    /// <paramref name="zone"/>; all-day as midnight-to-midnight dates (R8).
+    /// <paramref name="zone"/>, the end in <paramref name="endZone"/> when given (timezone-handling F2); all-day as
+    /// midnight-to-midnight dates (R8).
     /// </summary>
-    internal static void SetTimes(JsonObject ev, EventFields fields, TimeZoneInfo editor, TimeZoneInfo zone)
+    internal static void SetTimes(JsonObject ev, EventFields fields, TimeZoneInfo editor, TimeZoneInfo zone, TimeZoneInfo? endZone = null)
     {
+        endZone = fields.AllDay ? zone : endZone ?? zone;
         var start = fields.AllDay ? fields.Start.Date : Wall(fields.Start, editor, zone);
-        var end = fields.AllDay ? fields.End.Date : Wall(fields.End, editor, zone);
+        var end = fields.AllDay ? fields.End.Date : Wall(fields.End, editor, endZone);
         ev["start"] = DateTimeTimeZone(start, zone);
-        ev["end"] = DateTimeTimeZone(end, zone);
+        ev["end"] = DateTimeTimeZone(end, endZone);
         ev["isAllDay"] = fields.AllDay;
     }
 
     internal static JsonObject DateTimeTimeZone(DateTime wall, TimeZoneInfo zone) =>
         new() { ["dateTime"] = wall.ToString("yyyy-MM-ddTHH:mm:ss"), ["timeZone"] = zone.Id };
 
-    /// <summary>The event's own timezone when Windows knows it, else the Windows timezone (R8).</summary>
-    internal static TimeZoneInfo OwnZone(JsonObject ev, TimeZoneInfo zone) =>
-        ev["originalStartTimeZone"] is JsonValue v && v.TryGetValue<string>(out var id) && id is not ("UTC" or "tzone://Microsoft/Utc")
-            && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var own) ? own : zone;
+    /// <summary>
+    /// The event's own timezone (R8): its originalStartTimeZone when Windows knows it; the Windows timezone when it has
+    /// none or UTC. A custom or unknown zone (e.g. tzone://Microsoft/Custom) gives UTC (timezone-handling F1): Graph
+    /// takes no custom zone on a write and the app can't read its rules, so the times are written as exact instants
+    /// rather than moved into the Windows timezone. The custom zone itself is lost on that write.
+    /// </summary>
+    internal static TimeZoneInfo OwnZone(JsonObject ev, TimeZoneInfo zone) => Resolve(ev["originalStartTimeZone"], zone);
+
+    /// <summary>The event's own end timezone (originalEndTimeZone), else its start zone (timezone-handling F2).</summary>
+    internal static TimeZoneInfo OwnEndZone(JsonObject ev, TimeZoneInfo zone) => Resolve(ev["originalEndTimeZone"], OwnZone(ev, zone));
+
+    private static TimeZoneInfo Resolve(JsonNode? node, TimeZoneInfo fallback) =>
+        node is JsonValue v && v.TryGetValue<string>(out var id) && !string.IsNullOrEmpty(id) && id is not ("UTC" or "tzone://Microsoft/Utc")
+            ? TimeZoneInfo.TryFindSystemTimeZoneById(id, out var own) ? own : TimeZoneInfo.Utc
+            : fallback;
 
     /// <summary>A wall time in the editor's timezone as a wall time in <paramref name="zone"/>.</summary>
     private static DateTime Wall(DateTime wall, TimeZoneInfo from, TimeZoneInfo zone) =>

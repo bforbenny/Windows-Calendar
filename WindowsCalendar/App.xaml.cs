@@ -168,6 +168,7 @@ public partial class App : Application
     private void StartSyncScheduling()
     {
         _scheduler = new SyncScheduler(RunSync, ex => Log.Error(ex, "Sync run failed"));
+        CalDavEvents.ZoneNotKept += tzId => Log.Warning("Event timezone {TzId} not resolvable; times written in UTC", tzId);
 
         if (Store is not null)
         {
@@ -196,7 +197,8 @@ public partial class App : Application
     /// Reminders (reminders-notifications R2, R4, R6): prunes old state, schedules and shows the missed-reminder
     /// summary on start. The shared system-change hook asks for a sync run when the Windows timezone or clock changes
     /// or the PC resumes; the run rebuilds the occurrence index, reschedules reminders and refreshes the views
-    /// (timezone-handling R6), and after a resume shows the missed-reminder summary.
+    /// (timezone-handling R6), and after a resume shows the missed-reminder summary. A timezone or clock change is
+    /// also applied locally at once (<see cref="OnTimeChanged"/>).
     /// </summary>
     private void StartReminders()
     {
@@ -215,7 +217,39 @@ public partial class App : Application
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
     }
 
-    private void OnTimeChanged(object? sender, EventArgs e) => _scheduler?.Request("time changed");
+    /// <summary>
+    /// A Windows timezone or clock change is applied locally at once, not behind a running sync (timezone-handling R6,
+    /// F6): the index is rebuilt and reminders rescheduled off the UI thread (the store and reminders lock their own
+    /// state), then the views, the open flyout and the open editor's times are refreshed. The sync run still follows.
+    /// </summary>
+    private void OnTimeChanged(object? sender, EventArgs e)
+    {
+        if (Store is { } store)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    TimeZoneInfo.ClearCachedData();
+                    if (store.RefreshOccurrences())
+                    {
+                        Log.Information("Occurrence index rebuilt for {Zone}", TimeZoneInfo.Local.Id);
+                    }
+                    ReminderToasts.Reschedule(store, ReminderPlanner.RunningWindow);
+                    _ = Dispatcher.BeginInvoke(() =>
+                    {
+                        _window?.RefreshAfterTimeChange();
+                        _flyout?.RefreshIfVisible();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "Time change not applied");
+                }
+            });
+        }
+        _scheduler?.Request("time changed");
+    }
 
     private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
     {

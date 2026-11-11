@@ -963,7 +963,8 @@ public sealed partial class LocalStore : IDisposable
     /// <summary>
     /// Rebuilds the whole index if the day or the Windows timezone changed since the last full build (rolling
     /// window; timezone-handling R6). Returns true if it rebuilt. Call TimeZoneInfo.ClearCachedData first so a
-    /// timezone change is seen.
+    /// timezone change is seen. MS365 all-day events also get their stored start and end again, as midnight in the
+    /// new timezone (timezone-handling F3).
     /// </summary>
     public bool RefreshOccurrences()
     {
@@ -991,7 +992,7 @@ public sealed partial class LocalStore : IDisposable
             }
             foreach (var id in ids)
             {
-                RebuildItemOccurrences(tx, id, window);
+                RebuildItemOccurrences(tx, id, window, allDayColumns: true);
             }
             Execute(_connection, tx,
                 """
@@ -1658,7 +1659,7 @@ public sealed partial class LocalStore : IDisposable
 
     /// <summary>Replaces one item's rows in the occurrence index (R3).</summary>
     private void RebuildItemOccurrences(SqliteTransaction tx, string itemId,
-        (DateTimeOffset Today, DateTimeOffset Start, DateTimeOffset End, TimeZoneInfo Zone) window)
+        (DateTimeOffset Today, DateTimeOffset Start, DateTimeOffset End, TimeZoneInfo Zone) window, bool allDayColumns = false)
     {
         Item item;
         AccountType accountType;
@@ -1674,6 +1675,15 @@ public sealed partial class LocalStore : IDisposable
             r.Read();
             item = ReadItem(r);
             accountType = Enum.Parse<AccountType>(r.GetString(21));
+        }
+        // Graph all-day events are stored as midnight in the timezone at sync time; the occurrence id and day of
+        // series edits and duplicates come from them (timezone-handling F3).
+        if (allDayColumns && accountType == AccountType.MS365 && item is { Kind: ItemKind.Event, AllDay: true }
+            && Graph.GraphEventMapper.Times(item.RawPayload, window.Zone) is { AllDay: true } t
+            && (t.Start != item.StartUtc || t.End != item.EndUtc))
+        {
+            Execute(_connection, tx, "UPDATE items SET start_utc = $s, end_utc = $e WHERE id = $id;",
+                ("$id", itemId), ("$s", t.Start.ToUnixTimeMilliseconds()), ("$e", t.End.ToUnixTimeMilliseconds()));
         }
 
         Execute(_connection, tx, "DELETE FROM occurrences WHERE item_id = $id;", ("$id", itemId));

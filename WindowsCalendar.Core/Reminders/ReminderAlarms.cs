@@ -121,7 +121,7 @@ internal static class ReminderAlarms
     {
         try
         {
-            return Calendar.Load(payload);
+            return CalDav.CustomTimeZones.Load(payload);
         }
         catch (Exception)
         {

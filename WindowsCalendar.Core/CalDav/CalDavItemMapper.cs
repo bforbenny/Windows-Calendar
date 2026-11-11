@@ -20,7 +20,7 @@ internal static class CalDavItemMapper
         Calendar? calendar;
         try
         {
-            calendar = Calendar.Load(data);
+            calendar = CustomTimeZones.Load(data);
         }
         catch (Exception)
         {

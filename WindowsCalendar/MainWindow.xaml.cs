@@ -262,6 +262,19 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
     }
 
+    /// <summary>
+    /// After a Windows timezone or clock change (timezone-handling R6, F6): the views, and the open event's times
+    /// read again. The editor saves pickers at once, so its times hold no unsaved change; a staged repeat rule is kept.
+    /// </summary>
+    public void RefreshAfterTimeChange()
+    {
+        RefreshView();
+        if (_editor.ItemId is { } id)
+        {
+            _editor.Reload(id);
+        }
+    }
+
     /// <summary>The editor overlays the views on the right at every width, so they never resize (calendar-views R6c).</summary>
     private void PlaceEditor() =>
         EditorHost.Visibility = _editor.IsOpen || _taskEditor.IsOpen ? Visibility.Visible : Visibility.Collapsed;

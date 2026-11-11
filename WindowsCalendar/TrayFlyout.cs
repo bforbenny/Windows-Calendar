@@ -250,6 +250,15 @@ public sealed partial class TrayFlyout : Window
             Log.Information("Tray flyout opened in {Ms} ms", watch.ElapsedMilliseconds));
     }
 
+    /// <summary>After a Windows timezone or clock change, without waiting for the sync run (timezone-handling R6, F6).</summary>
+    internal void RefreshIfVisible()
+    {
+        if (IsVisible)
+        {
+            RefreshVisible();
+        }
+    }
+
     /// <summary>
     /// Rebuilds the list while the flyout is open, and resizes it to fit (R4a). A row with keyboard focus keeps it; if
     /// that row is gone, the row now in its place gets it (R8).

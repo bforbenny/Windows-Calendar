@@ -41,5 +41,5 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [on-device-model](docs/prd/on-device-model.md) | Shared NPU language model service, AI setting, eval harness, spike gate | parked |
 | [nl-quick-add](docs/prd/nl-quick-add.md) | NPU model refines quick add for free English phrasing | parked |
 | [nl-search](docs/prd/nl-search.md) | Rule-based filter chips and filters for search; attendee indexing | pending |
-| [timezone-handling](docs/prd/timezone-handling.md) | Correct TZ handling, per-event TZ, secondary TZ column | pending |
+| [timezone-handling](docs/prd/timezone-handling.md) | Correct TZ handling, per-event TZ, secondary TZ column | in-progress |
 | [schedule-gap-warning](docs/prd/schedule-gap-warning.md) | Overlap and minimum-gap warning on save, drag and resize | pending |

@@ -2,7 +2,7 @@
 description: Correct timezone and DST handling across Graph and CalDAV, per-event timezone selection, and a secondary timezone column
 when-to-use: Before working on date/time storage, display, conversion, or any timezone UI
 tags: [timezone, dst, datetime, ui]
-status: pending
+status: in-progress
 ---
 
 # Timezone handling
@@ -38,7 +38,7 @@ Fixes needed in built code (slice 1):
 - F1. A Graph event in a custom or unknown zone (e.g. `tzone://Microsoft/Custom`) is rewritten into the system zone on a time edit; a CalDAV event whose TZID Windows does not know is rewritten to UTC. Both must keep their zone (R3).
 - F2. A separate end zone (Graph `end.timeZone` / `originalEndTimeZone`, CalDAV `DTEND;TZID`) collapses into the start zone on a time edit, in both backends.
 - F3. Graph all-day events store `start_utc` as midnight in the zone at sync time and are not recomputed on a zone change, so code that uses the item's start as an occurrence id or day (series edits, duplicate) can pick the wrong date.
-- F4. Moving a CalDAV series (`MoveSeries`, `Shift`) measures the wall-clock shift in the Windows zone and applies it in the event's zone; wrong when the two zones change DST on different dates.
+- F4. Moving a series measures the wall-clock shift in the Windows zone and applies it in the event's zone; wrong when the two zones change DST on different dates. CalDAV (`MoveSeries`, `Shift`) and Graph (`GraphRecurrence.EditSeries`; added 2026-11-11).
 - F5. A custom VTIMEZONE body is probably not used for expansion (Ical.Net resolves the TZID by name); confirm with a test and honour it (R3).
 - F6. R6 waits behind a running network sync and does not refresh the tray flyout or an open editor (R6 sub-bullet).
 
@@ -46,7 +46,7 @@ Fixes needed in built code (slice 1):
 
 Each slice is built, tested and checked in the app before the next starts.
 
-1. Fixes F1–F6, and tests: a weekly 09:00 Sydney series across DST in both backends, unknown TZIDs and Graph custom zones, separate end zones, the occurrence index after a zone change.
+1. Fixes F1–F6, and tests: a weekly 09:00 Sydney series across DST in both backends, unknown TZIDs and Graph custom zones, separate end zones, the occurrence index after a zone change. Built 2026-11-11 (package 1.0.17.0) with automated tests passing; in-app checks skipped by the user, not verified (timezone change while open, Graph all-day after a zone change, separate end zone in Outlook, Outlook custom zone, CalDAV custom VTIMEZONE, series move across March).
 2. Display: R9, R8 (ruler and Settings > Appearance).
 3. R7 for single events and whole series, with the separate end timezone.
 4. R7 for this occurrence and this and following.
@@ -75,3 +75,4 @@ Each slice is built, tested and checked in the app before the next starts.
 
 - 2026-11-11: the secondary ruler uses today's offset (else the first visible day's) and notes a mid-week offset change, rather than per-day labels (user's choice).
 - 2026-11-11: the whole of R7, including the occurrence and this-and-following scopes, is in scope, built as slices 3 and 4 (user's choice).
+- 2026-11-11: a time edit on an MS365 event in a custom or unknown zone (e.g. `tzone://Microsoft/Custom`) writes UTC, keeping the exact times; Graph takes no custom zone on a write, so the zone itself is lost and a series' local time moves by an hour across DST (user's choice over the Windows zone).

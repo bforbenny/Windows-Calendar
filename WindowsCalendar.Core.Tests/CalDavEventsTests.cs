@@ -165,4 +165,69 @@ public sealed class CalDavEventsTests
         Assert.DoesNotContain("\nLOCATION", edited.RawPayload);
         Assert.Null(edited.Location);
     }
+
+    [Fact]
+    public void EditTimes_InCustomVTimeZone_KeepsItsTzidAndDefinition()
+    {
+        // timezone-handling F1: a TZID no system knows, defined in the calendar (+03:00 in November).
+        var item = Existing("""
+            BEGIN:VTIMEZONE
+            TZID:My Custom Zone
+            BEGIN:STANDARD
+            DTSTART:19701004T030000
+            TZOFFSETFROM:+0400
+            TZOFFSETTO:+0300
+            RRULE:FREQ=YEARLY;BYMONTH=10;BYDAY=1SU
+            END:STANDARD
+            BEGIN:DAYLIGHT
+            DTSTART:19700412T020000
+            TZOFFSETFROM:+0300
+            TZOFFSETTO:+0400
+            RRULE:FREQ=YEARLY;BYMONTH=4;BYDAY=2SU
+            END:DAYLIGHT
+            END:VTIMEZONE
+            BEGIN:VEVENT
+            UID:c1
+            DTSTAMP:20260101T000000Z
+            DTSTART;TZID=My Custom Zone:20261110T090000
+            DTEND;TZID=My Custom Zone:20261110T100000
+            SUMMARY:Custom
+            END:VEVENT
+
+            """);
+        Assert.Equal(new DateTimeOffset(2026, 11, 10, 6, 0, 0, TimeSpan.Zero), item.StartUtc);
+        var f = CalDavEvents.Read(item, Sydney);
+
+        var edited = CalDavEvents.Edit(item, f with { Start = f.Start.AddHours(1), End = f.End.AddHours(1) }, Sydney, Now)!;
+
+        Assert.Contains("DTSTART;TZID=My Custom Zone:20261110T100000", edited.RawPayload);
+        Assert.Contains("DTEND;TZID=My Custom Zone:20261110T110000", edited.RawPayload);
+        Assert.Single(Calendar.Load(edited.RawPayload)!.TimeZones);
+        // Ical.Net writes the definition's properties in its own order; the rules are unchanged.
+        Assert.Contains("DTSTART:19700412T020000\r\nRRULE:FREQ=YEARLY;BYDAY=2SU;BYMONTH=4\r\nTZOFFSETFROM:+0300\r\nTZOFFSETTO:+0400", edited.RawPayload);
+        Assert.Equal(new DateTimeOffset(2026, 11, 10, 7, 0, 0, TimeSpan.Zero), edited.StartUtc);
+    }
+
+    [Fact]
+    public void EditTimes_KeepsASeparateEndZone()
+    {
+        // timezone-handling F2: leaves Sydney at 09:00 (22:00 UTC the day before), lands in London at 08:00 (GMT).
+        var item = Existing("""
+            BEGIN:VEVENT
+            UID:e2
+            DTSTAMP:20260101T000000Z
+            DTSTART;TZID=Australia/Sydney:20261110T090000
+            DTEND;TZID=Europe/London:20261110T080000
+            SUMMARY:Flight
+            END:VEVENT
+
+            """);
+        var f = CalDavEvents.Read(item, Sydney);
+
+        var edited = CalDavEvents.Edit(item, f with { Start = f.Start.AddHours(1), End = f.End.AddHours(1) }, Sydney, Now)!;
+
+        Assert.Contains("DTSTART;TZID=Australia/Sydney:20261110T100000", edited.RawPayload);
+        Assert.Contains("DTEND;TZID=Europe/London:20261110T090000", edited.RawPayload);
+        Assert.Equal(new DateTimeOffset(2026, 11, 10, 9, 0, 0, TimeSpan.Zero), edited.EndUtc);
+    }
 }

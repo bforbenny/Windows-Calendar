@@ -254,4 +254,98 @@ public sealed class GraphEditTests
         Assert.Equal(3, next["range"]!["numberOfOccurrences"]!.GetValue<int>());
         Assert.Equal(Nov17, change.Created!.StartUtc);
     }
+
+    [Fact]
+    public void Edit_InACustomZone_WritesUtcNotTheWindowsZone()
+    {
+        // timezone-handling F1: Graph takes no custom zone on a write; the instants are kept exactly.
+        var sydney = TimeZoneInfo.FindSystemTimeZoneById("AUS Eastern Standard Time");
+        var item = Event("""
+            {"id":"e1","type":"singleInstance","subject":"Call","originalStartTimeZone":"tzone://Microsoft/Custom",
+             "originalEndTimeZone":"tzone://Microsoft/Custom",
+             "start":{"dateTime":"2026-11-17T01:00:00","timeZone":"UTC"},"end":{"dateTime":"2026-11-17T02:00:00","timeZone":"UTC"}}
+            """);
+        var fields = GraphEventMapper.Read(item, null, sydney);
+
+        var edited = GraphEvents.Edit(item, null, fields with { Start = fields.Start.AddHours(1), End = fields.End.AddHours(1) }, sydney)!;
+
+        var json = Json(edited);
+        Assert.Equal("UTC", json["start"]!["timeZone"]!.GetValue<string>());
+        Assert.Equal("2026-11-17T02:00:00", json["start"]!["dateTime"]!.GetValue<string>());
+        Assert.Equal("UTC", json["end"]!["timeZone"]!.GetValue<string>());
+        Assert.Equal(new DateTimeOffset(2026, 11, 17, 2, 0, 0, TimeSpan.Zero), edited.StartUtc);
+    }
+
+    [Fact]
+    public void Edit_KeepsASeparateEndZone()
+    {
+        // timezone-handling F2: leaves Sydney at 12:00 (01:00 UTC), lands in London at 12:00 (GMT).
+        var item = Event("""
+            {"id":"e1","type":"singleInstance","subject":"Flight","originalStartTimeZone":"AUS Eastern Standard Time",
+             "originalEndTimeZone":"GMT Standard Time",
+             "start":{"dateTime":"2026-11-17T01:00:00","timeZone":"UTC"},"end":{"dateTime":"2026-11-17T12:00:00","timeZone":"UTC"}}
+            """);
+        var fields = GraphEventMapper.Read(item, null, Utc);
+
+        var edited = GraphEvents.Edit(item, null, fields with { Start = fields.Start.AddHours(1), End = fields.End.AddHours(1) }, Utc)!;
+
+        var json = Json(edited);
+        Assert.Equal(("2026-11-17T13:00:00", "AUS Eastern Standard Time"),
+            (json["start"]!["dateTime"]!.GetValue<string>(), json["start"]!["timeZone"]!.GetValue<string>()));
+        Assert.Equal(("2026-11-17T13:00:00", "GMT Standard Time"),
+            (json["end"]!["dateTime"]!.GetValue<string>(), json["end"]!["timeZone"]!.GetValue<string>()));
+        Assert.Equal(new DateTimeOffset(2026, 11, 17, 13, 0, 0, TimeSpan.Zero), edited.EndUtc);
+    }
+
+    [Fact]
+    public void EditSeries_WeeklyInSydney_IsWrittenInSydneyTime()
+    {
+        // A weekly 09:00 Sydney series from Mon 30 Mar 2026 (AEDT, 22:00 UTC the day before); its 13 Apr occurrence
+        // (AEST, 23:00 UTC) moves an hour later. The server expands the series in its zone, so a write in that zone
+        // keeps 10:00 local on both sides of the DST change.
+        var master = Event("""
+            {"id":"m1","type":"seriesMaster","subject":"Standup","originalStartTimeZone":"AUS Eastern Standard Time",
+             "recurrence":{"pattern":{"type":"weekly","interval":1,"daysOfWeek":["monday"],"firstDayOfWeek":"sunday"},
+               "range":{"type":"noEnd","startDate":"2026-03-30","recurrenceTimeZone":"AUS Eastern Standard Time"}},
+             "start":{"dateTime":"2026-03-29T22:00:00","timeZone":"UTC"},"end":{"dateTime":"2026-03-29T23:00:00","timeZone":"UTC"}}
+            """);
+        var occurrence = new DateTimeOffset(2026, 4, 12, 23, 0, 0, TimeSpan.Zero);
+        var fields = GraphRecurrence.Occurrence(master, occurrence, Utc);
+
+        var edited = GraphRecurrence.EditSeries(master, occurrence, fields with { Start = fields.Start.AddHours(1), End = fields.End.AddHours(1) }, Utc)!;
+
+        var json = Json(edited);
+        Assert.Equal(("2026-03-30T10:00:00", "AUS Eastern Standard Time"),
+            (json["start"]!["dateTime"]!.GetValue<string>(), json["start"]!["timeZone"]!.GetValue<string>()));
+        Assert.Equal("2026-03-30T11:00:00", json["end"]!["dateTime"]!.GetValue<string>());
+        Assert.Equal("AUS Eastern Standard Time", json["recurrence"]!["range"]!["recurrenceTimeZone"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void EditSeries_MovedAcrossDifferentDstDates_LandsWhereDropped()
+    {
+        // timezone-handling F4: Mondays 09:00 New York from 2 Mar 2026 (14:00 UTC); the Windows zone is London. New York
+        // starts DST on 8 Mar, London on 29 Mar. The 9 Mar occurrence (13:00 London) is dropped on Mon 30 Mar 13:00
+        // London, which is 08:00 in New York.
+        var london = TimeZoneInfo.FindSystemTimeZoneById("GMT Standard Time");
+        var master = Event("""
+            {"id":"m1","type":"seriesMaster","subject":"Call","originalStartTimeZone":"Eastern Standard Time",
+             "recurrence":{"pattern":{"type":"weekly","interval":1,"daysOfWeek":["monday"],"firstDayOfWeek":"sunday"},
+               "range":{"type":"noEnd","startDate":"2026-03-02","recurrenceTimeZone":"Eastern Standard Time"}},
+             "start":{"dateTime":"2026-03-02T14:00:00","timeZone":"UTC"},"end":{"dateTime":"2026-03-02T15:00:00","timeZone":"UTC"}}
+            """);
+        var occurrence = new DateTimeOffset(2026, 3, 9, 13, 0, 0, TimeSpan.Zero);
+        var fields = GraphRecurrence.Occurrence(master, occurrence, london);
+        Assert.Equal(new DateTime(2026, 3, 9, 13, 0, 0), fields.Start);
+
+        var edited = GraphRecurrence.EditSeries(master, occurrence,
+            fields with { Start = new DateTime(2026, 3, 30, 13, 0, 0), End = new DateTime(2026, 3, 30, 14, 0, 0) }, london)!;
+
+        var json = Json(edited);
+        Assert.Equal(("2026-03-23T08:00:00", "Eastern Standard Time"),
+            (json["start"]!["dateTime"]!.GetValue<string>(), json["start"]!["timeZone"]!.GetValue<string>()));
+        Assert.Equal("2026-03-23T09:00:00", json["end"]!["dateTime"]!.GetValue<string>());
+        Assert.Equal("2026-03-23", json["recurrence"]!["range"]!["startDate"]!.GetValue<string>());
+        Assert.Equal("monday", json["recurrence"]!["pattern"]!["daysOfWeek"]![0]!.GetValue<string>());
+    }
 }

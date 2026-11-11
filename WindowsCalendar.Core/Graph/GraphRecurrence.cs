@@ -185,12 +185,25 @@ public static class GraphRecurrence
         }
         var ev = GraphEvents.Parse((edited ?? master).RawPayload);
         var changed = GraphEvents.Changed(ev);
-        var newStart = first.Start + (fields.Start - old.Start);
-        var moved = first with { Start = newStart, End = newStart + (fields.End - fields.Start) };
         var own = GraphEvents.OwnZone(ev, zone);
-        GraphEvents.SetTimes(ev, moved, zone, own);
+        EventFields moved;
+        if (fields.AllDay)
+        {
+            var newStart = first.Start + (fields.Start - old.Start);
+            moved = first with { Start = newStart, End = newStart + (fields.End - fields.Start) };
+        }
+        else
+        {
+            // The change is measured in the series' own zone, so a move across a DST change in only one of the
+            // Windows and event zones lands where it was dropped (timezone-handling F4).
+            DateTime OwnWall(DateTime wall) => TimeZoneInfo.ConvertTime(GraphEventMapper.Local(wall, zone), own).DateTime;
+            var start = GraphEventMapper.Local(OwnWall(first.Start) + (OwnWall(fields.Start) - OwnWall(old.Start)), own);
+            var end = start + (GraphEventMapper.Local(fields.End, zone) - GraphEventMapper.Local(fields.Start, zone));
+            moved = first with { Start = TimeZoneInfo.ConvertTime(start, zone).DateTime, End = TimeZoneInfo.ConvertTime(end, zone).DateTime };
+        }
+        GraphEvents.SetTimes(ev, moved, zone, own, GraphEvents.OwnEndZone(ev, zone));
         changed.UnionWith(["start", "end", "isAllDay"]);
-        var days = DateOnly.FromDateTime(moved.Start).DayNumber - DateOnly.FromDateTime(first.Start).DayNumber;
+        var days = OwnDate(moved.Start, zone, own, moved.AllDay).DayNumber - OwnDate(first.Start, zone, own, first.AllDay).DayNumber;
         if (ev["recurrence"] is JsonObject recurrenceNode && days != 0)
         {
             var newDate = OwnDate(moved.Start, zone, own, moved.AllDay);
@@ -229,12 +242,13 @@ public static class GraphRecurrence
 
         var following = GraphEvents.Parse(GraphEvents.MoveTo(master, collection, zone).RawPayload);
         GraphEvents.SetText(following, fields);
-        GraphEvents.SetTimes(following, fields, zone, own);
+        GraphEvents.SetTimes(following, fields, zone, own, GraphEvents.OwnEndZone(ev, zone));
         var newDate = OwnDate(fields.Start, zone, own, fields.AllDay);
         if (rule is not null)
         {
             var left = rule.Count is { } count ? Math.Max(1, count - Dates(rule, startDate).TakeWhile(d => d < at).Count()) : (int?)null;
-            var days = Date(fields.Start).DayNumber - Date(occurrence.Start).DayNumber;
+            // Weekdays shift by the days moved in the series' own zone (timezone-handling F4).
+            var days = newDate.DayNumber - at.DayNumber;
             following["recurrence"] = Recurrence(Shift(rule, days) with { Count = left }, newDate, RangeZone(recurrenceNode, own));
         }
         else

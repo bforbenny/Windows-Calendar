@@ -96,7 +96,7 @@ internal static class OccurrenceExpander
     {
         try
         {
-            return Calendar.Load(payload) is { Events.Count: > 0 } calendar ? calendar : null;
+            return CalDav.CustomTimeZones.Load(payload) is { Events.Count: > 0 } calendar ? calendar : null;
         }
         catch (Exception)
         {

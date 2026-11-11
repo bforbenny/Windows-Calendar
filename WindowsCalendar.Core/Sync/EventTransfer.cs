@@ -36,7 +36,7 @@ public static partial class EventTransfer
             }
             return toGraph ? new(GraphEvents.MoveTo(item, target, zone), []) : GraphToCalDav(item, ev, target, zone, now);
         }
-        var calendar = Calendar.Load(item.RawPayload)!;
+        var calendar = CustomTimeZones.Load(item.RawPayload)!;
         var master = CalDavEvents.Master(calendar);
         if (IsMeeting(master))
         {
@@ -166,7 +166,7 @@ public static partial class EventTransfer
             own = zone;
         }
         var created = CalDavEvents.Create(target, fields, own, now);
-        var calendar = Calendar.Load(created.RawPayload)!;
+        var calendar = CustomTimeZones.Load(created.RawPayload)!;
         var vevent = calendar.Events.Single();
 
         if (ev["location"]?["coordinates"] is JsonObject c && Number(c["latitude"]) is { } lat && Number(c["longitude"]) is { } lon)

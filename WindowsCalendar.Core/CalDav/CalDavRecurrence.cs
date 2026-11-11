@@ -82,7 +82,7 @@ public static partial class CalDavRecurrence
         }
         if (timesChanged)
         {
-            MoveSeries(calendar, master, old, fields);
+            MoveSeries(calendar, master, old, fields, zone);
         }
         Stamp(master, now);
         return CalDavEvents.ToItem(item.Id, item.CollectionId, item.RemoteId!, item.Etag, calendar, zone);
@@ -105,7 +105,7 @@ public static partial class CalDavRecurrence
         }
         var id = Override(calendar, recurrence, zone)?.RecurrenceIdentifier!.StartTime
             ?? Instance(CalDavEvents.Master(calendar), recurrence, zone).Period.StartTime;
-        return OccurrenceExpander.ToUtc(Shift(id, fields.Start - old.Start), zone);
+        return OccurrenceExpander.ToUtc(Shift(id, Own(fields.Start, id, zone) - Own(old.Start, id, zone)), zone);
     }
 
     /// <summary>R4 delete: an EXDATE for the occurrence, and its override (if any) removed.</summary>
@@ -280,9 +280,10 @@ public static partial class CalDavRecurrence
         }
         if (master.DtEnd is { } end)
         {
-            var length = end.Value - master.DtStart!.Value;
+            // A DTEND in another zone keeps it, with the same exact length (timezone-handling F2).
+            var length = end.TzId == master.DtStart!.TzId ? end.Value - master.DtStart.Value : end.AsUtc - master.DtStart.AsUtc;
             master.DtStart = split;
-            master.DtEnd = Shift(split, length);
+            master.DtEnd = End(split, length, end);
         }
         else
         {
@@ -336,7 +337,7 @@ public static partial class CalDavRecurrence
 
     // ---- Occurrences ----
 
-    private static Calendar Load(Item item) => Calendar.Load(item.RawPayload)!;
+    private static Calendar Load(Item item) => CustomTimeZones.Load(item.RawPayload)!;
 
     internal static CalendarEvent? Override(Calendar calendar, DateTimeOffset recurrence, TimeZoneInfo zone) =>
         calendar.Events.FirstOrDefault(e => e.RecurrenceIdentifier is { } id && OccurrenceExpander.ToUtc(id.StartTime, zone) == recurrence);
@@ -397,9 +398,11 @@ public static partial class CalDavRecurrence
 
     /// <summary>
     /// Moves the master by the occurrence's change in start and gives it the new length. EXDATEs, override
-    /// RECURRENCE-IDs and the rule's UNTIL move with it; overrides whose times were not changed move too.
+    /// RECURRENCE-IDs and the rule's UNTIL move with it; overrides whose times were not changed move too. The change
+    /// is measured in the series' own zone, so a move across a DST change in only one of the Windows and event zones
+    /// lands where it was dropped (timezone-handling F4).
     /// </summary>
-    private static void MoveSeries(Calendar calendar, CalendarEvent master, EventFields old, EventFields fields)
+    private static void MoveSeries(Calendar calendar, CalendarEvent master, EventFields old, EventFields fields, TimeZoneInfo zone)
     {
         if (old.AllDay != fields.AllDay)
         {
@@ -409,19 +412,22 @@ public static partial class CalDavRecurrence
         {
             throw new EditRefusedException("This series repeats on listed dates, so it can't be moved as a whole. Choose This event instead.");
         }
-        var delta = fields.Start - old.Start;
-        var length = fields.End - fields.Start;
+        var from = Own(old.Start, master.DtStart!, zone);
+        var to = Own(fields.Start, master.DtStart!, zone);
+        var delta = to - from;
+        var length = Own(fields.End, master.DtStart!, zone) - to;
         if (master.RecurrenceRule is { } rule)
         {
-            ShiftRule(rule, DateOnly.FromDateTime(old.Start), DateOnly.FromDateTime(fields.Start), delta);
+            ShiftRule(rule, DateOnly.FromDateTime(from), DateOnly.FromDateTime(to), delta);
         }
 
         if (master.Duration is not null)
         {
             master.Duration = null;
         }
+        var oldEnd = master.DtEnd;
         master.DtStart = Shift(master.DtStart!, delta);
-        master.DtEnd = Shift(master.DtStart, length);
+        master.DtEnd = End(master.DtStart, length, oldEnd);
 
         var exceptions = master.ExceptionDates.GetAllDates().ToList();
         master.ExceptionDates.Clear();
@@ -441,8 +447,9 @@ public static partial class CalDavRecurrence
                 {
                     ov.Duration = null;
                 }
+                var ovEnd = ov.DtEnd;
                 ov.DtStart = Shift(id, delta);
-                ov.DtEnd = Shift(ov.DtStart, length);
+                ov.DtEnd = End(ov.DtStart, length, ovEnd);
             }
         }
     }
@@ -488,6 +495,22 @@ public static partial class CalDavRecurrence
             rule.Until = Shift(until, delta);
         }
     }
+
+    /// <summary>
+    /// A wall time in the Windows timezone as a wall time in the form of <paramref name="like"/>: in its TZID, or UTC;
+    /// floating times and dates as they are (timezone-handling F4).
+    /// </summary>
+    private static DateTime Own(DateTime wall, CalDateTime like, TimeZoneInfo zone) =>
+        !like.HasTime || like.IsFloating ? wall : CalDavEvents.InZone(CalDavEvents.ToUtc(wall, zone), like.TzId!).Value;
+
+    /// <summary>
+    /// The end <paramref name="length"/> after <paramref name="start"/>; in the TZID of <paramref name="oldEnd"/> when
+    /// it had its own (timezone-handling F2).
+    /// </summary>
+    private static CalDateTime End(CalDateTime start, TimeSpan length, CalDateTime? oldEnd) =>
+        oldEnd is { HasTime: true, IsFloating: false, IsUtc: false, TzId: { } e } && start is { HasTime: true, IsFloating: false } && e != start.TzId
+            ? Shift(start, length).ToTimeZone(e)
+            : Shift(start, length);
 
     /// <summary>A date-time moved by a wall-clock amount in its own form (TZID, floating, UTC); a date by whole days.</summary>
     private static CalDateTime Shift(CalDateTime t, TimeSpan delta) =>
