@@ -22,7 +22,7 @@ A single text box turns a typed phrase into an event (or a task) with date, time
   - Duration: `for 30m`, `for 1h`, `for 90 min`, `for 2 hours`.
   - All-day: `all day`, or a date with no time.
   - Location: text after ` @ `, or after ` at ` when the next word starts with a capital letter or a digit and is not a time (`at Cafe Rio`, `at 12 Main St`). `look at budget` keeps "at budget" in the title. The location runs to the next recognised token or the end.
-  - Calendar: `#name` (prefix match on calendar name; writable calendars only). Match order: the default calendar, then calendars in the active set in sidebar order, then the rest; first match wins. `#account/name` picks a calendar in a named account.
+  - Calendar: `#name` (prefix match on calendar name; writable calendars ticked in the sidebar only, per [calendar-views](calendar-views.md) R6e). Match order: the default calendar, then the other ticked calendars in sidebar order; first match wins. With no `#`, the default calendar is used if ticked, else the first ticked writable calendar. `#account/name` picks a calendar in a named account.
   - Recurrence: `every day`, `every <weekday>`, `every week`, `every month`, `weekdays`.
   - Task: a leading `task ` or `todo ` creates a task with the parsed date as due date, in the default task list (or `#list`). Only writable Microsoft To Do lists can receive tasks (Radicale task lists are view-only, [tasks](tasks.md)); `#` on a task matches To Do lists only.
 - R3. All remaining text becomes the title.

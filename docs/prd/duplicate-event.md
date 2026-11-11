@@ -18,7 +18,7 @@ The user can copy an existing event into a new, independent event and then adjus
 - R3. Copied fields: title, start/end, all-day, timezone, location (including preserved coordinates), description, show-as, reminders.
 - R4. Not copied: server ids/UID/ETag, attendees and organiser, the Graph online meeting / join URL, conflict copies.
 - R5. Duplicating an occurrence of a recurring event creates a single non-recurring event. Duplicating from the series editor copies the recurrence rule too.
-- R6. Target calendar can be any writable calendar, including one in another account. In that case, unsupported fields are dropped (e.g. show-as values per [event-show-as](event-show-as.md) R2).
+- R6. Target calendar can be any writable calendar ticked in the sidebar ([calendar-views](calendar-views.md) R6e), including one in another account. In that case, unsupported fields are dropped (e.g. show-as values per [event-show-as](event-show-as.md) R2).
 - R7. Duplicate works offline (outbox create) and is undoable ([undo](undo.md)).
 
 ## Interim (first slice)

@@ -17,7 +17,7 @@ using WindowsCalendar.Core.Sync;
 namespace WindowsCalendar.Views;
 
 /// <summary>
-/// The Calendar field (calendar-views R8): it lists the writable calendars of every account. A calendar in the same
+/// The Calendar field (calendar-views R8, R6e): it lists the writable calendars ticked in the sidebar, across accounts. A calendar in the same
 /// account moves the event at once. A calendar in another account first shows a confirmation with what the event can't
 /// take along, then queues a create there and a delete here as one linked group. Meetings and invitations stay in their
 /// calendar.
@@ -26,14 +26,28 @@ internal sealed partial class EventEditor
 {
     private IReadOnlyDictionary<string, Collection> _all = new Dictionary<string, Collection>();
 
-    /// <summary>The event's own calendar, and when it may move, every other writable calendar.</summary>
+    /// <summary>The event's own calendar, and when it may move, the other writable calendars ticked in the sidebar (R6e).</summary>
     private List<Collection> CalendarChoices(Collection current, bool movable)
     {
-        var accounts = Store?.GetAccounts().Select(a => a.Id).ToHashSet() ?? [];
+        var targets = movable ? TickedWritableCalendars(_all).Select(c => c.Id).ToHashSet() : [];
         return _all.Values
-            .Where(c => c.Kind == CollectionKind.Calendar
-                && (c.Id == current.Id || movable && !c.ReadOnly && c.SourceUrl is null && accounts.Contains(c.AccountId)))
+            .Where(c => c.Kind == CollectionKind.Calendar && (c.Id == current.Id || targets.Contains(c.Id)))
             .ToList();
+    }
+
+    /// <summary>
+    /// Writable calendars ticked in the sidebar, in sidebar order (calendar-views R6e); every writable calendar when
+    /// none is ticked.
+    /// </summary>
+    private List<Collection> TickedWritableCalendars(IReadOnlyDictionary<string, Collection> collections)
+    {
+        var accounts = Store?.GetAccounts().Select(a => a.Id).ToHashSet() ?? [];
+        var hidden = Store?.GetHiddenCollectionIds() ?? new HashSet<string>();
+        var writable = collections.Values
+            .Where(c => c.Kind == CollectionKind.Calendar && !c.ReadOnly && c.SourceUrl is null && accounts.Contains(c.AccountId))
+            .ToList();
+        var ticked = writable.Where(c => !hidden.Contains(c.Id)).ToList();
+        return ticked.Count > 0 ? ticked : writable;
     }
 
     private void CalendarChanged()

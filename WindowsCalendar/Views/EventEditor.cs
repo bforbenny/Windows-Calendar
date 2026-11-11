@@ -264,8 +264,7 @@ internal sealed partial class EventEditor : UserControl
             return;
         }
         Save();
-        var accounts = Store?.GetAccounts().Select(a => a.Id).ToHashSet() ?? [];
-        var choices = collections.Values.Where(c => c.Kind == CollectionKind.Calendar && !c.ReadOnly && accounts.Contains(c.AccountId)).ToList();
+        var choices = TickedWritableCalendars(collections);
         if (choices.Count == 0)
         {
             return;
