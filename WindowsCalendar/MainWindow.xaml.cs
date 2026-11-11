@@ -266,6 +266,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private void ShowConflicts()
     {
         var count = Store?.GetConflictCount() ?? 0;
+        _conflictsDismissed = Math.Min(_conflictsDismissed, count);
         ConflictBar.Title = count == 1 ? "1 conflict" : $"{count} conflicts";
         ConflictBar.Message = "Changed both here and on the server: the server version was kept, and your version is saved.";
         BannerFade.SetOpen(ConflictBar, count > _conflictsDismissed);

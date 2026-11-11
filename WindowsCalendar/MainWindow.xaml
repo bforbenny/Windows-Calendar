@@ -12,6 +12,37 @@
     WindowStartupLocation="CenterScreen"
     UseLayoutRounding="True">
 
+    <ui:FluentWindow.Resources>
+        <!-- Rows of the search and conflicts lists: theme surfaces for hover and selection, not the system highlight
+             (ui-colour-theme). -->
+        <Style x:Key="PopupListItem" TargetType="ListBoxItem">
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Row" Background="Transparent" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Row" Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Row" Property="Background" Value="{DynamicResource SurfaceRaisedBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Row" Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}" />
+                                <Setter TargetName="Row" Property="BorderThickness" Value="1" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </ui:FluentWindow.Resources>
+
     <!-- Mica shows through the title bar only; the content area is solid (app-platform R2). -->
     <Grid>
         <Grid.RowDefinitions>
@@ -89,6 +120,7 @@
                                     BorderThickness="1" CornerRadius="8" Padding="4" Margin="0,4,0,0">
                                 <ListBox x:Name="SearchResults" MaxHeight="480" Width="440" BorderThickness="0" Background="Transparent"
                                          ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ItemContainerStyle="{StaticResource PopupListItem}"
                                          PreviewMouseLeftButtonUp="OnSearchResultClicked" PreviewKeyDown="OnSearchResultsKeyDown" />
                             </Border>
                         </Popup>
@@ -146,11 +178,25 @@
                                 Margin="24" MinWidth="320" MaxWidth="520">
                         <!-- Conflicts (conflict-resolution R5, interim: banner only). -->
                         <ui:InfoBar x:Name="ConflictBar" Severity="Warning" IsClosable="True" Margin="0,0,0,8"
-                                    Background="{DynamicResource SurfaceBaseBrush}">
+                                    Background="{DynamicResource SurfaceBaseBrush}" Cursor="Hand"
+                                    MouseLeftButtonUp="OnConflictBarClicked">
                             <ui:InfoBar.Effect>
                                 <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.25" />
                             </ui:InfoBar.Effect>
+                            <!-- Lists the conflicts; a row opens its item (conflict-resolution R5 interim). -->
+                            <ui:Button x:Name="ConflictShowButton" Content="Show" Click="OnShowConflicts" />
                         </ui:InfoBar>
+                        <Popup x:Name="ConflictPopup" PlacementTarget="{Binding ElementName=ConflictBar}" Placement="Top"
+                               StaysOpen="False" AllowsTransparency="True">
+                            <Border Background="{DynamicResource SurfaceBaseBrush}" BorderBrush="{DynamicResource DividerBrush}"
+                                    BorderThickness="1" CornerRadius="8" Padding="4" Margin="0,0,0,4">
+                                <ListBox x:Name="ConflictList" MaxHeight="400" Width="440" BorderThickness="0" Background="Transparent"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         AutomationProperties.Name="Conflicts"
+                                         ItemContainerStyle="{StaticResource PopupListItem}"
+                                         PreviewMouseLeftButtonUp="OnConflictRowClicked" PreviewKeyDown="OnConflictListKeyDown" />
+                            </Border>
+                        </Popup>
                         <!-- "Event moved · Undo" for 8 seconds (undo R3). -->
                         <ui:InfoBar x:Name="UndoBar" IsClosable="True" Background="{DynamicResource SurfaceBaseBrush}">
                             <ui:InfoBar.Effect>

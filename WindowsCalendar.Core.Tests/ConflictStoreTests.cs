@@ -115,6 +115,49 @@ public sealed class ConflictStoreTests : IDisposable
     }
 
     [Fact]
+    public void GetConflicts_ItemOnCalendar_UsesItsTitleAndDate()
+    {
+        SeedSynced();
+        _store.UpdateItem(NewItem("mine", "\"e1\""));
+        _store.ResolveConflict(_store.GetOutbox()[0].Id, NewItem("theirs", "\"e9\"", id: "x"));
+
+        var conflict = Assert.Single(_store.GetConflicts());
+
+        Assert.Equal(("i1", "c1", "theirs", true, false), (conflict.ItemId, conflict.CollectionId, conflict.Title, conflict.OnCalendar, conflict.LocalDeleted));
+        Assert.Equal(new DateTimeOffset(2026, 11, 5, 9, 0, 0, TimeSpan.Zero), conflict.StartUtc);
+    }
+
+    [Fact]
+    public void GetConflicts_ItemGone_TakesTitleFromLocalICalendar()
+    {
+        SeedSynced();
+        _store.UpdateItem(NewItem("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY;LANGUAGE=en:Lunch\\, with S\r\n am\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n", "\"e1\""));
+        _store.RemoveServerItem(Collections, Href);
+
+        var conflict = Assert.Single(_store.GetConflicts());
+
+        Assert.Equal(("Lunch, with Sam", false, null), (conflict.Title, conflict.OnCalendar, conflict.StartUtc));
+    }
+
+    [Fact]
+    public void GetConflicts_GraphPayloadAndLocalDelete()
+    {
+        SeedSynced();
+        _store.UpdateItem(NewItem("""{"subject":"Board meeting"}""", "\"e1\""));
+        _store.ResolveConflict(_store.GetOutbox()[0].Id, null);
+        _store.CreateItem(NewItem("v1", id: "i2", href: "https://example.test/cal/i2.ics"));
+        _store.CompleteOutboxWrite(_store.GetOutbox()[0].Id, "\"e1\"");
+        _store.DeleteItem("i2");
+        _store.ApplyServerItem(Collections, NewItem("theirs", "\"e9\"", id: "x", href: "https://example.test/cal/i2.ics"));
+
+        var conflicts = _store.GetConflicts();
+
+        Assert.Equal(2, conflicts.Count);
+        Assert.Contains(conflicts, c => c is { ItemId: "i1", Title: "Board meeting", OnCalendar: false });
+        Assert.Contains(conflicts, c => c is { ItemId: "i2", Title: "theirs", OnCalendar: true, LocalDeleted: true });
+    }
+
+    [Fact]
     public void ServerDelete_OfLocallyDeletedItem_JustAgrees()
     {
         SeedSynced();

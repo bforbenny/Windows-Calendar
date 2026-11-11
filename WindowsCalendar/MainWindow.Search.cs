@@ -134,8 +134,13 @@ public sealed partial class MainWindow
     /// <summary>R5: scrolls the calendar to the result's day (Tasks switches to Week for an event) and opens it.</summary>
     private void OpenSearchResult(ListBoxItem item)
     {
-        var result = (SearchResult)item.Tag;
         SearchPopup.IsOpen = false;
+        OpenResult((SearchResult)item.Tag);
+    }
+
+    /// <summary>Scrolls to the item's day and opens it in its editor; also used by the conflicts list.</summary>
+    private void OpenResult(SearchResult result)
+    {
         var stayInTasks = result.Kind == ItemKind.Task && _view == ViewKind.Tasks;
         if (result.StartUtc is { } start && !stayInTasks)
         {

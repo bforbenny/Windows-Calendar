@@ -23,12 +23,21 @@ When a local pending change and a server change hit the same item, **the server 
 - R8. For recurring series, conflicts are tracked at the granularity the server uses (Graph: per occurrence/series master; CalDAV: per resource, i.e. the whole series).
 - R9. Other sources of copies: a failed outbox entry the user discards ([local-store-offline](local-store-offline.md) R7) and pending changes in a collection deleted on the server ([account-management](account-management.md) R11) are also moved to Conflicts, so they stay recoverable.
 - R10. Edits to a meeting you organise can conflict only because attendee responses changed the etag. This is accepted in v1 and handled like any other conflict.
+- R11. The app's own writes never count as conflicts: a server version that is the echo of a write the app sent (including a create followed by a still-queued edit, as after a move to another account) is not a conflict. Covered by a unit test that creates, edits before the push, then syncs.
 
 ## Interim (first slice, with sync-radicale push)
 
 - R1–R4, R7 and R8 (CalDAV, per resource) are in place. The `conflicts` table holds `{ id, item_id, collection_id, kind, local_payload, server_payload, detected_at }`; a null local payload means the local change was a delete, a null server payload means the server deleted the item.
 - R5: an "N conflicts" banner in the main window, closable for the session. The toast comes with [reminders-notifications](reminders-notifications.md) toasts.
-- R6 (Conflicts view) and R9 (discarded outbox entries) come later.
+  - Clicking the banner, or its Show button (keyboard), opens a list just above it, with the first openable row focused (arrows move, Enter opens, Esc closes). The list holds every conflict, newest first, even when there is only one. Each row shows the type icon, title, date and time, calendar marker and name, and what happened: "Changed on both" (both versions exist), "Your delete was not applied" (local delete, server edit), or "No longer on the calendar" (deleted on the server, or a create cancelled with its group).
+  - Clicking a row whose item is on the calendar closes the list, scrolls to its day and opens it in the editor, like a search result ([search](search.md) R5). A row whose item is gone is greyed and not clickable; its title comes from the saved local version.
+  - Opening the list or an item does not clear the conflict (R7); the banner stays until closed.
+- R6 (second slice): resolving happens in that list, not a separate view:
+  - each row shows one line of differences between the saved local version and the item as it is now, for the fields the app edits (title, start, end, all-day, location, show-as, reminder), e.g. "End: yours 17:30 · server 11:30"; for a Graph local version only the fields it marked as changed are compared;
+  - **Keep server** removes the conflict copy; **Use mine** applies the local version to the item as it is now and queues it as a normal edit against the current etag/changeKey, then removes the copy; for "Your delete was not applied" it queues the delete again. Both are one undo step where the outbox allows it ([undo](undo.md));
+  - for a row whose item is no longer on the calendar, only **Keep server** (discard) is offered; restoring it as a new item (R3) comes later;
+  - the banner count updates at once, and the banner closes when no conflicts are left.
+  - The "Use my version" confirmation for CalDAV series that lists overwritten server changes (R6) comes later; until then Use mine on a CalDAV series asks a plain "Overwrite the server version?" first.- R6 (Conflicts view) and R9 (discarded outbox entries) come later.
 - A conflict on an entry in a linked outbox group cancels the group's later entries: a create is not sent (its local copy goes to Conflicts and it leaves the calendar), a delete is not sent (the item comes back). So a failed series truncate does not create the new series ([recurring-events](recurring-events.md) R6), and a failed calendar move does not delete the original ([calendar-views](calendar-views.md) R8).
 
 ## Out of scope

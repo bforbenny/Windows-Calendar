@@ -67,6 +67,9 @@ public sealed class GraphSyncTests : IDisposable
 
         public List<(string Method, string Path, string? Body, string? IfMatch)> Writes { get; } = [];
 
+        /// <summary>Runs on the server right after a POST, before its reply is read (the reply keeps the first etag).</summary>
+        public Action<string>? AfterCreate { get; set; }
+
         private int _created;
         private readonly Lock _gate = new();
 
@@ -160,7 +163,9 @@ public sealed class GraphSyncTests : IDisposable
                 var node = JsonNode.Parse(body!)!.AsObject();
                 var (start, end) = Times(node);
                 PutJson(id, start, end, node.ToJsonString());
-                return Json(Events[id].Json, HttpStatusCode.Created);
+                var reply = Events[id].Json;
+                AfterCreate?.Invoke(id);
+                return Json(reply, HttpStatusCode.Created);
             }
             if (!path.StartsWith(events, StringComparison.Ordinal))
             {
@@ -622,6 +627,51 @@ public sealed class GraphSyncTests : IDisposable
         Assert.Contains("\"endDate\":\"2026-11-16\"", _graph.Writes[0].Body);
         Assert.Contains("\"startDate\":\"2026-11-17\"", _graph.Writes[1].Body);
         Assert.Contains("\"subject\":\"Renamed\"", _graph.Writes[1].Body);
+    }
+
+    /// <summary>
+    /// A new event in a linked group (as after a move to another account), edited before the push, so the edit has
+    /// its own entry. Returns the item id.
+    /// </summary>
+    private string CreateThenEditBeforeThePush()
+    {
+        var calendar = _store.GetCollections("a1").Single();
+        var created = GraphEvents.Create(calendar, new CalDav.EventFields("Lunch", false, Nov10.UtcDateTime, Nov10.UtcDateTime.AddHours(1), null, null), TimeZoneInfo.Utc);
+        _store.CreateItem(created, groupId: "move");
+        var fields = GraphEventMapper.Read(created, null, TimeZoneInfo.Utc);
+        _store.UpdateItem(GraphEvents.Edit(created, null, fields with { End = Nov10.UtcDateTime.AddHours(7) }, TimeZoneInfo.Utc)!);
+        return created.Id;
+    }
+
+    [Fact]
+    public async Task CreateThenEditBeforeThePush_IsNotAConflict_WhenGraphChangesTheNewEventsChangeKey()
+    {
+        // Exchange changes a new event's changeKey just after the POST, without changing the event (conflict-resolution R11).
+        _graph.AfterCreate = id => _graph.PutJson(id, _graph.Events[id].Start, _graph.Events[id].End, _graph.Events[id].Json);
+        var id = CreateThenEditBeforeThePush();
+
+        var summary = await SyncAsync();
+
+        Assert.Equal(0, summary.Conflicts);
+        Assert.Equal(0, _store.GetConflictCount());
+        Assert.Equal(2, summary.Sent);
+        Assert.Equal("PATCH", _graph.Writes[^1].Method);
+        Assert.Contains("2026-11-10T16:00:00", _graph.Events["new1"].Json);
+        Assert.Equal(Nov10.AddHours(7), _store.GetItem(id)!.EndUtc);
+        Assert.Empty(_store.GetOutbox());
+    }
+
+    [Fact]
+    public async Task CreateThenEditBeforeThePush_IsAConflict_WhenTheNewEventWasChangedInOutlook()
+    {
+        _graph.AfterCreate = id => _graph.Put(id, _graph.Events[id].Start, _graph.Events[id].End, subject: "Theirs");
+        var id = CreateThenEditBeforeThePush();
+
+        var summary = await SyncAsync();
+
+        Assert.Equal(1, summary.Conflicts);
+        Assert.Equal("Theirs", _store.GetItem(id)!.Summary);
+        Assert.Equal(1, _store.GetConflictCount());
     }
 
 }

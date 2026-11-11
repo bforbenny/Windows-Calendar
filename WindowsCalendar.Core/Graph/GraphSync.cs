@@ -370,13 +370,18 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
     /// Sends the due outbox entries of these calendars and task lists in replay order (R7, R9): POST to the calendar or
     /// list, PATCH of the changed fields or DELETE, with If-Match. 412 or 404: the server version wins
     /// (conflict-resolution). Network, 401 and throttling stop the account (thrown); 5xx and 408 retry later; other 4xx
-    /// wait for the user.
+    /// wait for the user. Graph changes a new event's changeKey shortly after the POST, so a later entry for an item
+    /// created in this run can be refused although nobody changed it: when the server version still has the fields the
+    /// app POSTed, the entry is sent again once on the server's etag (conflict-resolution R11).
     /// </summary>
     private async Task<(int Sent, int Conflicts, int Failed)> PushAsync(GraphClient client, IReadOnlyList<Collection> collections,
         CancellationToken cancellationToken)
     {
         var byId = collections.ToDictionary(c => c.Id);
         int sent = 0, conflicts = 0, failed = 0;
+        // Payloads POSTed in this run by item id, and the entries already sent again (once each, no retry loop).
+        var posted = new Dictionary<string, string>();
+        var rebased = new HashSet<long>();
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -425,6 +430,7 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
                         break;
                     case OutboxOperation.Create:
                         store.CompleteOutboxWrite(entry.Id, etag, id);
+                        posted[item.Id] = entry.Payload!;
                         break;
                     default:
                         store.CompleteOutboxWrite(entry.Id, etag);
@@ -442,6 +448,11 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
                     store.CompleteOutboxEntry(entry.Id);
                     sent++;
                 }
+                else if (server is not null && posted.TryGetValue(item.Id, out var payload)
+                    && SameFields(item with { RawPayload = payload }, server, isTask) && rebased.Add(entry.Id))
+                {
+                    store.RebaseOutboxEntry(entry.Id, server.Etag);
+                }
                 else
                 {
                     store.ResolveConflict(entry.Id, server);
@@ -457,6 +468,11 @@ public sealed partial class GraphSync(LocalStore store, HttpClient http, TimePro
         }
         return (sent, conflicts, failed);
     }
+
+    /// <summary>Whether two versions have the same fields the app shows and writes (conflict-resolution R11).</summary>
+    private bool SameFields(Item a, Item b, bool isTask) => isTask
+        ? GraphTaskMapper.Read(a) == GraphTaskMapper.Read(b)
+        : GraphEventMapper.Read(a, null, _time.LocalTimeZone) == GraphEventMapper.Read(b, null, _time.LocalTimeZone);
 
     private static string InitialUrl(Collection calendar, DateOnly chunk)
     {

@@ -151,5 +151,28 @@ public sealed record SearchResult(
     public const char MarkEnd = '\u0003';
 }
 
+/// <summary>
+/// A kept conflict copy for the conflicts list (conflict-resolution R5 interim). Title, start and all-day come from the
+/// item when it is on the calendar, else the title from the saved local version and no date. LocalDeleted: the local
+/// change was a delete; OnCalendar: the item can be opened.
+/// </summary>
+public sealed record ConflictInfo(
+    long Id,
+    string ItemId,
+    string CollectionId,
+    ItemKind Kind,
+    string Title,
+    DateTimeOffset? StartUtc,
+    bool AllDay,
+    bool LocalDeleted,
+    bool OnCalendar,
+    DateTimeOffset DetectedAt);
+
+/// <summary>
+/// A kept conflict copy as stored, for resolving it (conflict-resolution R6): LocalPayload is null when the local change
+/// was a delete.
+/// </summary>
+public sealed record ConflictRecord(long Id, string ItemId, string CollectionId, ItemKind Kind, string? LocalPayload);
+
 /// <summary>One expanded instance of an item in the occurrence index (local-store-offline R3).</summary>
 public sealed record ItemOccurrence(string ItemId, DateTimeOffset StartUtc, DateTimeOffset EndUtc);

@@ -1082,6 +1082,26 @@ public sealed class LocalStore : IDisposable
     }
 
     /// <summary>
+    /// A write the server refused although its version is the echo of the app's own write (conflict-resolution R11):
+    /// the item and its queued entries from this one on take the server's etag, and this entry is due again.
+    /// </summary>
+    public void RebaseOutboxEntry(long entryId, string? etag)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            Execute(_connection, tx,
+                """
+                UPDATE items SET etag = $etag WHERE id = (SELECT item_id FROM outbox WHERE id = $id);
+                UPDATE outbox SET base_etag = $etag WHERE id >= $id AND item_id = (SELECT item_id FROM outbox WHERE id = $id);
+                UPDATE outbox SET in_flight = 0 WHERE id = $id;
+                """,
+                ("$id", entryId), ("$etag", etag));
+            tx.Commit();
+        }
+    }
+
+    /// <summary>
     /// A write the server refused with 412 (conflict-resolution R1-R4): the server version wins. The local version
     /// is kept in Conflicts, and every queued entry for the item is dropped. A null <paramref name="server"/>
     /// means the server no longer has the item, so it is removed locally.
@@ -1120,6 +1140,98 @@ public sealed class LocalStore : IDisposable
             using var cmd = Command(_connection, null, "SELECT COUNT(*) FROM conflicts;");
             return Convert.ToInt32(cmd.ExecuteScalar());
         }
+    }
+
+    /// <summary>The kept conflict copies, newest first, for the conflicts list (conflict-resolution R5 interim).</summary>
+    public IReadOnlyList<ConflictInfo> GetConflicts()
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
+                """
+                SELECT c.id, c.item_id, c.collection_id, c.kind, c.local_payload, c.detected_at,
+                       i.id IS NOT NULL AND i.deleted = 0, i.summary, i.start_utc, i.all_day
+                FROM conflicts c LEFT JOIN items i ON i.id = c.item_id
+                ORDER BY c.detected_at DESC, c.id DESC;
+                """);
+            using var r = cmd.ExecuteReader();
+            var list = new List<ConflictInfo>();
+            while (r.Read())
+            {
+                var local = NullableString(r, 4);
+                var onCalendar = r.GetBoolean(6);
+                var title = onCalendar ? NullableString(r, 7) : PayloadTitle(local);
+                list.Add(new ConflictInfo(r.GetInt64(0), r.GetString(1), r.GetString(2), Enum.Parse<ItemKind>(r.GetString(3)),
+                    string.IsNullOrWhiteSpace(title) ? "(No title)" : title, onCalendar ? NullableTime(r, 8) : null,
+                    onCalendar && r.GetBoolean(9), local is null, onCalendar, Time(r, 5)));
+            }
+            return list;
+        }
+    }
+
+    /// <summary>One kept conflict copy with its saved local version, or null when it is gone (conflict-resolution R6).</summary>
+    public ConflictRecord? GetConflict(long id)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
+                "SELECT item_id, collection_id, kind, local_payload FROM conflicts WHERE id = $id;", ("$id", id));
+            using var r = cmd.ExecuteReader();
+            return r.Read()
+                ? new ConflictRecord(id, r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)), NullableString(r, 3))
+                : null;
+        }
+    }
+
+    /// <summary>Removes a kept conflict copy once the user has resolved it (conflict-resolution R6).</summary>
+    public void DeleteConflict(long id)
+    {
+        lock (_gate)
+        {
+            Execute(_connection, null, "DELETE FROM conflicts WHERE id = $id;", ("$id", id));
+        }
+    }
+
+    /// <summary>
+    /// The title in a raw payload: Graph JSON "subject" (events) or "title" (tasks), else the iCalendar SUMMARY.
+    /// Null when there is none.
+    /// </summary>
+    internal static string? PayloadTitle(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return null;
+        }
+        if (payload.TrimStart().StartsWith('{'))
+        {
+            try
+            {
+                using var json = System.Text.Json.JsonDocument.Parse(payload);
+                foreach (var name in new[] { "subject", "title" })
+                {
+                    if (json.RootElement.TryGetProperty(name, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String)
+                    {
+                        return value.GetString();
+                    }
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+            }
+            return null;
+        }
+        // Unfold continuation lines (RFC 5545 3.1), then take the first SUMMARY, with or without parameters.
+        var unfolded = payload.Replace("\r\n ", "").Replace("\r\n\t", "").Replace("\n ", "").Replace("\n\t", "");
+        foreach (var line in unfolded.Split('\n'))
+        {
+            if (line.StartsWith("SUMMARY", StringComparison.OrdinalIgnoreCase) && line.Length > 7 && line[7] is ':' or ';'
+                && line.IndexOf(':') is var colon and > 0)
+            {
+                return line[(colon + 1)..].TrimEnd('\r')
+                    .Replace("\\n", " ").Replace("\\N", " ").Replace("\\,", ",").Replace("\\;", ";").Replace("\\\\", "\\");
+            }
+        }
+        return null;
     }
 
     /// <summary>
