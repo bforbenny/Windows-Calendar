@@ -70,6 +70,72 @@ public sealed partial class LocalStore
         }
     }
 
+    /// <summary>Settings &gt; Calendar sets (R2, R3): renames a set; the name is trimmed and must not be empty.</summary>
+    public void RenameCalendarSet(string setId, string name)
+    {
+        name = name.Trim();
+        if (name.Length == 0)
+        {
+            throw new ArgumentException("A set needs a name.", nameof(name));
+        }
+        lock (_gate)
+        {
+            Execute(_connection, null, "UPDATE calendar_sets SET name = $name WHERE id = $id;", ("$id", setId), ("$name", name));
+        }
+    }
+
+    /// <summary>
+    /// Settings &gt; Calendar sets (R2, R3): swaps a set with its neighbour, up (<paramref name="delta"/> -1) or down
+    /// (+1); nothing at the ends. Positions are renumbered 0, 1, 2 … in the new order.
+    /// </summary>
+    public void MoveCalendarSet(string setId, int delta)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            var ids = new List<string>();
+            using (var cmd = Command(_connection, tx, "SELECT id FROM calendar_sets ORDER BY position, rowid;"))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    ids.Add(r.GetString(0));
+                }
+            }
+            var from = ids.IndexOf(setId);
+            var to = from + Math.Sign(delta);
+            if (from < 0 || to < 0 || to >= ids.Count)
+            {
+                return;
+            }
+            (ids[from], ids[to]) = (ids[to], ids[from]);
+            for (var i = 0; i < ids.Count; i++)
+            {
+                Execute(_connection, tx, "UPDATE calendar_sets SET position = $pos WHERE id = $id;", ("$id", ids[i]), ("$pos", i));
+            }
+            tx.Commit();
+        }
+    }
+
+    /// <summary>
+    /// Settings &gt; Calendar sets (R2, R3): deletes a set (its members go with it); deleting the active set switches
+    /// to "All", which shows every collection.
+    /// </summary>
+    public void DeleteCalendarSet(string setId)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            var wasActive = ActiveSet(tx) == setId;
+            Execute(_connection, tx, "DELETE FROM calendar_sets WHERE id = $id;", ("$id", setId));
+            if (wasActive)
+            {
+                Execute(_connection, tx, "DELETE FROM meta WHERE key LIKE 'hidden:%' OR key = $key;", ("$key", ActiveSetKey));
+            }
+            tx.Commit();
+        }
+    }
+
     /// <summary>
     /// Makes <paramref name="setId"/> (null: "All") the active set and rewrites the sidebar ticks to its members, which
     /// drops any manual override (R5).

@@ -159,6 +159,61 @@ public sealed class CalendarSetTests : IDisposable
         Assert.Equal("Rest", _store.CreateCalendarSet("Rest").Name);
     }
 
+    [Fact]
+    public void Rename_TrimsTheName_AndRejectsEmpty()
+    {
+        var work = SaveWork();
+        _store.RenameCalendarSet(work.Id, " Office ");
+        Assert.Equal("Office", _store.GetCalendarSets().Single().Name);
+        Assert.Throws<ArgumentException>(() => _store.RenameCalendarSet(work.Id, "  "));
+        Assert.Equal("Office", _store.GetCalendarSets().Single().Name);
+    }
+
+    [Fact]
+    public void Move_SwapsWithTheNeighbour_NothingAtTheEnds()
+    {
+        var a = _store.CreateCalendarSet("A");
+        var b = _store.CreateCalendarSet("B");
+        var c = _store.CreateCalendarSet("C");
+        string[] Order() => _store.GetCalendarSets().Select(s => s.Name).ToArray();
+
+        _store.MoveCalendarSet(c.Id, -1);
+        Assert.Equal(["A", "C", "B"], Order());
+        _store.MoveCalendarSet(a.Id, +1);
+        Assert.Equal(["C", "A", "B"], Order());
+        _store.MoveCalendarSet(c.Id, -1);
+        _store.MoveCalendarSet(b.Id, +1);
+        Assert.Equal(["C", "A", "B"], Order());
+        Assert.Equal([0, 1, 2], _store.GetCalendarSets().Select(s => s.Position));
+    }
+
+    [Fact]
+    public void DeleteNotActive_KeepsTheActiveSetAndTicks()
+    {
+        var other = _store.CreateCalendarSet("Everything");
+        var work = SaveWork();
+        _store.DeleteCalendarSet(other.Id);
+
+        Assert.Equal([work], _store.GetCalendarSets());
+        Assert.Equal(work.Id, _store.ActiveSetId);
+        Assert.Equal(["home"], Hidden());
+        Assert.Equal(2, Count("SELECT COUNT(*) FROM calendar_set_members;"));
+    }
+
+    [Fact]
+    public void DeleteActive_SwitchesToAll_AndShowsEverything()
+    {
+        var work = SaveWork();
+        _store.DeleteCalendarSet(work.Id);
+
+        Assert.Empty(_store.GetCalendarSets());
+        Assert.Null(_store.ActiveSetId);
+        Assert.Empty(Hidden());
+        Assert.False(_store.IsActiveSetModified());
+        Assert.Equal(0, Count("SELECT COUNT(*) FROM calendar_set_members;"));
+        Assert.Equal(0, Count("SELECT COUNT(*) FROM meta WHERE key = 'active_set';"));
+    }
+
     private long Count(string sql)
     {
         using var c = new SqliteConnection($"Data Source={DbPath};Pooling=False");

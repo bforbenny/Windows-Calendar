@@ -2,7 +2,7 @@
 description: Named calendar sets that switch which calendars and task lists are visible in one click (e.g. Work, Personal)
 when-to-use: Before working on calendar visibility, the sidebar, or set switching
 tags: [ui, calendars, visibility, sets]
-status: in-progress
+status: closed
 ---
 
 # Calendar sets
@@ -39,12 +39,12 @@ Each slice is built, tested and checked in the app before the next starts.
 
 ## Acceptance criteria
 
-- [ ] A "Work" set containing two MS365 calendars and one Radicale calendar shows only those three when selected.
-- [ ] Ctrl+2 switches to the second set.
-- [ ] Reminders from a calendar outside the active set still fire.
-- [ ] An unticked calendar still syncs (its changes on the server appear once it is ticked, without a new sync).
-- [ ] Ticking a calendar while "Work" is active shows "Work (modified)"; Update 'Work' saves it, and the mark goes.
-- [ ] Ticks, the active set and "(modified)" survive a restart.
+- [x] A "Work" set containing two MS365 calendars and one Radicale calendar shows only those three when selected.
+- [x] Ctrl+2 switches to the second set.
+- [x] Reminders from a calendar outside the active set still fire.
+- [x] An unticked calendar still syncs (its changes on the server appear once it is ticked, without a new sync).
+- [x] Ticking a calendar while "Work" is active shows "Work (modified)"; Update 'Work' saves it, and the mark goes.
+- [x] Ticks, the active set and "(modified)" survive a restart.
 
 ## Dependencies
 

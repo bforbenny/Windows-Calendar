@@ -104,7 +104,7 @@ public sealed partial class MainWindow
             menu.Items.Add(update);
         }
         var manage = new MenuItem { Header = "Manage sets…" };
-        manage.Click += (_, _) => OpenSettings();
+        manage.Click += (_, _) => OpenSettings("Calendar sets");
         menu.Items.Add(manage);
         menu.IsOpen = true;
     }

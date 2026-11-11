@@ -53,6 +53,7 @@ internal sealed class SettingsPage : UserControl
         _sections.Items.Add("Working hours");
         _sections.Items.Add("Appearance");
         _sections.Items.Add("Calendars");
+        _sections.Items.Add("Calendar sets");
         _sections.Items.Add("About");
         _sections.SelectionChanged += (_, _) => ShowSection();
 
@@ -76,21 +77,25 @@ internal sealed class SettingsPage : UserControl
     /// <summary>Raised after a setting is saved, so the views redraw.</summary>
     public event Action? Changed;
 
+    /// <summary>Raised after a calendar set is renamed, moved or deleted, so the sidebar selector and ticks refresh.</summary>
+    public event Action? SetsChanged;
+
     /// <summary>Raised by Back; Esc is handled by the window.</summary>
     public event Action? BackRequested;
 
     private static LocalStore? Store => ((App)Application.Current).Store;
 
-    /// <summary>Shows the page on its first section, read fresh from the store.</summary>
-    public void Open()
+    /// <summary>Shows the page on <paramref name="section"/> (default the first), read fresh from the store.</summary>
+    public void Open(string? section = null)
     {
-        if (_sections.SelectedIndex == 0)
+        var index = Math.Max(0, _sections.Items.IndexOf(section ?? ""));
+        if (_sections.SelectedIndex == index)
         {
             ShowSection();
         }
         else
         {
-            _sections.SelectedIndex = 0;
+            _sections.SelectedIndex = index;
         }
     }
 
@@ -99,7 +104,8 @@ internal sealed class SettingsPage : UserControl
         {
             1 => Appearance(),
             2 => CalendarsSection(),
-            3 => AboutSection(),
+            3 => CalendarSetsSection(),
+            4 => AboutSection(),
             _ => WorkingHoursSection(),
         };
 
@@ -131,6 +137,123 @@ internal sealed class SettingsPage : UserControl
             TextWrapping = TextWrapping.Wrap,
         });
         return panel;
+    }
+
+    // ---- Calendar sets (calendar-sets R2, R3; settings-page R2, R4) ----
+
+    /// <summary>
+    /// The user's sets in selector order: rename, move up / down, delete (asks first). Members are changed from the
+    /// sidebar only. <paramref name="focus"/> is the button to focus after a move rebuilt the list.
+    /// </summary>
+    private SpacedStack CalendarSetsSection((string SetId, int Delta)? focus = null)
+    {
+        var panel = Section("Calendar sets",
+            "\"All\" is built in and always first. To change a set's calendars, select it in the sidebar, tick the "
+            + "calendars, then choose ⋯ > Update.");
+        var sets = Store?.GetCalendarSets() ?? [];
+        if (sets.Count == 0)
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "No sets yet. Tick calendars in the sidebar, then ⋯ > Save as new set.",
+                Foreground = Theme.Brush("TextSecondaryBrush"),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+        for (var i = 0; i < sets.Count; i++)
+        {
+            panel.Children.Add(CalendarSetRow(sets[i], i > 0, i < sets.Count - 1, focus));
+        }
+        return panel;
+    }
+
+    private Grid CalendarSetRow(CalendarSet set, bool canMoveUp, bool canMoveDown, (string SetId, int Delta)? focus)
+    {
+        var row = new Grid();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var name = new Wpf.Ui.Controls.TextBox { Text = set.Name, VerticalAlignment = VerticalAlignment.Center };
+        System.Windows.Automation.AutomationProperties.SetName(name, $"Name of the set {set.Name}");
+        var current = set.Name;
+        void Rename()
+        {
+            // An empty name is ignored: the old one comes back.
+            if (string.IsNullOrWhiteSpace(name.Text) || Store is not { } store)
+            {
+                name.Text = current;
+                return;
+            }
+            if (name.Text.Trim() == current)
+            {
+                return;
+            }
+            store.RenameCalendarSet(set.Id, name.Text);
+            current = name.Text.Trim();
+            name.Text = current;
+            System.Windows.Automation.AutomationProperties.SetName(name, $"Name of the set {current}");
+            Log.Information("Calendar set {SetId} renamed", set.Id);
+            SetsChanged?.Invoke();
+        }
+        name.LostFocus += (_, _) => Rename();
+        name.KeyDown += (_, e) =>
+        {
+            if (e.Key == System.Windows.Input.Key.Enter)
+            {
+                Rename();
+                e.Handled = true;
+            }
+        };
+        row.Children.Add(name);
+
+        var buttons = new SpacedStack { Orientation = Orientation.Horizontal, Spacing = 4, Margin = new Thickness(8, 0, 0, 0) };
+        foreach (var (glyph, label, delta, enabled) in new[] { ("", "Move up", -1, canMoveUp), ("", "Move down", 1, canMoveDown) })
+        {
+            var move = ViewParts.IconButton(glyph, $"{label}: {set.Name}");
+            move.ToolTip = label;
+            move.IsEnabled = enabled;
+            move.Click += (_, _) =>
+            {
+                Store?.MoveCalendarSet(set.Id, delta);
+                Log.Information("Calendar set {SetId} moved", set.Id);
+                _content.Content = CalendarSetsSection((set.Id, delta));
+                SetsChanged?.Invoke();
+            };
+            // After a move rebuilt the list, the same button keeps the focus, or the other one once at an end.
+            if (focus is { } f && f.SetId == set.Id && (enabled ? f.Delta == delta : f.Delta != delta))
+            {
+                move.Loaded += (_, _) => move.Focus();
+            }
+            buttons.Children.Add(move);
+        }
+        var delete = ViewParts.IconButton("", $"Delete the set {set.Name}");
+        delete.ToolTip = "Delete";
+        delete.Click += async (_, _) => await DeleteSetAsync(set.Id, current);
+        buttons.Children.Add(delete);
+        Grid.SetColumn(buttons, 1);
+        row.Children.Add(buttons);
+        return row;
+    }
+
+    /// <summary>Destructive: asks first (settings-page R4); deleting the active set switches to "All" (calendar-sets R3).</summary>
+    private async System.Threading.Tasks.Task DeleteSetAsync(string setId, string name)
+    {
+        var confirm = Destructive.Apply(new Wpf.Ui.Controls.ContentDialog(ViewParts.DialogHost)
+        {
+            Title = $"Delete the set '{name}'?",
+            Content = "Calendars are not deleted.",
+            PrimaryButtonText = "Delete",
+            CloseButtonText = "Cancel",
+            DefaultButton = Wpf.Ui.Controls.ContentDialogButton.Close,
+        });
+        if (await confirm.ShowAsync() != Wpf.Ui.Controls.ContentDialogResult.Primary || Store is not { } store)
+        {
+            return;
+        }
+        store.DeleteCalendarSet(setId);
+        Log.Information("Calendar set {SetId} deleted", setId);
+        _content.Content = CalendarSetsSection();
+        SetsChanged?.Invoke();
     }
 
     // ---- Calendars (reminders-notifications R5; settings-page interim) ----

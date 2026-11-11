@@ -33,7 +33,6 @@ Left-clicking the tray icon opens a compact flyout with what is on today, Join b
 - R4b. Ticking a task and quick add in the flyout go on the same undo stack as the main window, so Ctrl+Z in the main window undoes them ([undo](undo.md)). The flyout has no undo bar of its own.
   - Interim: task ticks are not undoable anywhere until [undo](undo.md) covers them.
 - R5. Respects calendar visibility and the active calendar set ([calendar-sets](calendar-sets.md)).
-  - Interim (until [calendar-sets](calendar-sets.md) exists): only the sidebar ticks apply.
 - R6. Works offline and with the main window hidden; opens in < 150 ms. The flyout window is created once, on first open, and hidden rather than closed, so later opens only refresh its content. Each open logs "Tray flyout opened in N ms".
 - R7. ~~Tray icon tooltip shows the next event and its start time, updated every minute.~~ Not built (2026-11-11, user's choice); the tooltip stays "WindowsCalendar".
 - R8. Fully keyboard operable (Tab/arrows, Enter, Esc).
