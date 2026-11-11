@@ -34,6 +34,8 @@ internal sealed partial class EventEditor
         _scope = null;
         _allowFollowing = master is not null;
         _readOnly = collection.ReadOnly || waiting || !GraphEvents.CanEdit(item, master);
+        // Your own reminder on a meeting stays editable (reminders-notifications R5a).
+        _reminderOnly = _readOnly && !collection.ReadOnly && !waiting;
         _savedRule = GraphRecurrence.ReadRule(master ?? item, zone);
         _ruleAutosave = master is null;
         // A series moves to another calendar in Outlook (its exceptions would be lost here). Meetings and invitations
@@ -43,7 +45,7 @@ internal sealed partial class EventEditor
         _calendar.IsEnabled = movable;
         var message = collection.ReadOnly ? "This calendar is read-only."
             : waiting ? "This repeating event is still syncing; try again shortly."
-            : _readOnly ? "Meetings can't be changed from this app yet."
+            : _readOnly ? "Meetings can't be changed from this app yet, except your reminder."
             : _savedRule is null ? "Repeats. This repeat pattern can't be changed here." : "";
         ShowNotice(message, InfoBarSeverity.Informational);
     }

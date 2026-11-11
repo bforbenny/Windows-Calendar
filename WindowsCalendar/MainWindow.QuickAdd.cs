@@ -12,6 +12,7 @@ using Serilog;
 using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.QuickAdd;
+using WindowsCalendar.Core.Reminders;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Core.Views;
 using WindowsCalendar.Views;
@@ -170,8 +171,11 @@ public sealed partial class MainWindow
             }
             else
             {
+                // The calendar's default reminder; none for all-day events (reminders-notifications R5).
+                var reminder = !result.AllDay && Store?.GetDefaultReminder(target.Id) is { } minutes
+                    ? ReminderChoice.Before(minutes) : ReminderChoice.None;
                 var fields = new EventFields(result.Title, result.AllDay, result.Start, result.End, result.Location, null,
-                    result.AllDay ? ShowAs.Free : ShowAs.Busy);
+                    result.AllDay ? ShowAs.Free : ShowAs.Busy, reminder);
                 if (IsGraph(target))
                 {
                     created = GraphEvents.Create(target, fields, zone);

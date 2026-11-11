@@ -35,13 +35,17 @@ public static class GraphTasks
         {
             task["recurrence"] = GraphRecurrence.Recurrence(rule, due!.Value, zone);
         }
+        if (fields.Reminder is { } reminder)
+        {
+            SetReminder(task, reminder, zone);
+        }
         return GraphTaskMapper.Rebuild(new Item(Guid.NewGuid().ToString("N"), list.Id, ItemKind.Task, null, "{}"), task.ToJsonString(), zone);
     }
 
     /// <summary>The task with <paramref name="fields"/>, or null when nothing changed.</summary>
     public static Item? Edit(Item item, TaskFields fields, TimeZoneInfo zone)
     {
-        var old = GraphTaskMapper.Read(item);
+        var old = GraphTaskMapper.Read(item, zone);
         var task = GraphEvents.Parse(item.RawPayload);
         var changed = GraphEvents.Changed(task);
         var any = false;
@@ -92,6 +96,12 @@ public static class GraphTasks
             changed.Add("status");
             any = true;
         }
+        if (fields.Reminder != old.Reminder)
+        {
+            SetReminder(task, fields.Reminder, zone);
+            changed.UnionWith(fields.Reminder is null ? ["isReminderOn"] : ["isReminderOn", "reminderDateTime"]);
+            any = true;
+        }
         if (!any)
         {
             return null;
@@ -118,6 +128,16 @@ public static class GraphTasks
         var day = due ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, zone));
         return GraphRecurrence.Dates(rule.Frequency == RepeatFrequency.Weekly && rule.Weekdays.Count == 0
             ? rule with { Weekdays = [day.DayOfWeek] } : rule, day).First();
+    }
+
+    /// <summary>isReminderOn, and the time in <paramref name="zone"/> when on (reminders-notifications R5a).</summary>
+    private static void SetReminder(JsonObject task, DateTime? reminder, TimeZoneInfo zone)
+    {
+        task["isReminderOn"] = reminder is not null;
+        if (reminder is { } at)
+        {
+            task["reminderDateTime"] = GraphEvents.DateTimeTimeZone(at, zone);
+        }
     }
 
     private static JsonObject Body(string? notes) => new() { ["contentType"] = "text", ["content"] = notes ?? "" };

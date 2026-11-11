@@ -366,7 +366,8 @@ public static partial class CalDavRecurrence
     private static (bool Times, bool Text) Diff(EventFields old, EventFields fields) =>
         (old.AllDay != fields.AllDay || old.Start != fields.Start || old.End != fields.End,
          old.Title != fields.Title || CalDavEvents.Blank(old.Location) != CalDavEvents.Blank(fields.Location)
-            || CalDavEvents.Blank(old.Description) != CalDavEvents.Blank(fields.Description) || old.ShowAs != fields.ShowAs);
+            || CalDavEvents.Blank(old.Description) != CalDavEvents.Blank(fields.Description) || old.ShowAs != fields.ShowAs
+            || CalDavEvents.ReminderChanged(old, fields));
 
     /// <summary>R4: an occurrence may not move onto or past the previous or next one.</summary>
     private static void CheckNeighbours(Calendar calendar, DateTimeOffset recurrence, EventFields fields, TimeZoneInfo zone)

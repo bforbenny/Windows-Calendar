@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using WindowsCalendar.Core.CalDav;
+using WindowsCalendar.Core.Reminders;
 using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar.Core.Graph;
@@ -71,6 +72,11 @@ public static class GraphEvents
             changed.Add("showAs");
             any = true;
         }
+        if (CalDavEvents.ReminderChanged(old, fields) && fields.Reminder is { Kept: null } reminder)
+        {
+            changed.UnionWith(SetReminder(ev, reminder));
+            any = true;
+        }
         if (fields.AllDay != old.AllDay || fields.Start != old.Start || fields.End != old.End)
         {
             SetTimes(ev, fields, zone, OwnZone(ev, zone));
@@ -78,6 +84,34 @@ public static class GraphEvents
             any = true;
         }
         return any ? WithChanged(item, ev, changed, zone) : null;
+    }
+
+    /// <summary>
+    /// Only the reminder, on an event the app may not otherwise change: your own reminder on a meeting is yours to set
+    /// (reminders-notifications R5a; Graph takes a PATCH of these two fields from an attendee). Null when unchanged.
+    /// </summary>
+    public static Item? EditReminder(Item item, Item? master, ReminderChoice reminder, TimeZoneInfo zone)
+    {
+        if (reminder.Kept is not null || GraphEventMapper.Read(item, master, zone).Reminder == reminder)
+        {
+            return null;
+        }
+        var ev = Parse(item.RawPayload);
+        var changed = Changed(ev);
+        changed.UnionWith(SetReminder(ev, reminder));
+        return WithChanged(item, ev, changed, zone);
+    }
+
+    /// <summary>isReminderOn, and the minutes when on; returns the fields written.</summary>
+    private static string[] SetReminder(JsonObject ev, ReminderChoice reminder)
+    {
+        ev["isReminderOn"] = reminder.MinutesBefore is not null;
+        if (reminder.MinutesBefore is { } minutes)
+        {
+            ev["reminderMinutesBeforeStart"] = minutes;
+            return ["isReminderOn", "reminderMinutesBeforeStart"];
+        }
+        return ["isReminderOn"];
     }
 
     /// <summary>A copy for another calendar of the same account (a create there; the caller deletes the original).</summary>
@@ -187,6 +221,11 @@ public static class GraphEvents
         if (!string.IsNullOrEmpty(fields.Location))
         {
             ev["location"] = new JsonObject { ["displayName"] = fields.Location };
+        }
+        // Without one the server's default applies.
+        if (fields.Reminder is { Kept: null } reminder)
+        {
+            SetReminder(ev, reminder);
         }
     }
 

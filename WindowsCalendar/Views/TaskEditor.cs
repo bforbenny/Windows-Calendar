@@ -21,7 +21,8 @@ namespace WindowsCalendar.Views;
 /// <summary>
 /// The task editor side panel (tasks interim), in the event editor's place, with the same auto-save: text when it
 /// loses focus (or Enter in the title), the checkbox and pickers at once. Fields: title, completed, due date (date
-/// only), importance, repeat (the event editor's Repeat panel, saved at once; tasks R7b), notes. Only To Do tasks in
+/// only), importance, repeat (the event editor's Repeat panel, saved at once; tasks R7b), reminder (date and time;
+/// reminders-notifications R5a), notes. Only To Do tasks in
 /// writable lists can be changed; one whose repeat pattern the panel can't show can only be completed or reopened.
 /// Radicale tasks and Flagged emails are view-only.
 /// </summary>
@@ -35,6 +36,10 @@ internal sealed class TaskEditor : UserControl
     private readonly DatePicker _due = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Button _clearDue = new() { Content = "Clear", VerticalAlignment = VerticalAlignment.Bottom };
     private readonly ComboBox _importance = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly DatePicker _reminderDate = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly TimeBox _reminderTime = new() { VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(8, 0, 0, 0) };
+    private readonly Button _clearReminder = new() { Content = "Clear", VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(8, 0, 0, 0) };
+    private readonly StackPanel _reminderField;
     private readonly RepeatPanel _repeat = new();
     private readonly TextBlock _list = new() { Foreground = Theme.Brush("TextSecondaryBrush") };
     private readonly TextBox _notes = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 120 };
@@ -82,6 +87,18 @@ internal sealed class TaskEditor : UserControl
         dueRow.Children.Add(_due);
         dueRow.Children.Add(_clearDue);
 
+        // Reminder: a date and time; no date is no reminder. Radicale tasks keep their alarms, which fire but are not shown here.
+        var reminderRow = new Grid();
+        reminderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        reminderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        reminderRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(_reminderTime, 1);
+        Grid.SetColumn(_clearReminder, 2);
+        reminderRow.Children.Add(_reminderDate);
+        reminderRow.Children.Add(_reminderTime);
+        reminderRow.Children.Add(_clearReminder);
+        _reminderField = ViewParts.Field("Reminder", reminderRow);
+
         var form = new SpacedStack { Spacing = 12, Margin = new Thickness(16, 0, 16, 16) };
         form.Children.Add(_notice);
         form.Children.Add(ViewParts.Field("Title", _title));
@@ -89,6 +106,7 @@ internal sealed class TaskEditor : UserControl
         form.Children.Add(ViewParts.Field("Due", dueRow));
         form.Children.Add(ViewParts.Field("Importance", _importance));
         form.Children.Add(_repeat);
+        form.Children.Add(_reminderField);
         form.Children.Add(_list);
         form.Children.Add(ViewParts.Field("Notes", _notes));
 
@@ -124,6 +142,9 @@ internal sealed class TaskEditor : UserControl
         _repeat.RuleChanged += Save;
         _clearDue.Click += (_, _) => _due.SelectedDate = null;
         _importance.SelectionChanged += (_, _) => Save();
+        _reminderDate.SelectedDateChanged += (_, _) => Save();
+        _reminderTime.TimeChanged += Save;
+        _clearReminder.Click += (_, _) => _reminderDate.SelectedDate = null;
 
         // Esc closes; an open drop-down closes first, as it handles its own Esc.
         KeyDown += (_, e) =>
@@ -195,6 +216,7 @@ internal sealed class TaskEditor : UserControl
         _newList = list;
         _writable = true;
         _completeOnly = false;
+        _reminderField.Visibility = Visibility.Visible;
         Show(new TaskFields(title, false, due, "normal", null, repeat), list);
         _delete.Visibility = Visibility.Collapsed;
         _notice.IsOpen = false;
@@ -241,7 +263,12 @@ internal sealed class TaskEditor : UserControl
         }
     }
 
-    private void Show(Item item, Collection list) => Show(TaskQuery.Fields(item, TimeZoneInfo.Local), list);
+    private void Show(Item item, Collection list)
+    {
+        // Only To Do tasks show their reminder; Radicale tasks stay view-only.
+        _reminderField.Visibility = item.RawPayload.TrimStart().StartsWith('{') ? Visibility.Visible : Visibility.Collapsed;
+        Show(TaskQuery.Fields(item, TimeZoneInfo.Local), list);
+    }
 
     private void Show(TaskFields fields, Collection list)
     {
@@ -250,6 +277,8 @@ internal sealed class TaskEditor : UserControl
         _completed.IsChecked = fields.Completed;
         _due.SelectedDate = fields.Due?.ToDateTime(TimeOnly.MinValue);
         _importance.SelectedIndex = Array.IndexOf(Importances, fields.Importance);
+        _reminderDate.SelectedDate = fields.Reminder?.Date;
+        _reminderTime.Time = fields.Reminder?.TimeOfDay ?? TimeSpan.FromHours(9);
         _notes.Text = (fields.Notes ?? "").Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
         // With its source (calendar-views interim); the whole line is already muted.
         _list.Text = Store?.GetAccounts().FirstOrDefault(a => a.Id == list.AccountId) is { } account
@@ -259,6 +288,7 @@ internal sealed class TaskEditor : UserControl
         var editable = _writable && !_completeOnly;
         _title.IsReadOnly = _notes.IsReadOnly = !editable;
         _due.IsEnabled = _clearDue.IsEnabled = _importance.IsEnabled = editable;
+        _reminderDate.IsEnabled = _reminderTime.IsEnabled = _clearReminder.IsEnabled = editable;
         _repeat.Visibility = editable ? Visibility.Visible : Visibility.Collapsed;
         _repeat.Show(fields.Repeat ?? RepeatRule.None, fields.Due ?? Today);
         _repeat.SetEnabled(editable);
@@ -276,7 +306,8 @@ internal sealed class TaskEditor : UserControl
             _due.SelectedDate is { } d ? DateOnly.FromDateTime(d.Date) : null,
             _importance.SelectedIndex >= 0 ? Importances[_importance.SelectedIndex] : old.Importance,
             _notes.Text.Replace("\r\n", "\n").Replace("\r", "\n"),
-            _repeat.Read());
+            _repeat.Read(),
+            _reminderDate.SelectedDate is { } reminder ? reminder.Date + _reminderTime.Time : null);
     }
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);

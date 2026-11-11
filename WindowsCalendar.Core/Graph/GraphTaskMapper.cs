@@ -11,7 +11,9 @@ namespace WindowsCalendar.Core.Graph;
 /// Repeat (tasks R7b) is null or <see cref="RepeatRule.None"/> when the task does not repeat; as read, null also covers
 /// a pattern the panel can't show.
 /// </summary>
-public sealed record TaskFields(string Title, bool Completed, DateOnly? Due, string Importance, string? Notes, RepeatRule? Repeat = null);
+/// <summary>A task's editor fields. Reminder is a wall time in the Windows timezone, null for none (reminders-notifications R5a).</summary>
+public sealed record TaskFields(string Title, bool Completed, DateOnly? Due, string Importance, string? Notes, RepeatRule? Repeat = null,
+    DateTime? Reminder = null);
 
 /// <summary>
 /// Microsoft To Do tasks to store items (sync-ms365 third slice, tasks R2a, R3). The JSON is kept as-is; the columns
@@ -51,14 +53,17 @@ public static class GraphTaskMapper
             LastModifiedUtc: Modified(task));
     }
 
-    /// <summary>The editor's fields for a stored task.</summary>
-    public static TaskFields Read(Item item)
+    /// <summary>The editor's fields for a stored task; the reminder in <paramref name="zone"/> (default: the Windows timezone).</summary>
+    public static TaskFields Read(Item item, TimeZoneInfo? zone = null)
     {
         using var doc = JsonDocument.Parse(item.RawPayload);
         var task = doc.RootElement;
         var importance = GraphClient.Text(task, "importance") is { } i && i is "low" or "high" ? i : "normal";
+        zone ??= TimeZoneInfo.Local;
+        var reminder = task.TryGetProperty("isReminderOn", out var on) && on.ValueKind == JsonValueKind.True
+            && Time(task, "reminderDateTime", zone) is { } at ? TimeZoneInfo.ConvertTime(at, zone).DateTime : (DateTime?)null;
         return new TaskFields(GraphClient.Text(task, "title") ?? "", GraphClient.Text(task, "status") == "completed",
-            DueDate(task), importance, GraphEventMapper.Description(task), ReadRepeat(item.RawPayload));
+            DueDate(task), importance, GraphEventMapper.Description(task), ReadRepeat(item.RawPayload), reminder);
     }
 
     /// <summary>

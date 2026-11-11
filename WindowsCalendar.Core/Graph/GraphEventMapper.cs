@@ -104,10 +104,19 @@ public static class GraphEventMapper
         var endWall = TimeZoneInfo.ConvertTime(end, zone).DateTime;
         var source = ev.TryGetProperty("subject", out _) || masterDoc is null ? ev : masterDoc.RootElement;
         var showAs = GraphClient.Text(ev, "showAs") ?? (masterDoc is null ? null : GraphClient.Text(masterDoc.RootElement, "showAs"));
+        // An occurrence without its own reminder fields has its series' (reminders-notifications R1).
+        var reminderSource = ev.TryGetProperty("isReminderOn", out _) || masterDoc is null ? ev : masterDoc.RootElement;
         return new CalDav.EventFields(GraphClient.Text(source, "subject") ?? "", allDay,
             allDay ? startWall.Date : startWall, allDay ? endWall.Date : endWall, Location(source), Description(source),
-            ShowAsValues.FromGraph(showAs));
+            ShowAsValues.FromGraph(showAs), Reminder(reminderSource));
     }
+
+    /// <summary>The event's one reminder (reminders-notifications R5a): minutes before the start when on, else none.</summary>
+    internal static Reminders.ReminderChoice Reminder(JsonElement ev) =>
+        ev.TryGetProperty("isReminderOn", out var on) && on.ValueKind == JsonValueKind.True
+        && ev.TryGetProperty("reminderMinutesBeforeStart", out var m) && m.TryGetInt32(out var minutes)
+            ? Reminders.ReminderChoice.Before(minutes)
+            : Reminders.ReminderChoice.None;
 
     /// <summary>
     /// The location text: displayName, else the structured address as "street, city state postal code, country"

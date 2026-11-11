@@ -81,4 +81,39 @@ public sealed partial class LocalStore
             SetMeta(null, RemindersAwakeKey, at.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
     }
+
+    // ---- Per-calendar settings (R5; settings-page R5: local only) ----
+
+    /// <summary>"Reminders on" for a calendar or task list; off, no toasts fire for it.</summary>
+    public void SetCollectionRemindersOn(string collectionId, bool on)
+    {
+        lock (_gate)
+        {
+            Execute(_connection, null, "UPDATE collections SET reminders_on = $on WHERE id = $id;", ("$on", on), ("$id", collectionId));
+        }
+    }
+
+    /// <summary>A calendar's reminder for new timed events, in minutes before the start; null for none. 15 until set.</summary>
+    public int? GetDefaultReminder(string collectionId)
+    {
+        lock (_gate)
+        {
+            return GetMeta(null, "reminder-default:" + collectionId) switch
+            {
+                null => ReminderChoices.DefaultMinutes,
+                "none" => null,
+                var text => int.TryParse(text, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var m)
+                    ? m : ReminderChoices.DefaultMinutes,
+            };
+        }
+    }
+
+    public void SetDefaultReminder(string collectionId, int? minutes)
+    {
+        lock (_gate)
+        {
+            SetMeta(null, "reminder-default:" + collectionId,
+                minutes?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "none");
+        }
+    }
 }

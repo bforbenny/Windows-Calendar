@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Serilog;
+using WindowsCalendar.Core.Reminders;
 using WindowsCalendar.Core.Store;
 using InfoBar = Wpf.Ui.Controls.InfoBar;
 using InfoBarSeverity = Wpf.Ui.Controls.InfoBarSeverity;
@@ -13,7 +14,8 @@ namespace WindowsCalendar.Views;
 
 /// <summary>
 /// The Settings page (settings-page interim): a section list on the left, the section's settings on the right.
-/// First slice: Working hours and Appearance (week numbers). Changes apply at once and are stored locally.
+/// First slice: Working hours, Appearance (week numbers) and Calendars (reminders only). Changes apply at once and are
+/// stored locally.
 /// </summary>
 internal sealed class SettingsPage : UserControl
 {
@@ -50,6 +52,7 @@ internal sealed class SettingsPage : UserControl
 
         _sections.Items.Add("Working hours");
         _sections.Items.Add("Appearance");
+        _sections.Items.Add("Calendars");
         _sections.SelectionChanged += (_, _) => ShowSection();
 
         var body = new Grid { Margin = new Thickness(12, 0, 24, 24) };
@@ -91,7 +94,93 @@ internal sealed class SettingsPage : UserControl
     }
 
     private void ShowSection() =>
-        _content.Content = _sections.SelectedIndex == 1 ? Appearance() : WorkingHoursSection();
+        _content.Content = _sections.SelectedIndex switch
+        {
+            1 => Appearance(),
+            2 => CalendarsSection(),
+            _ => WorkingHoursSection(),
+        };
+
+    // ---- Calendars (reminders-notifications R5; settings-page interim) ----
+
+    /// <summary>
+    /// Per calendar and task list, under its account: "Reminders on", and for calendars events can be added to, the
+    /// reminder new timed events get. A change reschedules the reminders at once.
+    /// </summary>
+    private SpacedStack CalendarsSection()
+    {
+        var panel = Section("Calendars", "Reminders show as Windows notifications. New all-day events get no reminder.");
+        if (Store is not { } store)
+        {
+            return panel;
+        }
+        foreach (var account in store.GetAccounts())
+        {
+            var collections = store.GetCollections(account.Id);
+            if (collections.Count == 0)
+            {
+                continue;
+            }
+            var heading = new TextBlock { Text = account.DisplayName, Style = Theme.Style("BodyStrongTextBlockStyle"), Margin = new Thickness(0, 8, 0, 0) };
+            heading.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+            panel.Children.Add(heading);
+            foreach (var collection in collections)
+            {
+                panel.Children.Add(CalendarRow(store, collection));
+            }
+        }
+        return panel;
+    }
+
+    private Grid CalendarRow(LocalStore store, Collection collection)
+    {
+        var row = new Grid();
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+
+        var name = new SpacedStack { Orientation = Orientation.Horizontal, Spacing = 8, VerticalAlignment = VerticalAlignment.Center };
+        name.Children.Add(ShapeMarker.Create(collection.Shape, Theme.Calendar(collection.Colour).Swatch));
+        var label = new TextBlock { Text = collection.Kind == CollectionKind.TaskList ? $"{collection.Name} (tasks)" : collection.Name, TextTrimming = TextTrimming.CharacterEllipsis };
+        label.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+        name.Children.Add(label);
+        row.Children.Add(name);
+
+        if (collection.Kind == CollectionKind.Calendar && !collection.ReadOnly && collection.SourceUrl is null)
+        {
+            var defaults = new ComboBox { HorizontalAlignment = HorizontalAlignment.Stretch, Margin = new Thickness(8, 0, 8, 0) };
+            System.Windows.Automation.AutomationProperties.SetName(defaults, $"Default reminder for {collection.Name}");
+            var current = store.GetDefaultReminder(collection.Id);
+            foreach (var choice in ReminderChoices.Timed)
+            {
+                defaults.Items.Add(new ComboBoxItem { Content = ReminderChoices.Label(choice, allDay: false), Tag = choice.MinutesBefore });
+            }
+            defaults.SelectedIndex = Math.Max(0, ReminderChoices.Timed.ToList().FindIndex(c => c.MinutesBefore == current));
+            defaults.ToolTip = "Reminder for new timed events";
+            defaults.SelectionChanged += (_, _) =>
+            {
+                var minutes = (defaults.SelectedItem as ComboBoxItem)?.Tag as int?;
+                store.SetDefaultReminder(collection.Id, minutes);
+                Log.Information("Default reminder for collection {CollectionId}: {Minutes}", collection.Id, minutes?.ToString(CultureInfo.InvariantCulture) ?? "none");
+            };
+            Grid.SetColumn(defaults, 1);
+            row.Children.Add(defaults);
+        }
+
+        var on = new Wpf.Ui.Controls.ToggleSwitch { Content = "Reminders", IsChecked = collection.RemindersOn, VerticalAlignment = VerticalAlignment.Center };
+        System.Windows.Automation.AutomationProperties.SetName(on, $"Reminders for {collection.Name}");
+        on.Click += (_, _) =>
+        {
+            var value = on.IsChecked == true;
+            store.SetCollectionRemindersOn(collection.Id, value);
+            Log.Information("Reminders {State} for collection {CollectionId}", value ? "on" : "off", collection.Id);
+            _ = System.Threading.Tasks.Task.Run(() => ReminderToasts.Reschedule(store, ReminderPlanner.RunningWindow));
+            Changed?.Invoke();
+        };
+        Grid.SetColumn(on, 2);
+        row.Children.Add(on);
+        return row;
+    }
 
     // ---- Working hours (calendar-shading R1) ----
 

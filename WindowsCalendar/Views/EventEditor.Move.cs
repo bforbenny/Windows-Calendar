@@ -54,8 +54,10 @@ internal sealed partial class EventEditor
     {
         if (!_loading && _itemId is null)
         {
-            // A new event may have moved between MS365 and CalDAV (event-show-as R2).
+            // A new event may have moved between MS365 and CalDAV (event-show-as R2), and takes the new calendar's
+            // default reminder until one is chosen (reminders-notifications R5).
             ShowShowAs(ReadShowAs());
+            ShowReminder(_defaultReminder ? DefaultReminder() : ReadReminder(), _moreCount);
         }
         if (!_loading && !_readOnly && _itemId is { } id && (_calendar.SelectedItem as ComboBoxItem)?.Tag is Collection target
             && Store?.GetItem(id) is { } item && _all.TryGetValue(item.CollectionId, out var from) && from.AccountId != target.AccountId)

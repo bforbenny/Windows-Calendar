@@ -26,14 +26,17 @@ Event and task reminders show as Windows toast notifications with Snooze and Dis
 - R4. Dismiss and snooze are local state only (not synced to the server) in v1. They are stored per alarm of each occurrence (an event with two alarms has two rows) in a new local-store table (item id, occurrence start, fire time, state, snooze-until; added by schema migration v14, which slice 1 creates to record scheduled reminders), so rescheduling never re-shows a dismissed reminder or drops a snoozed one. Rows for occurrences more than 7 days past are pruned on start.
 - R5. Per calendar, in Settings > Calendars (built with this requirement; see [settings-page](settings-page.md) interim):
   - "Reminders on" (default on; off by default for holiday calendars). When off, no toasts fire for that calendar.
+    - Marking a calendar as the holiday calendar turns its reminders off; Settings can turn them on again.
   - Default reminder for new timed events (default 15 min). New all-day events get no reminder by default.
   - MS365 events hold one reminder; Radicale events can hold several. "None" is always allowed.
 - R5a. Editors:
   - The event editor has one Reminder drop-down: None, At start, 5, 10, 15, 30 min, 1 h, 2 h, 1 day, 2 days before (all-day events: None, On the day 09:00, 1 day before 09:00). A value from sync that is not in the list shows as an extra entry and is kept. New events take the calendar's default (R5).
-  - On a view-only meeting where you are an attendee, the Reminder drop-down stays enabled: your own reminder is editable ([calendar-views](calendar-views.md) R9; Graph accepts a PATCH of `isReminderOn` and `reminderMinutesBeforeStart` from an attendee).
+    - MS365 all-day events do not offer On the day 09:00: Graph takes minutes before the start only.
+  - On a view-only meeting where you are an attendee, the Reminder drop-down stays enabled: your own reminder is editable ([calendar-views](calendar-views.md) R9; Graph accepts a PATCH of `isReminderOn` and `reminderMinutesBeforeStart` from an attendee). On an occurrence of a repeating meeting it asks This event or All events.
   - On a Radicale event the drop-down edits the first DISPLAY alarm; any other alarms are kept unchanged, and the editor notes "+N more reminders (kept)". Editing several reminders on one Radicale event is deferred ([calendar-views](calendar-views.md) R6 lists it).
   - The task editor has a Reminder date and time (None allowed) for Microsoft To Do tasks. Radicale tasks stay view-only ([tasks](tasks.md)), but their alarms still fire.
   - Reminder edits sync and undo like any other field ([undo](undo.md)).
+    - Interim: the undo interim covers moves, deletes and duplicates, not editor field edits, so reminder edits are not undoable until editor edits are.
 - R6. Missed reminders (machine asleep or off): on resume, show one summary toast for reminders missed within the last 12 hours, rather than a flood. The summary lists only reminders that are not in Windows' toast history (`ToastNotificationManager.History`), so a reminder Windows already showed late on wake is never counted twice.
   - Window: the summary covers the time since the app last watched reminders. That time is saved on every sync run, on suspend and on Quit. The summary runs after resume (once the sync's network work is done) and on app start, which covers a PC that was off. Dismissed, opened and already-listed reminders are left out; a snoozed one counts by its snooze time.
 - R7. No reminders for declined or cancelled events ([attendees-invitations](attendees-invitations.md) R4–R5) or completed tasks.

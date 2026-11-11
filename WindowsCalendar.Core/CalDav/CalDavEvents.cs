@@ -2,16 +2,19 @@ using Ical.Net;
 using Ical.Net.CalendarComponents;
 using Ical.Net.DataTypes;
 using Ical.Net.Serialization;
+using WindowsCalendar.Core.Reminders;
 using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar.Core.CalDav;
 
 /// <summary>
 /// The editor's fields (calendar-views R6, interim). Start and End are wall-clock times in the Windows timezone;
-/// for all-day events they are dates, with End exclusive.
+/// for all-day events they are dates, with End exclusive. Reminder is the first reminder (reminders-notifications R5a);
+/// null leaves the event's reminders as they are (none on a new event). MoreReminders counts the other alarms, which
+/// edits keep.
 /// </summary>
 public sealed record EventFields(string Title, bool AllDay, DateTime Start, DateTime End, string? Location, string? Description,
-    ShowAs ShowAs = ShowAs.Busy);
+    ShowAs ShowAs = ShowAs.Busy, ReminderChoice? Reminder = null, int MoreReminders = 0);
 
 /// <summary>
 /// Creates and edits CalDAV events for the editor. Edits change the stored iCalendar object in place and touch only
@@ -51,7 +54,7 @@ public static class CalDavEvents
         var old = Read(ev, zone);
         var timesChanged = old.AllDay != fields.AllDay || old.Start != fields.Start || old.End != fields.End;
         var textChanged = old.Title != fields.Title || Blank(old.Location) != Blank(fields.Location)
-            || Blank(old.Description) != Blank(fields.Description) || old.ShowAs != fields.ShowAs;
+            || Blank(old.Description) != Blank(fields.Description) || old.ShowAs != fields.ShowAs || ReminderChanged(old, fields);
         if (!timesChanged && !textChanged)
         {
             return null;
@@ -146,10 +149,76 @@ public static class CalDavEvents
         if (!start.HasTime)
         {
             var endDate = ev.DtEnd is { } e ? e.Value.Date : start.Value.Date.AddDays(1);
-            return new EventFields(ev.Summary ?? "", true, start.Value.Date, endDate, ev.Location, ev.Description, ReadShowAs(ev));
+            return new EventFields(ev.Summary ?? "", true, start.Value.Date, endDate, ev.Location, ev.Description, ReadShowAs(ev),
+                ReadReminder(ev, zone), MoreReminders(ev));
         }
         var end = ev.DtEnd ?? start.Add(ev.EffectiveDuration);
-        return new EventFields(ev.Summary ?? "", false, Wall(start, zone), Wall(end, zone), ev.Location, ev.Description, ReadShowAs(ev));
+        return new EventFields(ev.Summary ?? "", false, Wall(start, zone), Wall(end, zone), ev.Location, ev.Description, ReadShowAs(ev),
+            ReadReminder(ev, zone), MoreReminders(ev));
+    }
+
+    // ---- Reminder (reminders-notifications R5a): the first DISPLAY alarm; other alarms are kept ----
+
+    private static Alarm? FirstDisplay(CalendarEvent ev) =>
+        ev.Alarms.FirstOrDefault(a => string.Equals(a.Action, "DISPLAY", StringComparison.OrdinalIgnoreCase) && a.Trigger is not null);
+
+    private static int MoreReminders(CalendarEvent ev) => ev.Alarms.Count - (FirstDisplay(ev) is null ? 0 : 1);
+
+    /// <summary>Minutes before the start; a fixed time or a trigger relative to the end is kept as it is.</summary>
+    private static ReminderChoice ReadReminder(CalendarEvent ev, TimeZoneInfo zone)
+    {
+        if (FirstDisplay(ev)?.Trigger is not { } trigger)
+        {
+            return ReminderChoice.None;
+        }
+        if (trigger.IsRelative && trigger.Duration is { } duration)
+        {
+            var minutes = (int)Math.Round(-duration.ToTimeSpanUnspecified().TotalMinutes);
+            return string.Equals(trigger.Related, "END", StringComparison.OrdinalIgnoreCase)
+                ? new ReminderChoice(null, minutes switch
+                {
+                    0 => "At end",
+                    > 0 => $"{minutes} min before end",
+                    _ => $"{-minutes} min after end",
+                })
+                : ReminderChoice.Before(minutes);
+        }
+        return trigger.DateTime is { } at
+            ? new ReminderChoice(null, $"At {TimeZoneInfo.ConvertTime(OccurrenceExpander.ToUtc(at, zone), zone):ddd d MMM HH:mm}")
+            : ReminderChoice.None;
+    }
+
+    internal static bool ReminderChanged(EventFields old, EventFields fields) =>
+        fields.Reminder is { } reminder && reminder != old.Reminder;
+
+    /// <summary>
+    /// Sets the first DISPLAY alarm's trigger, adds one when there is none, or removes it for None. A kept reminder is
+    /// not written. A whole number of days or hours is written in that unit.
+    /// </summary>
+    private static void WriteReminder(CalendarEvent ev, ReminderChoice reminder)
+    {
+        if (reminder.Kept is not null)
+        {
+            return;
+        }
+        var first = FirstDisplay(ev);
+        if (reminder.MinutesBefore is not { } m)
+        {
+            if (first is not null)
+            {
+                ev.Children.Remove(first);
+            }
+            return;
+        }
+        var offset = m % 1440 == 0 ? Duration.FromDays(-m / 1440) : m % 60 == 0 ? Duration.FromHours(-m / 60) : Duration.FromMinutes(-m);
+        if (first is null)
+        {
+            ev.Alarms.Add(new Alarm { Action = "DISPLAY", Description = "Reminder", Trigger = new Trigger(offset) });
+        }
+        else
+        {
+            first.Trigger = new Trigger(offset);
+        }
     }
 
     private const string BusyStatus = "X-MICROSOFT-CDO-BUSYSTATUS";
@@ -235,7 +304,7 @@ public static class CalDavEvents
     }
 
     /// <summary>
-    /// Writes the text fields and show-as that differ from <paramref name="old"/> (all of them when null), so untouched properties
+    /// Writes the text fields, show-as and reminder that differ from <paramref name="old"/> (all of them when null), so untouched properties
     /// keep their parameters. A changed location is written fresh, without its old parameters, GEO or
     /// X-APPLE-STRUCTURED-LOCATION (event-location R3).
     /// </summary>
@@ -263,6 +332,10 @@ public static class CalDavEvents
         if (old is null || old.ShowAs != fields.ShowAs)
         {
             WriteShowAs(ev, fields.ShowAs);
+        }
+        if (fields.Reminder is { } reminder && (old is null || ReminderChanged(old, fields)))
+        {
+            WriteReminder(ev, reminder);
         }
     }
 

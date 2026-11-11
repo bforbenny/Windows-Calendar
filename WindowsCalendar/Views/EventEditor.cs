@@ -8,6 +8,7 @@ using System.Windows.Threading;
 using Serilog;
 using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
+using WindowsCalendar.Core.Reminders;
 using WindowsCalendar.Core.Store;
 using ContentDialog = Wpf.Ui.Controls.ContentDialog;
 using ContentDialogButton = Wpf.Ui.Controls.ContentDialogButton;
@@ -40,6 +41,8 @@ internal sealed partial class EventEditor : UserControl
     private readonly TextBox _location = new();
     private readonly ComboBox _calendar = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly ComboBox _showAs = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly ComboBox _reminder = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly TextBlock _moreReminders = new() { Style = Theme.Style("CaptionTextBlockStyle"), Foreground = Theme.Brush("TextSecondaryBrush"), Margin = new Thickness(0, 4, 0, 0) };
     private readonly TextBox _description = new()
     {
         AcceptsReturn = true,
@@ -97,6 +100,10 @@ internal sealed partial class EventEditor : UserControl
         form.Children.Add(_repeat);
         form.Children.Add(ViewParts.Field("Location", _location));
         form.Children.Add(ViewParts.Field("Show as", _showAs));
+        var reminder = new StackPanel();
+        reminder.Children.Add(_reminder);
+        reminder.Children.Add(_moreReminders);
+        form.Children.Add(ViewParts.Field("Reminder", reminder));
         form.Children.Add(ViewParts.Field("Calendar", _calendar));
         form.Children.Add(ViewParts.Field("Description", _description));
 
@@ -138,7 +145,23 @@ internal sealed partial class EventEditor : UserControl
             {
                 ShowShowAs(_allDay.IsChecked == true ? ShowAs.Free : ShowAs.Busy);
             }
+            ShowReminder(_defaultReminder ? DefaultReminder() : ReadReminder(), _moreCount);
             Save();
+        };
+        _reminder.SelectionChanged += (_, _) =>
+        {
+            if (!_loading)
+            {
+                _defaultReminder = false;
+                if (_reminderOnly)
+                {
+                    SaveReminderOnly();
+                }
+                else
+                {
+                    Save();
+                }
+            }
         };
         _showAs.SelectionChanged += (_, _) =>
         {
@@ -243,6 +266,7 @@ internal sealed partial class EventEditor : UserControl
         _scope = null;
         _allowFollowing = recurrence is not null && !CalDavRecurrence.IsOrganisedMeeting(item, account?.Email);
         _readOnly = collection.ReadOnly || account?.Type != AccountType.CalDAV;
+        _reminderOnly = false;
         _savedRule = CalDavRecurrence.ReadRule(item, TimeZoneInfo.Local);
         _ruleAutosave = recurrence is null;
         // Meetings and invitations stay in their calendar (calendar-views R8).
@@ -287,6 +311,7 @@ internal sealed partial class EventEditor : UserControl
         _recurrence = null;
         _scope = null;
         _readOnly = false;
+        _reminderOnly = false;
         _graph = false;
         _occurrenceId = null;
         _savedRule = repeat ?? RepeatRule.None;
@@ -405,6 +430,8 @@ internal sealed partial class EventEditor : UserControl
         _calendar.SelectedIndex = choices.FindIndex(c => c.Id == selectedId);
         _defaultShowAs = _itemId is null;
         ShowShowAs(fields.ShowAs);
+        _defaultReminder = _itemId is null && fields.Reminder is null;
+        ShowReminder(fields.Reminder ?? (_defaultReminder ? DefaultReminder() : ReminderChoice.None), fields.MoreReminders);
 
         _delete.Visibility = _itemId is null || _readOnly ? Visibility.Collapsed : Visibility.Visible;
         foreach (var box in new[] { _title, _location, _description })
@@ -415,6 +442,7 @@ internal sealed partial class EventEditor : UserControl
         {
             control.IsEnabled = !_readOnly;
         }
+        _reminder.IsEnabled = !_readOnly || _reminderOnly;
         _repeat.Visibility = _savedRule is null ? Visibility.Collapsed : Visibility.Visible;
         _repeat.Show(_savedRule ?? RepeatRule.None, DateOnly.FromDateTime(fields.Start));
         _repeat.SetEnabled(!_readOnly);
@@ -444,6 +472,7 @@ internal sealed partial class EventEditor : UserControl
         _description.Text = (fields.Description ?? "").Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
         _shownStart = fields.Start;
         ShowShowAs(fields.ShowAs);
+        ShowReminder(fields.Reminder ?? ReminderChoice.None, fields.MoreReminders);
         ShowTimePickers();
         _loading = loading;
     }
@@ -523,7 +552,7 @@ internal sealed partial class EventEditor : UserControl
             _loading = loading;
         }
         var description = _description.Text.Replace("\r\n", "\n").Replace("\r", "\n");
-        return new EventFields(_title.Text.Trim(), allDay, start, end, _location.Text.Trim(), description, ReadShowAs());
+        return new EventFields(_title.Text.Trim(), allDay, start, end, _location.Text.Trim(), description, ReadShowAs(), ReadReminder());
     }
 
     private void Save()

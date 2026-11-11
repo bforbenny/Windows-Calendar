@@ -39,7 +39,7 @@ public static class TaskQuery
     {
         if (task.RawPayload.TrimStart().StartsWith('{'))
         {
-            return Graph.GraphTaskMapper.Read(task);
+            return Graph.GraphTaskMapper.Read(task, zone);
         }
         var todo = Ical.Net.Calendar.Load(task.RawPayload)?.Todos.FirstOrDefault();
         var importance = todo?.Priority switch { >= 1 and <= 4 => "high", >= 6 and <= 9 => "low", _ => "normal" };

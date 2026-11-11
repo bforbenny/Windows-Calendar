@@ -854,7 +854,10 @@ public sealed partial class LocalStore : IDisposable
         }
     }
 
-    /// <summary>Marks <paramref name="collectionId"/> as the holiday calendar, replacing any other; null clears it.</summary>
+    /// <summary>
+    /// Marks <paramref name="collectionId"/> as the holiday calendar, replacing any other; null clears it. Marking turns
+    /// its reminders off, which Settings can turn on again (reminders-notifications R5).
+    /// </summary>
     public void SetHolidayCollection(string? collectionId)
     {
         lock (_gate)
@@ -866,6 +869,7 @@ public sealed partial class LocalStore : IDisposable
             else
             {
                 SetMeta(null, HolidayKey, collectionId);
+                Execute(_connection, null, "UPDATE collections SET reminders_on = 0 WHERE id = $id;", ("$id", collectionId));
             }
         }
     }
