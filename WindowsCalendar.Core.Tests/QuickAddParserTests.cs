@@ -601,13 +601,13 @@ public sealed class QuickAddParserTests
     }
 
     [Fact]
-    public void Task_takes_only_the_date_and_list_from_the_phrase()
+    public void Task_takes_only_the_date_list_and_repeat_from_the_phrase()
     {
         var r = Parse("task call Bob 3pm every day");
         Assert.Equal(QuickAddKind.Task, r.Kind);
-        Assert.Equal("call Bob 3pm every day", r.Title);
+        Assert.Equal("call Bob 3pm", r.Title);
         Assert.Equal(new DateTime(2026, 11, 11), r.Start.Date);
-        Assert.Equal(RepeatRule.None, r.Repeat);
+        Assert.Equal(new RepeatRule(RepeatFrequency.Daily, 1, [], null, null, null), r.Repeat);
         Assert.Null(r.Location);
 
         var more = Parse("task call mum fri 1-2pm for 30m at Home all day #Shop");
@@ -615,6 +615,34 @@ public sealed class QuickAddParserTests
         Assert.Equal(new DateTime(2026, 11, 13), more.Start.Date);
         Assert.Equal(Shopping, more.Target);
         Assert.Equal([QuickAddField.Kind, QuickAddField.Date, QuickAddField.Target], more.Spans.Keys.Order());
+    }
+
+    [Fact]
+    public void Task_every_weekday_name_is_due_on_the_next_one_and_repeats_weekly()
+    {
+        var r = Parse("task x every Fri");
+        Assert.Equal(QuickAddKind.Task, r.Kind);
+        Assert.Equal("x", r.Title);
+        Assert.Equal(new DateTime(2026, 11, 13), r.Start.Date);
+        Assert.Equal(new RepeatRule(RepeatFrequency.Weekly, 1, [DayOfWeek.Friday], null, null, null), r.Repeat);
+        Assert.Contains("Every Friday", QuickAddParser.Chips(r));
+    }
+
+    [Fact]
+    public void Task_every_day_with_a_date_starts_then_and_leaves_the_time_in_the_title()
+    {
+        var r = Parse("task x every day tomorrow 3pm");
+        Assert.Equal("x 3pm", r.Title);
+        Assert.Equal(new DateTime(2026, 11, 12), r.Start.Date);
+        Assert.Equal(new RepeatRule(RepeatFrequency.Daily, 1, [], null, null, null), r.Repeat);
+    }
+
+    [Fact]
+    public void Task_weekdays_starts_on_the_first_weekday()
+    {
+        var r = Parse("task x weekdays sat");
+        Assert.Equal(new DateTime(2026, 11, 16), r.Start.Date);
+        Assert.Equal(RepeatFrequency.Weekly, r.Repeat.Frequency);
     }
 
     [Fact]

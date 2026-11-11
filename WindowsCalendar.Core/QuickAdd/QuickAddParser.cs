@@ -4,7 +4,7 @@ using WindowsCalendar.Core.CalDav;
 namespace WindowsCalendar.Core.QuickAdd;
 
 /// <summary>
-/// Turns a typed phrase into an event or task (quick-add R2, R3, R5-R7). Pure: the clock, short-date order and calendar
+/// Turns a typed phrase into an event or task (quick-add R2, R3, R5-R7); a task reads its date, #list and repeat only. Pure: the clock, short-date order and calendar
 /// names all come in as parameters. The phrase is split into words and ordered passes claim the words they recognise;
 /// the words left over are the title.
 /// </summary>
@@ -24,9 +24,9 @@ public static partial class QuickAddParser
         var today = DateOnly.FromDateTime(now);
 
         ReadTarget(scan, found);
+        ReadRepeat(scan, found);
         if (!task)
         {
-            ReadRepeat(scan, found);
             ReadAllDay(scan, found);
             ReadTime(scan, found);
             if (found.EndMin is null)
@@ -45,16 +45,12 @@ public static partial class QuickAddParser
         var title = string.Join(' ', Enumerable.Range(0, scan.Count).Where(scan.IsFree).Select(i => scan.Tokens[i].Text));
         var (target, targetError) = ResolveTarget(found.TargetText, task, options.Targets);
         var slotDate = options.SlotStart is { } slot ? DateOnly.FromDateTime(slot) : today;
-        var date = found.Date ?? slotDate;
-        if (!task)
-        {
-            date = AlignToRepeat(found, date);
-        }
+        var date = AlignToRepeat(found, found.Date ?? slotDate);
         var (allDay, start, end) = task ? DueDate(date) : Layout(found, date, options);
         return new QuickAddResult(
             task ? QuickAddKind.Task : QuickAddKind.Event, title, allDay, start, end,
             found.Location, target, target is { Ticked: false },
-            task ? RepeatRule.None : BuildRepeat(found, date), scan.Spans,
+            BuildRepeat(found, date), scan.Spans,
             title.Length == 0 ? "Add a title" : targetError);
     }
 

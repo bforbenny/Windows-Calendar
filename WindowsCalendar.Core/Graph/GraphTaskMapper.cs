@@ -1,11 +1,17 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar.Core.Graph;
 
-/// <summary>What the task editor shows and writes (tasks R2 interim). Due is a date only; Importance is low, normal or high.</summary>
-public sealed record TaskFields(string Title, bool Completed, DateOnly? Due, string Importance, string? Notes);
+/// <summary>
+/// What the task editor shows and writes (tasks R2 interim). Due is a date only; Importance is low, normal or high.
+/// Repeat (tasks R7b) is null or <see cref="RepeatRule.None"/> when the task does not repeat; as read, null also covers
+/// a pattern the panel can't show.
+/// </summary>
+public sealed record TaskFields(string Title, bool Completed, DateOnly? Due, string Importance, string? Notes, RepeatRule? Repeat = null);
 
 /// <summary>
 /// Microsoft To Do tasks to store items (sync-ms365 third slice, tasks R2a, R3). The JSON is kept as-is; the columns
@@ -52,8 +58,19 @@ public static class GraphTaskMapper
         var task = doc.RootElement;
         var importance = GraphClient.Text(task, "importance") is { } i && i is "low" or "high" ? i : "normal";
         return new TaskFields(GraphClient.Text(task, "title") ?? "", GraphClient.Text(task, "status") == "completed",
-            DueDate(task), importance, GraphEventMapper.Description(task));
+            DueDate(task), importance, GraphEventMapper.Description(task), ReadRepeat(item.RawPayload));
     }
+
+    /// <summary>
+    /// The task's repeat for the panel (tasks R7b): null when it does not repeat or the pattern can't be shown. The
+    /// range's start date is the due date the pattern was built on.
+    /// </summary>
+    private static RepeatRule? ReadRepeat(string payload) =>
+        JsonNode.Parse(payload)?["recurrence"] is JsonObject recurrence
+        && recurrence["range"]?["startDate"]?.GetValue<string>() is { } text
+        && DateOnly.TryParse(text, CultureInfo.InvariantCulture, out var start)
+            ? GraphRecurrence.ReadRule(recurrence, start)
+            : null;
 
     /// <summary>The due date from a stored payload, for the occurrence index; null when there is none.</summary>
     internal static DateOnly? DueDate(string payload)

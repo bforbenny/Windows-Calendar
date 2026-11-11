@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar.Core.Graph;
@@ -6,7 +7,8 @@ namespace WindowsCalendar.Core.Graph;
 /// <summary>
 /// Local edits of To Do tasks (sync-ms365 third slice, R12). As with events, an edit changes the stored JSON and lists
 /// the fields it changed under <see cref="GraphEvents.ChangedKey"/>, and the PATCH sends only those
-/// (<see cref="GraphEvents.PatchBody"/>). Due dates are written as midnight in the Windows timezone.
+/// (<see cref="GraphEvents.PatchBody"/>). Due dates are written as midnight in the Windows timezone. A repeat is the
+/// task's <c>recurrence</c> (tasks R7b); it needs a due date, which it sets when there is none.
 /// </summary>
 public static class GraphTasks
 {
@@ -23,9 +25,15 @@ public static class GraphTasks
         {
             task["body"] = Body(fields.Notes);
         }
-        if (fields.Due is { } due)
+        var rule = Repeating(fields.Repeat);
+        var due = rule is null ? fields.Due : RepeatStart(rule, fields.Due, zone);
+        if (due is { } date)
         {
-            task["dueDateTime"] = Due(due, zone);
+            task["dueDateTime"] = Due(date, zone);
+        }
+        if (rule is not null)
+        {
+            task["recurrence"] = GraphRecurrence.Recurrence(rule, due!.Value, zone);
         }
         return GraphTaskMapper.Rebuild(new Item(Guid.NewGuid().ToString("N"), list.Id, ItemKind.Task, null, "{}"), task.ToJsonString(), zone);
     }
@@ -49,10 +57,27 @@ public static class GraphTasks
             changed.Add("body");
             any = true;
         }
-        if (fields.Due != old.Due)
+        // A repeat that changed, or a moved due date under one, rewrites the pattern from the due date (tasks R7b).
+        var rule = Repeating(fields.Repeat);
+        var oldRule = Repeating(old.Repeat);
+        var restart = rule is not null && (!rule.Equals(oldRule) || fields.Due != old.Due);
+        var due = restart ? RepeatStart(rule!, fields.Due, zone) : fields.Due;
+        if (due != old.Due)
         {
-            task["dueDateTime"] = fields.Due is { } due ? Due(due, zone) : null;
+            task["dueDateTime"] = due is { } date ? Due(date, zone) : null;
             changed.Add("dueDateTime");
+            any = true;
+        }
+        if (restart)
+        {
+            task["recurrence"] = GraphRecurrence.Recurrence(rule!, due!.Value, zone);
+            changed.Add("recurrence");
+            any = true;
+        }
+        else if (rule is null && oldRule is not null)
+        {
+            task["recurrence"] = null;
+            changed.Add("recurrence");
             any = true;
         }
         if (fields.Importance != old.Importance)
@@ -77,9 +102,23 @@ public static class GraphTasks
 
     /// <summary>
     /// Whether the app may change the task: not in a read-only list (Flagged emails, sync-ms365 third slice).
-    /// A recurring task may only be completed or reopened (recurring-events R8).
+    /// A recurring task whose pattern the repeat panel can't show may only be completed or reopened (recurring-events R8).
     /// </summary>
     public static bool CanEdit(Collection list) => !list.ReadOnly;
+
+    /// <summary>The rule when it repeats, else null.</summary>
+    private static RepeatRule? Repeating(RepeatRule? rule) => rule is { Frequency: not RepeatFrequency.None } ? rule : null;
+
+    /// <summary>
+    /// The first due date of a repeating task: the due date, or today when there is none, moved forward to the first
+    /// chosen weekday of a weekly rule (as for events).
+    /// </summary>
+    private static DateOnly RepeatStart(RepeatRule rule, DateOnly? due, TimeZoneInfo zone)
+    {
+        var day = due ?? DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTime.UtcNow, zone));
+        return GraphRecurrence.Dates(rule.Frequency == RepeatFrequency.Weekly && rule.Weekdays.Count == 0
+            ? rule with { Weekdays = [day.DayOfWeek] } : rule, day).First();
+    }
 
     private static JsonObject Body(string? notes) => new() { ["contentType"] = "text", ["content"] = notes ?? "" };
 

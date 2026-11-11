@@ -32,7 +32,7 @@ public static class GraphRecurrence
         return ev["recurrence"] is JsonObject recurrence ? ReadRule(recurrence, StartDate(master, ev, zone)) : RepeatRule.None;
     }
 
-    private static RepeatRule? ReadRule(JsonObject recurrence, DateOnly start)
+    internal static RepeatRule? ReadRule(JsonObject recurrence, DateOnly start)
     {
         if (recurrence["pattern"] is not JsonObject p || recurrence["range"] is not JsonObject range)
         {

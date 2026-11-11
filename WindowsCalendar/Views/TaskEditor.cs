@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Serilog;
+using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Store;
 using ContentDialog = Wpf.Ui.Controls.ContentDialog;
@@ -20,8 +21,9 @@ namespace WindowsCalendar.Views;
 /// <summary>
 /// The task editor side panel (tasks interim), in the event editor's place, with the same auto-save: text when it
 /// loses focus (or Enter in the title), the checkbox and pickers at once. Fields: title, completed, due date (date
-/// only), importance, notes. Only To Do tasks in writable lists can be changed; a recurring one can only be completed
-/// or reopened. Radicale tasks and Flagged emails are view-only.
+/// only), importance, repeat (the event editor's Repeat panel, saved at once; tasks R7b), notes. Only To Do tasks in
+/// writable lists can be changed; one whose repeat pattern the panel can't show can only be completed or reopened.
+/// Radicale tasks and Flagged emails are view-only.
 /// </summary>
 internal sealed class TaskEditor : UserControl
 {
@@ -33,6 +35,7 @@ internal sealed class TaskEditor : UserControl
     private readonly DatePicker _due = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly Button _clearDue = new() { Content = "Clear", VerticalAlignment = VerticalAlignment.Bottom };
     private readonly ComboBox _importance = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
+    private readonly RepeatPanel _repeat = new();
     private readonly TextBlock _list = new() { Foreground = Theme.Brush("TextSecondaryBrush") };
     private readonly TextBox _notes = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 120 };
 
@@ -85,6 +88,7 @@ internal sealed class TaskEditor : UserControl
         form.Children.Add(_completed);
         form.Children.Add(ViewParts.Field("Due", dueRow));
         form.Children.Add(ViewParts.Field("Importance", _importance));
+        form.Children.Add(_repeat);
         form.Children.Add(_list);
         form.Children.Add(ViewParts.Field("Notes", _notes));
 
@@ -109,7 +113,15 @@ internal sealed class TaskEditor : UserControl
             }
         };
         _completed.Click += (_, _) => Save();
-        _due.SelectedDateChanged += (_, _) => Save();
+        _due.SelectedDateChanged += (_, _) =>
+        {
+            if (!_loading)
+            {
+                _repeat.SetStart(DueOrToday());
+            }
+            Save();
+        };
+        _repeat.RuleChanged += Save;
         _clearDue.Click += (_, _) => _due.SelectedDate = null;
         _importance.SelectionChanged += (_, _) => Save();
 
@@ -156,11 +168,11 @@ internal sealed class TaskEditor : UserControl
         _newList = null;
         _itemId = itemId;
         _writable = writable;
-        _completeOnly = writable && item.IsRecurring;
+        _completeOnly = writable && item.IsRecurring && GraphTaskMapper.Read(item).Repeat is null;
         Show(item, list);
         var message = list.ReadOnly ? "This task list is read-only."
             : !writable ? "Editing tasks in this account comes later."
-            : _completeOnly ? "This task repeats. It can be completed here, but not changed." : "";
+            : _completeOnly ? "This task repeats in a way that can't be shown here. It can be completed, but not changed." : "";
         _notice.Message = message;
         _notice.IsOpen = message.Length > 0;
         if (!IsOpen)
@@ -172,9 +184,9 @@ internal sealed class TaskEditor : UserControl
 
     /// <summary>
     /// Opens a blank task for <paramref name="list"/> (tasks interim); it is created once it has a title. Quick add's
-    /// "More details" passes the due date it understood (quick-add R4).
+    /// "More details" passes the due date and repeat it understood (quick-add R4).
     /// </summary>
-    public void OpenNew(Collection list, string title = "", DateOnly? due = null)
+    public void OpenNew(Collection list, string title = "", DateOnly? due = null, RepeatRule? repeat = null)
     {
         Save();
         _heading.Text = "New task";
@@ -183,7 +195,7 @@ internal sealed class TaskEditor : UserControl
         _newList = list;
         _writable = true;
         _completeOnly = false;
-        Show(new TaskFields(title, false, due, "normal", null), list);
+        Show(new TaskFields(title, false, due, "normal", null, repeat), list);
         _delete.Visibility = Visibility.Collapsed;
         _notice.IsOpen = false;
         if (!IsOpen)
@@ -247,6 +259,9 @@ internal sealed class TaskEditor : UserControl
         var editable = _writable && !_completeOnly;
         _title.IsReadOnly = _notes.IsReadOnly = !editable;
         _due.IsEnabled = _clearDue.IsEnabled = _importance.IsEnabled = editable;
+        _repeat.Visibility = editable ? Visibility.Visible : Visibility.Collapsed;
+        _repeat.Show(fields.Repeat ?? RepeatRule.None, fields.Due ?? Today);
+        _repeat.SetEnabled(editable);
         _completed.IsEnabled = _writable;
         _delete.Visibility = _writable ? Visibility.Visible : Visibility.Collapsed;
         _loading = false;
@@ -260,7 +275,28 @@ internal sealed class TaskEditor : UserControl
             _completed.IsChecked == true,
             _due.SelectedDate is { } d ? DateOnly.FromDateTime(d.Date) : null,
             _importance.SelectedIndex >= 0 ? Importances[_importance.SelectedIndex] : old.Importance,
-            _notes.Text.Replace("\r\n", "\n").Replace("\r", "\n"));
+            _notes.Text.Replace("\r\n", "\n").Replace("\r", "\n"),
+            _repeat.Read());
+    }
+
+    private static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
+
+    private DateOnly DueOrToday() => _due.SelectedDate is { } d ? DateOnly.FromDateTime(d.Date) : Today;
+
+    /// <summary>
+    /// A repeat sets or moves the due date (no due date: today; weekly: the first chosen weekday), so the pickers show
+    /// what was saved.
+    /// </summary>
+    private void ShowSavedDue(TaskFields sent, Item saved)
+    {
+        var fields = GraphTaskMapper.Read(saved);
+        if (fields.Due != sent.Due)
+        {
+            _loading = true;
+            _due.SelectedDate = fields.Due?.ToDateTime(TimeOnly.MinValue);
+            _repeat.SetStart(DueOrToday());
+            _loading = false;
+        }
     }
 
     private void Save()
@@ -281,6 +317,7 @@ internal sealed class TaskEditor : UserControl
             if (GraphTasks.Edit(item, fields, TimeZoneInfo.Local) is { } edited)
             {
                 store.UpdateItem(edited);
+                ShowSavedDue(fields, edited);
                 Log.Information("Task {ItemId} saved", id);
                 Changed?.Invoke();
             }
@@ -300,8 +337,10 @@ internal sealed class TaskEditor : UserControl
         }
         try
         {
-            var task = GraphTasks.Create(list, ReadFields(new TaskFields("", false, null, "normal", null)), TimeZoneInfo.Local);
+            var fields = ReadFields(new TaskFields("", false, null, "normal", null));
+            var task = GraphTasks.Create(list, fields, TimeZoneInfo.Local);
             store.CreateItem(task);
+            ShowSavedDue(fields, task);
             Log.Information("Task {ItemId} created", task.Id);
             _newList = null;
             _itemId = task.Id;

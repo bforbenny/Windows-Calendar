@@ -166,7 +166,7 @@ public sealed partial class MainWindow
             Item created;
             if (result.Kind == QuickAddKind.Task)
             {
-                created = GraphTasks.Create(target, new TaskFields(result.Title, false, DateOnly.FromDateTime(result.Start), "normal", null), zone);
+                created = GraphTasks.Create(target, new TaskFields(result.Title, false, DateOnly.FromDateTime(result.Start), "normal", null, result.Repeat), zone);
             }
             else
             {
@@ -250,7 +250,7 @@ public sealed partial class MainWindow
                 _editor.Close();
             }
             EditorHost.Child = _taskEditor;
-            _taskEditor.OpenNew(list, result.Title, DateOnly.FromDateTime(result.Start));
+            _taskEditor.OpenNew(list, result.Title, DateOnly.FromDateTime(result.Start), result.Repeat);
             return true;
         }
         if (!_collections.Values.Any(c => c.Kind == CollectionKind.Calendar && !c.ReadOnly && c.SourceUrl is null))

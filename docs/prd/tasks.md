@@ -2,7 +2,7 @@
 description: Tasks/to-dos from Radicale (VTODO) and Microsoft To Do, shown and edited in one tasks UI
 when-to-use: Before working on task lists, task editing, or task sync mapping
 tags: [tasks, vtodo, todo, ui]
-status: updated
+status: in-progress
 ---
 
 # Tasks
