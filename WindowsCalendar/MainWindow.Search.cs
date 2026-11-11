@@ -149,6 +149,19 @@ public sealed partial class MainWindow
             start ?? item.StartUtc ?? item.DueUtc, null, item.AllDay, recurrence, item.IsRecurring, false));
     }
 
+    /// <summary>The missed-reminder summary's click (reminders-notifications R6): Agenda, scrolled to today.</summary>
+    internal void OpenAgendaToday()
+    {
+        if (_view == ViewKind.Agenda)
+        {
+            ScrollToToday();
+        }
+        else
+        {
+            SwitchView(ViewKind.Agenda);
+        }
+    }
+
     /// <summary>Scrolls to the item's day and opens it in its editor; also used by the conflicts list.</summary>
     private void OpenResult(SearchResult result)
     {

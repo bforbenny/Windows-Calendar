@@ -2,27 +2,37 @@ using WindowsCalendar.Core.Reminders;
 
 namespace WindowsCalendar.Core.Store;
 
-/// <summary>Per-reminder local state (reminders-notifications R2, R4); never synced.</summary>
+/// <summary>Per-reminder local state (reminders-notifications R2, R4, R6); never synced.</summary>
 public sealed partial class LocalStore
 {
-    /// <summary>Keys of reminders already scheduled or shown, so a late one is never shown twice.</summary>
-    public IReadOnlySet<string> GetHandledReminderKeys()
+    private const string RemindersAwakeKey = "reminders:awake";
+
+    /// <summary>Every reminder's stored state by key; a reminder with a row is never shown late.</summary>
+    public IReadOnlyDictionary<string, ReminderStatus> GetReminderStates()
     {
         lock (_gate)
         {
-            using var cmd = Command(_connection, null, "SELECT key FROM reminder_state;");
+            using var cmd = Command(_connection, null, "SELECT key, state, snooze_until FROM reminder_state;");
             using var r = cmd.ExecuteReader();
-            var keys = new HashSet<string>(StringComparer.Ordinal);
+            var states = new Dictionary<string, ReminderStatus>(StringComparer.Ordinal);
             while (r.Read())
             {
-                keys.Add(r.GetString(0));
+                states[r.GetString(0)] = new ReminderStatus(r.GetString(1),
+                    r.IsDBNull(2) ? null : DateTimeOffset.FromUnixTimeMilliseconds(r.GetInt64(2)));
             }
-            return keys;
+            return states;
         }
     }
 
-    /// <summary>Records reminders handed to Windows. A task has no occurrence; its row keeps its due time instead, for pruning.</summary>
-    public void MarkRemindersScheduled(IEnumerable<Reminder> reminders)
+    /// <summary>Records reminders handed to Windows; a reminder that already has a row keeps it.</summary>
+    public void MarkRemindersScheduled(IEnumerable<Reminder> reminders) => Save(reminders, ReminderStates.Scheduled, null, replace: false);
+
+    /// <summary>Sets the state of reminders (dismissed, snoozed until a time, opened, missed), replacing any earlier state (R4).</summary>
+    public void SetReminderState(IEnumerable<Reminder> reminders, string state, DateTimeOffset? snoozeUntil = null) =>
+        Save(reminders, state, snoozeUntil, replace: true);
+
+    /// <summary>A task has no occurrence; its row keeps its due time instead, for pruning.</summary>
+    private void Save(IEnumerable<Reminder> reminders, string state, DateTimeOffset? snoozeUntil, bool replace)
     {
         lock (_gate)
         {
@@ -30,13 +40,15 @@ public sealed partial class LocalStore
             foreach (var reminder in reminders)
             {
                 Execute(_connection, tx,
-                    """
-                    INSERT INTO reminder_state (key, item_id, occurrence_utc, fire_utc, state) VALUES ($key, $item, $occurrence, $fire, 'scheduled')
-                    ON CONFLICT (key) DO NOTHING;
+                    $"""
+                    INSERT INTO reminder_state (key, item_id, occurrence_utc, fire_utc, state, snooze_until)
+                    VALUES ($key, $item, $occurrence, $fire, $state, $until)
+                    ON CONFLICT (key) DO {(replace ? "UPDATE SET state = excluded.state, snooze_until = excluded.snooze_until" : "NOTHING")};
                     """,
                     ("$key", reminder.Key), ("$item", reminder.ItemId),
                     ("$occurrence", (reminder.Recurrence ?? reminder.Start ?? reminder.ShowLateUntil)?.ToUnixTimeMilliseconds()),
-                    ("$fire", reminder.FireAt.ToUnixTimeMilliseconds()));
+                    ("$fire", reminder.FireAt.ToUnixTimeMilliseconds()), ("$state", state),
+                    ("$until", snoozeUntil?.ToUnixTimeMilliseconds()));
             }
             tx.Commit();
         }
@@ -50,6 +62,23 @@ public sealed partial class LocalStore
             Execute(_connection, null,
                 "DELETE FROM reminder_state WHERE fire_utc < $before AND COALESCE(occurrence_utc, fire_utc) < $before;",
                 ("$before", before.ToUnixTimeMilliseconds()));
+        }
+    }
+
+    /// <summary>Until when the app last watched reminders (R6): set while it runs and on suspend; null before the first run.</summary>
+    public DateTimeOffset? GetRemindersAwakeUntil()
+    {
+        lock (_gate)
+        {
+            return long.TryParse(GetMeta(null, RemindersAwakeKey), out var ms) ? DateTimeOffset.FromUnixTimeMilliseconds(ms) : null;
+        }
+    }
+
+    public void SetRemindersAwakeUntil(DateTimeOffset at)
+    {
+        lock (_gate)
+        {
+            SetMeta(null, RemindersAwakeKey, at.ToUnixTimeMilliseconds().ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
     }
 }

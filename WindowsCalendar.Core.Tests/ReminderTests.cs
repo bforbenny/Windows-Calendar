@@ -47,6 +47,10 @@ public sealed class ReminderTests : IDisposable
 
     private IReadOnlyList<Reminder> Collect() => ReminderSource.Collect(_store, Now, Utc);
 
+    private static readonly Dictionary<string, ReminderStatus> NoState = [];
+
+    private static readonly HashSet<string> NoHistory = [];
+
     // ---- Planner (R2) ----
 
     [Fact]
@@ -54,12 +58,12 @@ public sealed class ReminderTests : IDisposable
     {
         var plan = ReminderPlanner.Plan(
             [R("soon", Now.AddMinutes(30), Now.AddHours(1)), R("later", Now.AddHours(3), Now.AddHours(4))],
-            new HashSet<string>(), Now, ReminderPlanner.RunningWindow);
+            NoState, Now, ReminderPlanner.RunningWindow);
 
         Assert.Equal(["soon"], plan.Schedule.Select(r => r.ItemId));
         Assert.Empty(plan.ShowNow);
 
-        var quit = ReminderPlanner.Plan([R("later", Now.AddHours(3), Now.AddHours(4))], new HashSet<string>(), Now, ReminderPlanner.QuitWindow);
+        var quit = ReminderPlanner.Plan([R("later", Now.AddHours(3), Now.AddHours(4))], NoState, Now, ReminderPlanner.QuitWindow);
         Assert.Equal(["later"], quit.Schedule.Select(r => r.ItemId));
     }
 
@@ -72,10 +76,74 @@ public sealed class ReminderTests : IDisposable
         var undated = R("undated", Now.AddMinutes(-10), null);
         var tooOld = R("tooOld", Now.AddHours(-3), Now.AddDays(1));
 
-        var plan = ReminderPlanner.Plan([late, started, handled, undated, tooOld], new HashSet<string> { handled.Key }, Now, ReminderPlanner.RunningWindow);
+        var states = new Dictionary<string, ReminderStatus> { [handled.Key] = new(ReminderStates.Scheduled, null) };
+        var plan = ReminderPlanner.Plan([late, started, handled, undated, tooOld], states, Now, ReminderPlanner.RunningWindow);
 
         Assert.Equal(["late"], plan.ShowNow.Select(r => r.ItemId));
         Assert.Empty(plan.Schedule);
+    }
+
+    [Fact]
+    public void Plan_DismissedIsNotScheduled_SnoozedIsKeptUntilItsTime()
+    {
+        var dismissed = R("dismissed", Now.AddMinutes(30), Now.AddHours(1));
+        var scheduled = R("scheduled", Now.AddMinutes(40), Now.AddHours(1));
+        var snoozed = R("snoozed", Now.AddMinutes(-5), Now.AddHours(1));
+        var snoozeOver = R("snoozeOver", Now.AddMinutes(-20), Now.AddHours(1));
+        var states = new Dictionary<string, ReminderStatus>
+        {
+            [dismissed.Key] = new(ReminderStates.Dismissed, null),
+            [scheduled.Key] = new(ReminderStates.Scheduled, null),
+            [snoozed.Key] = new(ReminderStates.Snoozed, Now.AddMinutes(10)),
+            [snoozeOver.Key] = new(ReminderStates.Snoozed, Now.AddMinutes(-10)),
+            // A snooze whose item moved: its key is not among the reminders any more, so nothing keeps it.
+            ["moved|0|0"] = new(ReminderStates.Snoozed, Now.AddMinutes(10)),
+        };
+
+        var plan = ReminderPlanner.Plan([dismissed, scheduled, snoozed, snoozeOver], states, Now, ReminderPlanner.RunningWindow);
+
+        Assert.Equal(["scheduled"], plan.Schedule.Select(r => r.ItemId));
+        Assert.Equal([("snoozed", Now.AddMinutes(10))], plan.Snoozed.Select(s => (s.Reminder.ItemId, s.Until)));
+        Assert.Empty(plan.ShowNow);
+    }
+
+    // ---- Missed summary (R6) ----
+
+    [Fact]
+    public void Missed_DueSinceLastWatched_NotShownByWindows_NotActedOn()
+    {
+        var since = Now.AddHours(-3);
+        var missed = R("missed", Now.AddHours(-2), Now.AddHours(-1));
+        var never = R("never", Now.AddHours(-1), null);
+        var beforeSleep = R("beforeSleep", Now.AddHours(-4), null);
+        var shown = R("shown", Now.AddHours(-2), null);
+        var dismissed = R("dismissed", Now.AddHours(-2), null);
+        var listed = R("listed", Now.AddHours(-2), null);
+        var snoozeDue = R("snoozeDue", Now.AddHours(-5), null);
+        var ahead = R("ahead", Now.AddMinutes(5), null);
+        var states = new Dictionary<string, ReminderStatus>
+        {
+            [missed.Key] = new(ReminderStates.Scheduled, null),
+            [dismissed.Key] = new(ReminderStates.Dismissed, null),
+            [listed.Key] = new(ReminderStates.Missed, null),
+            [snoozeDue.Key] = new(ReminderStates.Snoozed, Now.AddHours(-1)),
+        };
+
+        var result = ReminderPlanner.Missed([missed, never, beforeSleep, shown, dismissed, listed, snoozeDue, ahead], states,
+            new HashSet<string> { shown.Key }, since, Now);
+
+        Assert.Equal(["missed", "never", "snoozeDue"], result.Select(r => r.ItemId).Order());
+    }
+
+    [Fact]
+    public void Missed_LooksBackAtMostTwelveHours()
+    {
+        var old = R("old", Now.AddHours(-13), null);
+        var recent = R("recent", Now.AddHours(-11), null);
+
+        var result = ReminderPlanner.Missed([old, recent], NoState, NoHistory, Now.AddDays(-2), Now);
+
+        Assert.Equal(["recent"], result.Select(r => r.ItemId));
     }
 
     // ---- Alarms (R1) ----
@@ -171,10 +239,38 @@ public sealed class ReminderTests : IDisposable
         var recent = R("recent", Now.AddDays(-10), Now.AddDays(1));
         _store.MarkRemindersScheduled([old, recent, recent]);
 
-        Assert.Equal(new HashSet<string> { old.Key, recent.Key }, _store.GetHandledReminderKeys());
+        Assert.Equal(new HashSet<string> { old.Key, recent.Key }, _store.GetReminderStates().Keys.ToHashSet());
 
         // The occurrence still ahead keeps its row, so its late reminder never shows twice.
         _store.PruneReminderState(Now.AddDays(-7));
-        Assert.Equal(new HashSet<string> { recent.Key }, _store.GetHandledReminderKeys());
+        Assert.Equal(new HashSet<string> { recent.Key }, _store.GetReminderStates().Keys.ToHashSet());
+    }
+
+    [Fact]
+    public void State_ActionsReplaceScheduled_SchedulingNeverUndoesAnAction()
+    {
+        var a = R("a", Now.AddMinutes(-5), Now.AddHours(1));
+        var b = R("b", Now.AddMinutes(-5), Now.AddHours(1));
+        _store.MarkRemindersScheduled([a, b]);
+
+        _store.SetReminderState([a], ReminderStates.Snoozed, Now.AddMinutes(10));
+        _store.SetReminderState([b], ReminderStates.Dismissed);
+        _store.MarkRemindersScheduled([a, b]);
+
+        var states = _store.GetReminderStates();
+        Assert.Equal(new ReminderStatus(ReminderStates.Snoozed, Now.AddMinutes(10)), states[a.Key]);
+        Assert.Equal(new ReminderStatus(ReminderStates.Dismissed, null), states[b.Key]);
+
+        // Dismissing a snoozed reminder clears its snooze time.
+        _store.SetReminderState([a], ReminderStates.Dismissed);
+        Assert.Equal(new ReminderStatus(ReminderStates.Dismissed, null), _store.GetReminderStates()[a.Key]);
+    }
+
+    [Fact]
+    public void AwakeUntil_RoundTrips()
+    {
+        Assert.Null(_store.GetRemindersAwakeUntil());
+        _store.SetRemindersAwakeUntil(Now);
+        Assert.Equal(Now, _store.GetRemindersAwakeUntil());
     }
 }

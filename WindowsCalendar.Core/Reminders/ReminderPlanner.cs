@@ -26,8 +26,27 @@ public sealed record Reminder(
     public string Key => $"{ItemId}|{(Recurrence ?? Start)?.ToUnixTimeMilliseconds()}|{FireAt.ToUnixTimeMilliseconds()}";
 }
 
-/// <summary>Reminders to hand to Windows' schedule, and ones to show at once.</summary>
-public sealed record ReminderPlan(IReadOnlyList<Reminder> Schedule, IReadOnlyList<Reminder> ShowNow);
+/// <summary>The states a reminder's row can hold (reminders-notifications R2, R4, R6).</summary>
+public static class ReminderStates
+{
+    /// <summary>Handed to Windows' schedule or shown.</summary>
+    public const string Scheduled = "scheduled";
+    public const string Dismissed = "dismissed";
+    public const string Snoozed = "snoozed";
+    /// <summary>Joined or opened from its toast.</summary>
+    public const string Opened = "opened";
+    /// <summary>Listed in a missed-reminder summary.</summary>
+    public const string Missed = "missed";
+}
+
+/// <summary>A reminder's stored state; SnoozeUntil is set while it is snoozed.</summary>
+public sealed record ReminderStatus(string State, DateTimeOffset? SnoozeUntil);
+
+/// <summary>A snoozed reminder whose toast is due again at Until.</summary>
+public sealed record SnoozedReminder(Reminder Reminder, DateTimeOffset Until);
+
+/// <summary>Reminders to hand to Windows' schedule, ones to show at once, and snoozed ones to keep scheduled.</summary>
+public sealed record ReminderPlan(IReadOnlyList<Reminder> Schedule, IReadOnlyList<Reminder> ShowNow, IReadOnlyList<SnoozedReminder> Snoozed);
 
 /// <summary>Decides which reminders are scheduled and which show at once (reminders-notifications R2).</summary>
 public static class ReminderPlanner
@@ -41,31 +60,60 @@ public static class ReminderPlanner
     /// <summary>A late reminder older than this is skipped, so a first run or a long time off does not bring a flood (R6 covers those).</summary>
     public static readonly TimeSpan LateLimit = TimeSpan.FromHours(2);
 
+    /// <summary>The missed-reminder summary looks back at most this far (R6).</summary>
+    public static readonly TimeSpan MissedWindow = TimeSpan.FromHours(12);
+
     /// <summary>
-    /// Reminders firing after now and within the window are scheduled. One whose time passed less than
-    /// <see cref="LateLimit"/> ago and that was never handled (not in <paramref name="handledKeys"/>) shows at once
-    /// while its item has not started, else is skipped.
+    /// Reminders firing after now and within the window are scheduled, unless already dismissed or snoozed. One whose
+    /// time passed less than <see cref="LateLimit"/> ago and that has no state row shows at once while its item has
+    /// not started, else is skipped. A snoozed reminder is kept while it still exists and its snooze is ahead (R4); one
+    /// whose item moved, was deleted or completed is no longer among <paramref name="reminders"/>, so it is dropped.
     /// </summary>
-    public static ReminderPlan Plan(IEnumerable<Reminder> reminders, IReadOnlySet<string> handledKeys, DateTimeOffset now, TimeSpan window)
+    public static ReminderPlan Plan(IEnumerable<Reminder> reminders, IReadOnlyDictionary<string, ReminderStatus> states, DateTimeOffset now, TimeSpan window)
     {
         var schedule = new List<Reminder>();
         var showNow = new List<Reminder>();
+        var snoozed = new List<SnoozedReminder>();
         foreach (var r in reminders.DistinctBy(r => r.Key))
         {
-            if (r.FireAt > now)
+            var status = states.GetValueOrDefault(r.Key);
+            if (status is { State: ReminderStates.Snoozed, SnoozeUntil: { } until } && until > now)
             {
-                if (r.FireAt <= now + window)
+                snoozed.Add(new SnoozedReminder(r, until));
+            }
+            else if (r.FireAt > now)
+            {
+                if (r.FireAt <= now + window && status is null or { State: ReminderStates.Scheduled })
                 {
                     schedule.Add(r);
                 }
             }
-            else if (r.FireAt > now - LateLimit && !handledKeys.Contains(r.Key) && r.ShowLateUntil is { } until && until > now)
+            else if (r.FireAt > now - LateLimit && status is null && r.ShowLateUntil is { } lateUntil && lateUntil > now)
             {
                 showNow.Add(r);
             }
         }
-        return new ReminderPlan(
-            schedule.OrderBy(r => r.FireAt).ThenBy(r => r.Key, StringComparer.Ordinal).ToList(),
-            showNow.OrderBy(r => r.FireAt).ThenBy(r => r.Key, StringComparer.Ordinal).ToList());
+        return new ReminderPlan(Ordered(schedule), Ordered(showNow), snoozed.OrderBy(s => s.Until).ThenBy(s => s.Reminder.Key, StringComparer.Ordinal).ToList());
     }
+
+    /// <summary>
+    /// R6: reminders due after <paramref name="since"/> (at most <see cref="MissedWindow"/> ago) and up to now that
+    /// Windows did not show (not in <paramref name="inHistory"/>) and that were not dismissed, opened or already
+    /// listed. A snoozed reminder counts by its snooze time.
+    /// </summary>
+    public static IReadOnlyList<Reminder> Missed(IEnumerable<Reminder> reminders, IReadOnlyDictionary<string, ReminderStatus> states,
+        IReadOnlySet<string> inHistory, DateTimeOffset since, DateTimeOffset now)
+    {
+        var from = since > now - MissedWindow ? since : now - MissedWindow;
+        return Ordered(reminders.DistinctBy(r => r.Key).Where(r =>
+        {
+            var status = states.GetValueOrDefault(r.Key);
+            var due = status is { State: ReminderStates.Snoozed, SnoozeUntil: { } until } ? until : r.FireAt;
+            return due > from && due <= now && !inHistory.Contains(r.Key)
+                && status is null or { State: ReminderStates.Scheduled or ReminderStates.Snoozed };
+        }).ToList());
+    }
+
+    private static List<Reminder> Ordered(List<Reminder> reminders) =>
+        reminders.OrderBy(r => r.FireAt).ThenBy(r => r.Key, StringComparer.Ordinal).ToList();
 }

@@ -177,9 +177,10 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Reminders (reminders-notifications R2, R4): prunes old state and schedules on start. The shared system-change
-    /// hook asks for a sync run when the Windows timezone or clock changes or the PC resumes; the run rebuilds the
-    /// occurrence index, reschedules reminders and refreshes the views (timezone-handling R6).
+    /// Reminders (reminders-notifications R2, R4, R6): prunes old state, schedules and shows the missed-reminder
+    /// summary on start. The shared system-change hook asks for a sync run when the Windows timezone or clock changes
+    /// or the PC resumes; the run rebuilds the occurrence index, reschedules reminders and refreshes the views
+    /// (timezone-handling R6), and after a resume shows the missed-reminder summary.
     /// </summary>
     private void StartReminders()
     {
@@ -190,7 +191,9 @@ public partial class App : Application
         _ = Task.Run(() =>
         {
             store.PruneReminderState(DateTimeOffset.UtcNow.AddDays(-7));
+            ReminderToasts.ExpectMissed();
             ReminderToasts.Reschedule(store, ReminderPlanner.RunningWindow);
+            ReminderToasts.ShowMissed(store);
         });
         SystemEvents.TimeChanged += OnTimeChanged;
         SystemEvents.PowerModeChanged += OnPowerModeChanged;
@@ -200,10 +203,22 @@ public partial class App : Application
 
     private void OnPowerModeChanged(object? sender, PowerModeChangedEventArgs e)
     {
-        if (e.Mode == PowerModes.Resume)
+        if (e.Mode == PowerModes.Suspend && Store is { } store)
         {
+            ReminderToasts.Suspending(store);
+        }
+        else if (e.Mode == PowerModes.Resume)
+        {
+            ReminderToasts.ExpectMissed();
             _scheduler?.Request("resume");
         }
+    }
+
+    /// <summary>The missed-reminder summary's click (reminders-notifications R3, R6): the Agenda view on today.</summary>
+    internal void OpenAgendaToday()
+    {
+        ShowMainWindow();
+        _window?.OpenAgendaToday();
     }
 
     /// <summary>A reminder toast's Open or body click (reminders-notifications R3): the main window on that item.</summary>
@@ -259,6 +274,9 @@ public partial class App : Application
             ReminderToasts.Reschedule(store, ReminderPlanner.RunningWindow);
             changed = true;
         }
+
+        // After a resume (R6); by now Windows has shown any toasts it shows late on wake.
+        ReminderToasts.ShowMissed(store);
 
         if (changed && _window is { } window)
         {
