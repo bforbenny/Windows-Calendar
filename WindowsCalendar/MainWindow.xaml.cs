@@ -69,6 +69,15 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             }
         };
 
+        // Every show puts the window back on the screens if any part of it is off them (app-platform R5).
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible)
+            {
+                KeepOnScreen();
+            }
+        };
+
         // The period title follows the scroll position (R1a).
         _week.VisibleDayChanged += day => ShowTitle(ViewKind.Week, day);
         _month.VisibleDayChanged += day => ShowTitle(ViewKind.Month, day);
@@ -751,6 +760,30 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             WindowState = WindowState.Normal;
         }
         Activate();
+    }
+
+    /// <summary>
+    /// If any part of the window is outside the screens (a monitor unplugged, scaling changed), centres it on the
+    /// primary screen's work area, shrunk to fit if needed (app-platform R5). Maximised windows are left to Windows.
+    /// </summary>
+    private void KeepOnScreen()
+    {
+        if (WindowState != WindowState.Normal)
+        {
+            return;
+        }
+        var screens = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
+            SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
+        if (screens.Contains(new Rect(Left, Top, ActualWidth, ActualHeight)))
+        {
+            return;
+        }
+        var area = SystemParameters.WorkArea;
+        Width = Math.Min(Width, area.Width);
+        Height = Math.Min(Height, area.Height);
+        Left = area.Left + (area.Width - Width) / 2;
+        Top = area.Top + (area.Height - Height) / 2;
+        Log.Information("Window was off-screen; moved onto the primary screen");
     }
 
     public void CloseForQuit()
