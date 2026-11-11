@@ -34,6 +34,13 @@ One app-wide service wraps the Windows AI `LanguageModel` (Phi Silica on Copilot
   - Measure each request mode with two schemas: the full [nl-quick-add](nl-quick-add.md) R6 schema and a reduced one holding only the fields the rules left empty (most phrases need only the date fields). Bound every request with a 10 s timeout and count timeouts as failures, so the known hang (WindowsAppSDK issue #6871) shows in the numbers.
   - Known evidence before the spike (2026-11-11): issue #6871, on a Ryzen AI 7 PRO 350 with SDK 2.5.4-experimental, reports structured JSON sometimes not completing within 25 s, and 3–8 s when it does complete (plain generation 7.9 s). Phi Silica is to be replaced by Aion Instruct on retail devices in January 2027; a no-go result is re-checked once Aion Instruct is on this PC.
 
+## Spike results
+
+- 2026-11-11, Ryzen AI 7 350, Windows 10.0.26200, `Microsoft.WindowsAppSDK.AI` 2.6.5:
+  - The component package builds in Windows App SDK self-contained mode: no Windows App Runtime package dependency, runtime DLLs copied into the app, and the non-XAML `Microsoft.UI.*` files of `Microsoft.WindowsAppSDK.InteractiveExperiences` added to the package. No WinUI or `Microsoft.UI.Xaml` assemblies.
+  - The two `Appx...ReplaceManifestVersion` properties have no effect with the MSIX build tools 1.7: the Windows.Desktop `MaxVersionTested` is rewritten to 10.0.26100.0. Setting it to 10.0.26226.0 by hand did not change the result below.
+  - `LanguageModel.GetReadyState()` returns `DisabledByUser`, although the systemAIModels consent is Allow both overall and for the app. No latency was measured. Result so far: NO-GO (unavailable); cause not found.
+
 ## Out of scope
 
 - Other runtimes (Foundry Local, Lemonade, Windows ML with bundled ONNX models), cloud models, embeddings and semantic search.

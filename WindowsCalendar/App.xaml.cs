@@ -128,6 +128,17 @@ public partial class App : Application
                 Timeout.Infinite, executeOnlyOnce: false);
         }
 
+        ToastActivator.LogScheduledCount();
+        ToastActivator.ScheduleTestToastsIfRequested();
+        RunModelSpikeIfRequested();
+
+        // Started by a toast action: stay hidden in the tray; the activator handles the action (reminders-notifications R2).
+        if (Program.ToastLaunch)
+        {
+            Log.Information("Started by toast action; staying in tray");
+            return;
+        }
+
         // Launched by the Start with Windows task: stay hidden in the tray (app-platform R6).
         if (global::Windows.ApplicationModel.AppInstance.GetActivatedEventArgs()?.Kind == global::Windows.ApplicationModel.Activation.ActivationKind.StartupTask)
         {
@@ -426,7 +437,23 @@ public partial class App : Application
         return new System.Drawing.Icon(System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", file));
     }
 
-    private void ShowMainWindow() => _window?.ShowAndFocus();
+    internal void ShowMainWindow() => _window?.ShowAndFocus();
+
+    /// <summary>
+    /// Spike (on-device-model R12): if LocalState\run-spike exists, deletes it and runs the model spike in the
+    /// background; the report goes to LocalState\spike-report.md.
+    /// </summary>
+    private static void RunModelSpikeIfRequested()
+    {
+        var folder = global::Windows.Storage.ApplicationData.Current.LocalFolder.Path;
+        var flag = System.IO.Path.Combine(folder, "run-spike");
+        if (!System.IO.File.Exists(flag))
+        {
+            return;
+        }
+        System.IO.File.Delete(flag);
+        _ = Task.Run(() => Ai.ModelSpike.RunAsync(folder, CancellationToken.None));
+    }
 
     private void Quit()
     {

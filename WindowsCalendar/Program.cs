@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 
@@ -19,16 +20,23 @@ public static class Program
     /// <summary>Set by a second launch; the running instance shows its window (see App.OnStartup).</summary>
     public static EventWaitHandle? Activated { get; private set; }
 
+    /// <summary>True when this process was started by a toast action (reminders-notifications R2); it stays in the tray.</summary>
+    public static bool ToastLaunch { get; private set; }
+
     [STAThread]
     private static int Main(string[] args)
     {
+        ToastLaunch = args.Contains("-ToastActivated");
         _instance = new Mutex(initiallyOwned: true, InstanceName + "-instance", out var first);
         var activated = new EventWaitHandle(false, EventResetMode.AutoReset, InstanceName + "-activate");
         if (!first)
         {
-            // Let the running instance bring its window to the foreground.
-            AllowSetForegroundWindow(AnyProcess);
-            activated.Set();
+            // Let the running instance bring its window to the foreground, unless a toast action started this launch.
+            if (!ToastLaunch)
+            {
+                AllowSetForegroundWindow(AnyProcess);
+                activated.Set();
+            }
             activated.Dispose();
             return 0;
         }
@@ -36,7 +44,15 @@ public static class Program
         Activated = activated;
         var app = new App();
         app.InitializeComponent();
-        return app.Run();
+        var cookie = ToastActivator.Register(ToastLaunch);
+        try
+        {
+            return app.Run();
+        }
+        finally
+        {
+            ToastActivator.Revoke(cookie);
+        }
     }
 
     [DllImport("user32.dll")]
