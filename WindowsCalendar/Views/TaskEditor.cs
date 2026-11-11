@@ -170,8 +170,11 @@ internal sealed class TaskEditor : UserControl
         }
     }
 
-    /// <summary>Opens a blank task for <paramref name="list"/> (tasks interim); it is created once it has a title.</summary>
-    public void OpenNew(Collection list, string title = "")
+    /// <summary>
+    /// Opens a blank task for <paramref name="list"/> (tasks interim); it is created once it has a title. Quick add's
+    /// "More details" passes the due date it understood (quick-add R4).
+    /// </summary>
+    public void OpenNew(Collection list, string title = "", DateOnly? due = null)
     {
         Save();
         _heading.Text = "New task";
@@ -180,7 +183,7 @@ internal sealed class TaskEditor : UserControl
         _newList = list;
         _writable = true;
         _completeOnly = false;
-        Show(new TaskFields(title, false, null, "normal", null), list);
+        Show(new TaskFields(title, false, due, "normal", null), list);
         _delete.Visibility = Visibility.Collapsed;
         _notice.IsOpen = false;
         if (!IsOpen)

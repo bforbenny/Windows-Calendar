@@ -82,7 +82,7 @@ public sealed partial class MainWindow
                 store.DeleteItem(copyId);
             }
             BannerFade.SetOpen(UndoBar, false);
-            Log.Information("Duplicate {ItemId} undone", copyId);
+            Log.Information("Added item {ItemId} undone", copyId);
         }
         catch (Exception ex)
         {

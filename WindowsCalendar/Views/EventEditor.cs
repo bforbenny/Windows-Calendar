@@ -256,8 +256,13 @@ internal sealed partial class EventEditor : UserControl
         ShowNotice(message, InfoBarSeverity.Informational);
     }
 
-    /// <summary>Opens a new event at a clicked slot (R5 interim); it is created once it has a title.</summary>
-    public async void OpenNew(DateTime start, bool allDay, IReadOnlyDictionary<string, Collection> collections, string title = "")
+    /// <summary>
+    /// Opens a new event at a clicked slot (R5 interim); it is created once it has a title. Quick add's "More details"
+    /// passes what it understood: <paramref name="fields"/> (used instead of the slot and title), the calendar and the
+    /// repeat rule (quick-add R4).
+    /// </summary>
+    public async void OpenNew(DateTime start, bool allDay, IReadOnlyDictionary<string, Collection> collections, string title = "",
+        EventFields? fields = null, string? calendarId = null, RepeatRule? repeat = null)
     {
         if (!await DiscardRuleAsync())
         {
@@ -269,7 +274,14 @@ internal sealed partial class EventEditor : UserControl
         {
             return;
         }
-        var defaultId = Store?.DefaultCalendarId is { } id && choices.Any(c => c.Id == id) ? id : choices[0].Id;
+        // A calendar named in quick add may be unticked in the sidebar.
+        if (calendarId is not null && choices.All(c => c.Id != calendarId) && collections.TryGetValue(calendarId, out var named)
+            && named.Kind == CollectionKind.Calendar && !named.ReadOnly)
+        {
+            choices.Add(named);
+        }
+        var defaultId = calendarId is not null && choices.Any(c => c.Id == calendarId) ? calendarId
+            : Store?.DefaultCalendarId is { } id && choices.Any(c => c.Id == id) ? id : choices[0].Id;
         _all = collections;
         _itemId = null;
         _recurrence = null;
@@ -277,10 +289,10 @@ internal sealed partial class EventEditor : UserControl
         _readOnly = false;
         _graph = false;
         _occurrenceId = null;
-        _savedRule = RepeatRule.None;
+        _savedRule = repeat ?? RepeatRule.None;
         _ruleAutosave = true;
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
-        Show("New event", new EventFields(title, allDay, start, end, null, null, allDay ? ShowAs.Free : ShowAs.Busy), choices, defaultId);
+        Show("New event", fields ?? new EventFields(title, allDay, start, end, null, null, allDay ? ShowAs.Free : ShowAs.Busy), choices, defaultId);
         _notice.IsOpen = false;
         _ = Dispatcher.BeginInvoke(DispatcherPriority.Input, () => _title.Focus());
     }

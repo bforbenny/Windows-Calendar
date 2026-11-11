@@ -53,7 +53,7 @@ public sealed partial class MainWindow
     {
         KeyHintLayer.Children.Clear();
         AddKeyHint(SidebarButton, "Ctrl+B");
-        AddKeyHint(NewButton, "Ctrl+N");
+        AddKeyHint(QuickBox, "Ctrl+N");
         AddKeyHint(TodayButton, "T");
         AddKeyHint(PeriodTitle, "Ctrl+G");
         for (var i = 0; i < ViewSwitcher.Children.Count && i < 4; i++)

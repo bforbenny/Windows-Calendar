@@ -99,12 +99,8 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 Select(e, e.FirstDay, reveal: false);
                 OpenItem(e);
             };
-            view.CreateRequested += (start, allDay) =>
-            {
-                ShowEventEditor();
-                _editor.CanSwitchToTask = NewTaskList() is not null;
-                _editor.OpenNew(start, allDay, _collections);
-            };
+            // An empty slot opens the quick-create popup, not the full editor (quick-add R1).
+            view.CreateRequested += OpenQuickCreate;
             view.EventDropped += OnEventDropped;
         }
         EventDrag.DuplicateRequested += e => Duplicate(e, null);
@@ -129,9 +125,9 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             }
             else if (key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                // Ctrl+N: the New button, until quick add takes the key (keyboard-navigation interim).
+                // Ctrl+N focuses the toolbar quick-add box (quick-add R1).
                 e.Handled = true;
-                NewDefault();
+                FocusQuickAdd();
             }
             else if (HandleShortcut(key))
             {
@@ -185,6 +181,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         };
         _editor.OpenChanged += PlaceEditor;
         SetupTasks();
+        SetupQuickAdd();
         SetupKeyHints();
 
         // Redraw in the new theme when Windows switches light/dark or high contrast (app-platform R2a).
