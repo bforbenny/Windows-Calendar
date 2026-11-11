@@ -692,7 +692,7 @@ public sealed partial class LocalStore : IDisposable
                        CASE WHEN i.series_id IS NOT NULL AND i.summary IS NULL THEN COALESCE(m.unaccepted, 0) ELSE i.unaccepted END,
                        i.completed_utc IS NOT NULL OR lower(COALESCE(i.status, '')) = 'completed',
                        CASE WHEN i.kind = 'Event' THEN COALESCE(i.status, m.status) END,
-                       COALESCE(i.join_url, m.join_url)
+                       COALESCE(i.join_url, m.join_url), COALESCE(i.time_zone, m.time_zone)
                 FROM occurrences o JOIN items i ON i.id = o.item_id
                 LEFT JOIN items m ON i.series_id IS NOT NULL AND m.collection_id = i.collection_id AND m.remote_id = i.series_id AND m.deleted = 0
                 WHERE i.deleted = 0 AND o.start_utc < $to AND o.end_utc >= $from
@@ -707,7 +707,7 @@ public sealed partial class LocalStore : IDisposable
                 list.Add(new OccurrenceView(r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)),
                     NullableString(r, 3), NullableString(r, 4), Time(r, 5), Time(r, 6), r.GetBoolean(7), r.GetBoolean(8),
                     r.IsDBNull(9) ? null : Time(r, 9), r.GetBoolean(10), r.GetBoolean(11), r.GetBoolean(12),
-                    ShowAsValues.FromGraph(NullableString(r, 13)), NullableString(r, 14)));
+                    ShowAsValues.FromGraph(NullableString(r, 13)), NullableString(r, 14), NullableString(r, 15)));
             }
             return list;
         }

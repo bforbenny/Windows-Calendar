@@ -460,6 +460,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         _renderPending = false;
         ViewParts.Working = Store?.GetWorkingHours() ?? WorkingHours.Default;
         ViewParts.ShowWeekNumbers = SettingsPage.WeekNumbersOn(Store);
+        ViewParts.SecondaryZone = RulerPicker.Zone(Store);
         if (_view == ViewKind.Tasks)
         {
             RenderTasks();

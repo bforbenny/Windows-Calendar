@@ -10,6 +10,7 @@ using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Reminders;
 using WindowsCalendar.Core.Store;
+using WindowsCalendar.Core.Views;
 using ContentDialog = Wpf.Ui.Controls.ContentDialog;
 using ContentDialogButton = Wpf.Ui.Controls.ContentDialogButton;
 using ContentDialogResult = Wpf.Ui.Controls.ContentDialogResult;
@@ -38,6 +39,14 @@ internal sealed partial class EventEditor : UserControl
     private readonly TimeBox _startTime = new() { VerticalAlignment = VerticalAlignment.Bottom };
     private readonly DatePicker _endDate = new();
     private readonly TimeBox _endTime = new() { VerticalAlignment = VerticalAlignment.Bottom };
+    // The times in the event's own timezone, when it is not the Windows one (timezone-handling R9).
+    private readonly TextBlock _zoneNote = new()
+    {
+        Style = Theme.Style("CaptionTextBlockStyle"),
+        Foreground = Theme.Brush("TextSecondaryBrush"),
+        TextWrapping = TextWrapping.Wrap,
+        Margin = new Thickness(0, -8, 0, 0),
+    };
     private readonly TextBox _location = new();
     private readonly ComboBox _calendar = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly ComboBox _showAs = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
@@ -52,6 +61,8 @@ internal sealed partial class EventEditor : UserControl
     private readonly RepeatPanel _repeat = new();
 
     private string? _itemId;
+    // The open event's start and end zone ids as stored (timezone-handling R9); none for a new event.
+    private (string? Start, string? End) _zones;
     // The rule as saved; null when the controls can't show it (R7).
     private RepeatRule? _savedRule;
     // Opened as a new or single event: rule changes save at once, with no scope question.
@@ -97,6 +108,7 @@ internal sealed partial class EventEditor : UserControl
         form.Children.Add(_allDay);
         form.Children.Add(ViewParts.Field("Start", DateTimeRow(_startDate, _startTime)));
         form.Children.Add(ViewParts.Field("End", DateTimeRow(_endDate, _endTime)));
+        form.Children.Add(_zoneNote);
         form.Children.Add(_repeat);
         form.Children.Add(ViewParts.Field("Location", _location));
         form.Children.Add(ViewParts.Field("Show as", _showAs));
@@ -271,6 +283,7 @@ internal sealed partial class EventEditor : UserControl
         _ruleAutosave = recurrence is null;
         // Meetings and invitations stay in their calendar (calendar-views R8).
         var meeting = Core.Sync.EventTransfer.IsMeeting(item);
+        _zones = TimeZoneLabels.EventZones(item);
         Show("Event", fields, CalendarChoices(collection, !meeting), collection.Id);
         _calendar.IsEnabled = !_readOnly && !meeting;
         var message = collection.SourceUrl is not null ? "This is a subscribed calendar and can't be edited here."
@@ -316,6 +329,7 @@ internal sealed partial class EventEditor : UserControl
         _occurrenceId = null;
         _savedRule = repeat ?? RepeatRule.None;
         _ruleAutosave = true;
+        _zones = default;
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
         Show("New event", fields ?? new EventFields(title, allDay, start, end, null, null, allDay ? ShowAs.Free : ShowAs.Busy), choices, defaultId);
         _notice.IsOpen = false;
@@ -510,8 +524,29 @@ internal sealed partial class EventEditor : UserControl
 
     private ShowAs ReadShowAs() => (_showAs.SelectedItem as ComboBoxItem)?.Tag is ShowAs value ? value : ShowAs.Busy;
 
-    private void ShowTimePickers() =>
+    private void ShowTimePickers()
+    {
         _startTime.Visibility = _endTime.Visibility = _allDay.IsChecked == true ? Visibility.Collapsed : Visibility.Visible;
+        ShowZoneNote();
+    }
+
+    /// <summary>
+    /// The shown times in the event's own timezone (and end timezone) when that is not the Windows one, e.g.
+    /// "09:00 – 10:00 New York time" (timezone-handling R9). Nothing for all-day, floating and custom-zone events.
+    /// </summary>
+    private void ShowZoneNote()
+    {
+        var local = TimeZoneInfo.Local;
+        DateTimeOffset At(DatePicker date, TimeBox time)
+        {
+            var wall = (date.SelectedDate?.Date ?? DateTime.Today) + time.Time;
+            return new DateTimeOffset(wall, local.GetUtcOffset(wall));
+        }
+        var text = _allDay.IsChecked == true ? null
+            : TimeZoneLabels.OriginalTime(At(_startDate, _startTime), At(_endDate, _endTime), _zones.Start, _zones.End, local);
+        _zoneNote.Text = text ?? "";
+        _zoneNote.Visibility = text is null ? Visibility.Collapsed : Visibility.Visible;
+    }
 
     /// <summary>Moving the start keeps the duration: the end moves with it.</summary>
     private void StartChanged()
@@ -563,6 +598,7 @@ internal sealed partial class EventEditor : UserControl
         }
         var fields = ReadFields();
         _shownStart = fields.Start;
+        ShowZoneNote();
         var now = DateTimeOffset.UtcNow;
         var zone = TimeZoneInfo.Local;
         try

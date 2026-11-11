@@ -53,6 +53,9 @@ internal static class ViewParts
     /// <summary>"Show week numbers" (calendar-shading R7), set from the store before each render.</summary>
     public static bool ShowWeekNumbers { get; set; }
 
+    /// <summary>The secondary timezone ruler's zone, null when off (timezone-handling R8), set from the store before each render.</summary>
+    public static TimeZoneInfo? SecondaryZone { get; set; }
+
     /// <summary>The window's content; drag positions are in its coordinates ("window" points).</summary>
     public static UIElement? Root { get; set; }
 

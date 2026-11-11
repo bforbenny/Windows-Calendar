@@ -232,6 +232,13 @@ internal static class Migrations
             PRIMARY KEY (account_type, username, server_url, remote_ref, kind)
         );
         """,
+
+        // v17: each set's secondary timezone ruler (calendar-sets R11); null in a set saved before it, which uses the
+        // "All" default kept in meta.
+        """
+        ALTER TABLE calendar_sets ADD COLUMN ruler_on INTEGER NULL;
+        ALTER TABLE calendar_sets ADD COLUMN ruler_zone TEXT NULL;
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

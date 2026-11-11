@@ -5,11 +5,14 @@ namespace WindowsCalendar.Core.Store;
 /// <summary>
 /// Calendar sets (calendar-sets R1, R2, R5, R8): named groups of collections, stored locally and never synced. The
 /// sidebar ticks (the meta "hidden:" keys) stay the current visibility; switching a set rewrites them to its members.
-/// "All" is built in, not a row: every collection, and no active set id in meta.
+/// "All" is built in, not a row: every collection, and no active set id in meta. Each set also holds the secondary
+/// timezone ruler (R11): the current ruler is in meta like the ticks, and "All"'s default ruler too.
 /// </summary>
 public sealed partial class LocalStore
 {
     private const string ActiveSetKey = "active_set";
+    private const string RulerKey = "ruler";
+    private const string DefaultRulerKey = "ruler_default";
 
     /// <summary>User-defined sets in selector order.</summary>
     public IReadOnlyList<CalendarSet> GetCalendarSets()
@@ -53,19 +56,21 @@ public sealed partial class LocalStore
             Execute(_connection, tx, "INSERT INTO calendar_sets (id, name, position) VALUES ($id, $name, $pos);",
                 ("$id", set.Id), ("$name", set.Name), ("$pos", set.Position));
             SaveMembers(tx, set.Id);
+            SaveRuler(tx, set.Id);
             SetMeta(tx, ActiveSetKey, set.Id);
             tx.Commit();
             return set;
         }
     }
 
-    /// <summary>"Update '&lt;set&gt;'" (R3): the set's members become the collections ticked now.</summary>
+    /// <summary>"Update '&lt;set&gt;'" (R3, R11): the set's members become the collections ticked now, its ruler the current one.</summary>
     public void UpdateCalendarSet(string setId)
     {
         lock (_gate)
         {
             using var tx = _connection.BeginTransaction();
             SaveMembers(tx, setId);
+            SaveRuler(tx, setId);
             tx.Commit();
         }
     }
@@ -131,6 +136,7 @@ public sealed partial class LocalStore
             if (wasActive)
             {
                 Execute(_connection, tx, "DELETE FROM meta WHERE key LIKE 'hidden:%' OR key = $key;", ("$key", ActiveSetKey));
+                SetRulerMeta(tx, RulerKey, ReadRuler(tx, DefaultRulerKey));
             }
             tx.Commit();
         }
@@ -138,7 +144,7 @@ public sealed partial class LocalStore
 
     /// <summary>
     /// Makes <paramref name="setId"/> (null: "All") the active set and rewrites the sidebar ticks to its members, which
-    /// drops any manual override (R5).
+    /// drops any manual override (R5); the current ruler becomes the set's, or the "All" default (R11).
     /// </summary>
     public void SwitchToSet(string? setId)
     {
@@ -161,15 +167,24 @@ public sealed partial class LocalStore
                     ("$set", setId));
                 SetMeta(tx, ActiveSetKey, setId);
             }
+            SetRulerMeta(tx, RulerKey, RulerOf(tx, setId));
             tx.Commit();
         }
     }
 
-    /// <summary>True while the sidebar ticks differ from the active set's members, shown as "(modified)" (R5).</summary>
+    /// <summary>
+    /// True while the sidebar ticks differ from the active set's members, or the current ruler from its ruler, shown as
+    /// "(modified)" (R5, R11). "All" is never modified by the ruler: a change there is its default.
+    /// </summary>
     public bool IsActiveSetModified()
     {
         lock (_gate)
         {
+            var active = ActiveSet(null);
+            if (active is not null && !ReadRuler(null, RulerKey).SameAs(RulerOf(null, active)))
+            {
+                return true;
+            }
             // A collection whose tick does not match: hidden though in the set, or shown though not ("All" has every one).
             using var cmd = Command(_connection, null,
                 """
@@ -179,8 +194,35 @@ public sealed partial class LocalStore
                         = ($set IS NULL OR EXISTS (
                               SELECT 1 FROM calendar_set_members m WHERE m.set_id = $set AND m.collection_id = c.id)));
                 """,
-                ("$set", ActiveSet(null)));
+                ("$set", active));
             return Convert.ToInt64(cmd.ExecuteScalar()) == 1;
+        }
+    }
+
+    /// <summary>The secondary timezone ruler shown now (timezone-handling R8, calendar-sets R11).</summary>
+    public RulerChoice GetRuler()
+    {
+        lock (_gate)
+        {
+            return ReadRuler(null, RulerKey);
+        }
+    }
+
+    /// <summary>
+    /// Changes the ruler shown now (R11). While "All" is active it is also saved as the default at once; while a
+    /// user-defined set is active the set is "(modified)" until Update or the next switch.
+    /// </summary>
+    public void SetRuler(RulerChoice ruler)
+    {
+        lock (_gate)
+        {
+            using var tx = _connection.BeginTransaction();
+            SetRulerMeta(tx, RulerKey, ruler);
+            if (ActiveSet(tx) is null)
+            {
+                SetRulerMeta(tx, DefaultRulerKey, ruler);
+            }
+            tx.Commit();
         }
     }
 
@@ -191,6 +233,36 @@ public sealed partial class LocalStore
             "SELECT id FROM calendar_sets WHERE id = (SELECT value FROM meta WHERE key = $key);", ("$key", ActiveSetKey));
         return cmd.ExecuteScalar() as string;
     }
+
+    /// <summary>A set's ruler, or the "All" default for "All" (null) and for a set saved without one (R11).</summary>
+    private RulerChoice RulerOf(SqliteTransaction? tx, string? setId)
+    {
+        if (setId is not null)
+        {
+            using var cmd = Command(_connection, tx, "SELECT ruler_on, ruler_zone FROM calendar_sets WHERE id = $id;", ("$id", setId));
+            using var r = cmd.ExecuteReader();
+            if (r.Read() && !r.IsDBNull(0))
+            {
+                return new RulerChoice(r.GetBoolean(0), r.IsDBNull(1) ? null : r.GetString(1));
+            }
+        }
+        return ReadRuler(tx, DefaultRulerKey);
+    }
+
+    /// <summary>Saves the current ruler into a set (R11).</summary>
+    private void SaveRuler(SqliteTransaction tx, string setId)
+    {
+        var ruler = ReadRuler(tx, RulerKey);
+        Execute(_connection, tx, "UPDATE calendar_sets SET ruler_on = $on, ruler_zone = $zone WHERE id = $id;",
+            ("$id", setId), ("$on", ruler.On), ("$zone", ruler.ZoneId));
+    }
+
+    /// <summary>A ruler in meta as "1|zone" or "0|zone" (the zone may be empty); off when absent.</summary>
+    private RulerChoice ReadRuler(SqliteTransaction? tx, string key) =>
+        GetMeta(tx, key) is { Length: >= 2 } v && v[1] == '|' ? new RulerChoice(v[0] == '1', v.Length > 2 ? v[2..] : null) : RulerChoice.Off;
+
+    private void SetRulerMeta(SqliteTransaction tx, string key, RulerChoice ruler) =>
+        SetMeta(tx, key, (ruler.On ? "1|" : "0|") + ruler.ZoneId);
 
     /// <summary>Replaces a set's members with the collections not hidden now.</summary>
     private void SaveMembers(SqliteTransaction tx, string setId) =>

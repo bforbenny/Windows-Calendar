@@ -2,7 +2,7 @@
 description: Named calendar sets that switch which calendars and task lists are visible in one click (e.g. Work, Personal)
 when-to-use: Before working on calendar visibility, the sidebar, or set switching
 tags: [ui, calendars, visibility, sets]
-status: updated
+status: closed
 ---
 
 # Calendar sets
@@ -55,7 +55,7 @@ Each slice is built, tested and checked in the app before the next starts.
 - [x] Ticking a calendar while "Work" is active shows "Work (modified)"; Update 'Work' saves it, and the mark goes.
 - [x] Ticks, the active set and "(modified)" survive a restart.
 - [x] Removing an MS365 account and adding it again puts its calendars back in "Work" with their ticks, colours, shapes and Reminders on as before, and "Work" is not "(modified)".
-- [ ] With a London ruler saved in "Work" and none in "Personal", switching sets shows and hides the ruler; changing the zone while in "Work" shows "Work (modified)" until Update.
+- [x] With a London ruler saved in "Work" and none in "Personal", switching sets shows and hides the ruler; changing the zone while in "Work" shows "Work (modified)" until Update.
 
 ## Dependencies
 

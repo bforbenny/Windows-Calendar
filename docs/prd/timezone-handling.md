@@ -47,7 +47,7 @@ Fixes needed in built code (slice 1):
 Each slice is built, tested and checked in the app before the next starts.
 
 1. Fixes F1–F6, and tests: a weekly 09:00 Sydney series across DST in both backends, unknown TZIDs and Graph custom zones, separate end zones, the occurrence index after a zone change. Built 2026-11-11 (package 1.0.17.0) with automated tests passing; in-app checks skipped by the user, not verified (timezone change while open, Graph all-day after a zone change, separate end zone in Outlook, Outlook custom zone, CalDAV custom VTIMEZONE, series move across March).
-2. Display: R9, R8 (ruler, Settings > Appearance, and the per-set ruler of [calendar-sets](calendar-sets.md) R11).
+2. Display: R9, R8 (ruler, Settings > Appearance, and the per-set ruler of [calendar-sets](calendar-sets.md) R11). Built and checked in the app 2026-11-11 (package 1.0.21.0).
 3. R7 for single events and whole series, with the separate end timezone.
 4. R7 for this occurrence and this and following.
 
@@ -63,7 +63,7 @@ Each slice is built, tested and checked in the app before the next starts.
 - [ ] A weekly 09:00 Australia/Sydney event stays at 09:00 local across the DST change, in both backends.
 - [ ] An event created in the app with timezone America/New_York shows the correct time in Outlook and in another CalDAV client.
 - [ ] All-day events never shift a day when the system timezone changes.
-- [ ] The secondary timezone column aligns correctly with the primary ruler; in a week with a DST change in either zone, it follows today's offset (or the first visible day's) and notes the day the offset changes.
+- [x] The secondary timezone column aligns correctly with the primary ruler; in a week with a DST change in either zone, it follows today's offset (or the first visible day's) and notes the day the offset changes.
 - [ ] An event with a separate end timezone (e.g. Sydney to London) shows the right start and end in Outlook and in another CalDAV client.
 - [ ] Changing the timezone of one occurrence, and of "this and following", keeps the other occurrences unchanged, in both backends.
 

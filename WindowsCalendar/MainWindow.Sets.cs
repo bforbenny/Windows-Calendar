@@ -81,7 +81,9 @@ public sealed partial class MainWindow
         RenderView();
     }
 
-    /// <summary>The ⋯ menu (R3): Save as new set, Update the active set while it is modified, Manage sets.</summary>
+    /// <summary>
+    /// The ⋯ menu (R3): Save as new set, Update the active set while it is modified, Secondary timezone (R11), Manage sets.
+    /// </summary>
     private void OnSetMenu(object sender, RoutedEventArgs e)
     {
         if (Store is not { } store)
@@ -103,10 +105,37 @@ public sealed partial class MainWindow
             };
             menu.Items.Add(update);
         }
+        var ruler = new MenuItem { Header = "Secondary timezone…" };
+        ruler.Click += async (_, _) => await SecondaryTimezoneAsync();
+        menu.Items.Add(ruler);
         var manage = new MenuItem { Header = "Manage sets…" };
         manage.Click += (_, _) => OpenSettings("Calendar sets");
         menu.Items.Add(manage);
         menu.IsOpen = true;
+    }
+
+    /// <summary>
+    /// The ruler toggle and zone (R11, timezone-handling R8), the same setting as Settings &gt; Appearance. Each change
+    /// redraws the Week view and the selector's "(modified)".
+    /// </summary>
+    private async Task SecondaryTimezoneAsync()
+    {
+        if (Store is not { } store)
+        {
+            return;
+        }
+        var dialog = new ContentDialog(DialogHost)
+        {
+            Title = "Secondary timezone",
+            Content = RulerPicker.Build(store, () =>
+            {
+                ShowSets(true);
+                RenderView();
+            }),
+            CloseButtonText = "Close",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        await dialog.ShowAsync();
     }
 
     /// <summary>Asks for a name, then saves the current ticks as a new set, which becomes the active one (R3).</summary>

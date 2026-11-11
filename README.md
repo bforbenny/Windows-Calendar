@@ -25,7 +25,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [duplicate-event](docs/prd/duplicate-event.md) | Duplicate an event | in-progress |
 | [undo](docs/prd/undo.md) | Undo recent changes | in-progress |
 | [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | in-progress |
-| [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | updated |
+| [calendar-sets](docs/prd/calendar-sets.md) | Named sets of visible calendars | closed |
 | [calendar-shading](docs/prd/calendar-shading.md) | Working hours, public holidays, week numbers | closed |
 | [app-updates](docs/prd/app-updates.md) | MSIX updates via App Installer, data across versions, new-PC install | pending |
 | [tray-flyout](docs/prd/tray-flyout.md) | Tray pop-up with today's agenda and Join | closed |

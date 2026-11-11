@@ -7,6 +7,7 @@ using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using WindowsCalendar.Core.Store;
+using WindowsCalendar.Core.Views;
 
 namespace WindowsCalendar.Views;
 
@@ -16,11 +17,12 @@ namespace WindowsCalendar.Views;
 /// calendars, subscriptions and MS365 meetings (sync-ms365 second slice) cannot. <paramref name="Recurrence"/> names the occurrence of a repeating event.
 /// A task (tasks R6 interim) is never dragged; <paramref name="Checkable"/> lets its checkbox complete it.
 /// <paramref name="ShowAs"/> sets the card's style (event-show-as R5). <paramref name="Join"/> is its online-meeting link
-/// (online-meeting-join R2).
+/// (online-meeting-join R2). <paramref name="OriginalTime"/> is its time in its own timezone when that differs from
+/// the Windows one (timezone-handling R9).
 /// </summary>
 internal sealed record DisplayEvent(string ItemId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay,
     Collection Collection, bool Editable, DateTimeOffset? Recurrence, ShowAs ShowAs = ShowAs.Busy, bool IsTask = false, bool Checkable = false,
-    JoinLink? Join = null)
+    JoinLink? Join = null, string? OriginalTime = null)
 {
     /// <summary>Join shows on cards from this many minutes before the start until the end (online-meeting-join R4).</summary>
     public const int JoinLeadMinutes = 10;
@@ -52,7 +54,9 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
         !o.ReadOnly && !collection.ReadOnly && collection.SourceUrl is null,
         o.RecurrenceUtc,
         o.ShowAs,
-        Join: o.Kind == ItemKind.Event ? JoinLink.Recognise(o.JoinUrl) : null);
+        Join: o.Kind == ItemKind.Event ? JoinLink.Recognise(o.JoinUrl) : null,
+        OriginalTime: o.Kind == ItemKind.Event && !o.AllDay
+            ? TimeZoneLabels.OriginalTime(o.StartUtc, o.EndUtc, o.TimeZone, null, TimeZoneInfo.Local) : null);
 
     /// <summary>Times in the Windows region format (ui-style R7).</summary>
     public string TimeText()
@@ -70,7 +74,7 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
 
     /// <summary>Tooltip and screen-reader name (calendar-views R4a, keyboard-navigation R6).</summary>
     public string Description() =>
-        string.Join(", ", new[] { Title, TimeText(), Location, Collection.Name }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        string.Join(", ", new[] { Title, TimeText(), OriginalTime, Location, Collection.Name }.Where(s => !string.IsNullOrWhiteSpace(s)));
 }
 
 /// <summary>

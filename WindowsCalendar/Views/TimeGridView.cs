@@ -13,11 +13,13 @@ namespace WindowsCalendar.Views;
 /// Week view (calendar-views R1a, R3, R4, R4a): a continuous strip of day columns, seven filling the width, that
 /// scrolls horizontally through days and vertically through hours. Day headers and the all-day lane follow the
 /// horizontal scroll; hour labels follow the vertical scroll, in the same layout pass. The day columns and headers
-/// are fixed-width items in <see cref="VirtualStrip"/>s.
+/// are fixed-width items in <see cref="VirtualStrip"/>s. An optional secondary timezone ruler (timezone-handling R8)
+/// sits left of the hour labels, so the primary ruler stays next to the grid, and follows the same vertical scroll.
 /// </summary>
 internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
 {
     private const double GutterWidth = 56;
+    private const double RulerWidth = 64;
     private const double LaneHeight = 22;
     private const int VisibleDays = 7;
     private static readonly double DayHeight = DayColumnPanel.PixelsFor(24 * 60);
@@ -26,6 +28,12 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
     private readonly VirtualStrip _headers;
     private readonly ScrollViewer _laneScroll = ViewParts.FollowerStrip(horizontal: true);
     private readonly ScrollViewer _gutterScroll = ViewParts.FollowerStrip(horizontal: false);
+    private readonly ScrollViewer _rulerScroll = ViewParts.FollowerStrip(horizontal: false);
+    private readonly TextBlock[] _rulerHours = new TextBlock[24];
+    // The ruler's zone name and offset note, above its hour labels.
+    private readonly StackPanel _rulerHeader = new() { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(4, 0, 4, 0) };
+    private readonly TextBlock _rulerName = new() { HorizontalAlignment = HorizontalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+    private readonly TextBlock _rulerNote = new() { HorizontalAlignment = HorizontalAlignment.Center, TextAlignment = TextAlignment.Center, TextWrapping = TextWrapping.Wrap };
     private readonly Canvas _laneCanvas = new() { Background = ViewParts.Clickable };
     // "Wk 45" above the hour labels, for the week in the middle of the view (calendar-shading R7 interim).
     private readonly TextBlock _weekLabel = new()
@@ -49,6 +57,8 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
     private DateTime _grabTime;
     private int _grabDay;
     private bool _dragging;
+    // What the ruler labels were built for: zone, first visible day, today; rebuilt when any changes.
+    private (string Zone, DateOnly First, DateOnly Today)? _rulerFor;
 
     public TimeGridView()
     {
@@ -59,6 +69,7 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
         };
 
         var root = new Grid();
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(GutterWidth) });
         root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -69,12 +80,24 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
         _weekLabel.Style = Theme.Style("CaptionTextBlockStyle");
         _weekLabel.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
         _gutterScroll.Content = BuildGutter();
-        Add(root, _headers, 0, 1);
-        Add(root, _laneScroll, 1, 1);
-        Add(root, _gutterScroll, 2, 0);
-        Add(root, _weekLabel, 0, 0);
-        Add(root, _body, 2, 1);
-        Overlay = ViewParts.Overlay(root, 3, 2);
+        _rulerScroll.Content = BuildRuler();
+        _rulerScroll.Width = RulerWidth;
+        _rulerHeader.Width = RulerWidth - 8;
+        foreach (var text in new[] { _rulerName, _rulerNote })
+        {
+            text.Style = Theme.Style("CaptionTextBlockStyle");
+            text.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
+            _rulerHeader.Children.Add(text);
+        }
+        _rulerScroll.Visibility = _rulerHeader.Visibility = Visibility.Collapsed;
+        Add(root, _headers, 0, 2);
+        Add(root, _laneScroll, 1, 2);
+        Add(root, _rulerHeader, 0, 0);
+        Add(root, _rulerScroll, 2, 0);
+        Add(root, _gutterScroll, 2, 1);
+        Add(root, _weekLabel, 0, 1);
+        Add(root, _body, 2, 2);
+        Overlay = ViewParts.Overlay(root, 3, 3);
         Content = root;
 
         Scroll.ScrollChanged += (_, e) =>
@@ -86,6 +109,7 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
             _headers.Scroll.ScrollToHorizontalOffset(Scroll.HorizontalOffset);
             _laneScroll.ScrollToHorizontalOffset(Scroll.HorizontalOffset);
             _gutterScroll.ScrollToVerticalOffset(Scroll.VerticalOffset);
+            _rulerScroll.ScrollToVerticalOffset(Scroll.VerticalOffset);
             if (_columnWidth > 0 && e.HorizontalChange != 0)
             {
                 _anchor = _first.AddDays((int)Math.Round(Scroll.HorizontalOffset / _columnWidth));
@@ -131,6 +155,9 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
             Math.Max(0, e.FirstDay.DayNumber - first.DayNumber),
             Math.Min(days - 1, e.LastDay.DayNumber - first.DayNumber))).ToArray();
         _laneRows = EventLayout.Lanes(_laneSpans);
+        // A new render may bring another ruler zone or Windows timezone (timezone-handling R6, R8).
+        _rulerFor = null;
+        _rulerScroll.Visibility = _rulerHeader.Visibility = ViewParts.SecondaryZone is null ? Visibility.Collapsed : Visibility.Visible;
         Relayout(force: true);
     }
 
@@ -274,7 +301,33 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
 
         var middle = _first.AddDays((int)((Scroll.HorizontalOffset + Scroll.ViewportWidth / 2) / _columnWidth));
         _weekLabel.Text = ViewParts.ShowWeekNumbers ? ViewParts.WeekLabel(middle, _first.DayOfWeek) : "";
+        ShowRuler(_first.AddDays((int)Math.Round(Scroll.HorizontalOffset / _columnWidth)));
         VisibleDayChanged?.Invoke(middle);
+    }
+
+    /// <summary>
+    /// The secondary ruler's labels for the seven days from <paramref name="firstVisible"/> (timezone-handling R8):
+    /// today's offset when today is among them, else the first day's, with a note when another day's offset differs.
+    /// </summary>
+    private void ShowRuler(DateOnly firstVisible)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        if (ViewParts.SecondaryZone is not { } zone || _rulerFor == (zone.Id, firstVisible, today))
+        {
+            return;
+        }
+        _rulerFor = (zone.Id, firstVisible, today);
+        var labels = SecondaryRuler.Build(zone, TimeZoneInfo.Local, firstVisible, VisibleDays, today);
+        for (var h = 1; h < 24; h++)
+        {
+            _rulerHours[h].Text = labels.Hours[h];
+        }
+        _rulerName.Text = labels.Name;
+        _rulerName.ToolTip = zone.DisplayName;
+        _rulerNote.Text = labels.Note ?? "";
+        _rulerNote.Visibility = labels.Note is null ? Visibility.Collapsed : Visibility.Visible;
+        System.Windows.Automation.AutomationProperties.SetName(_rulerHeader,
+            labels.Note is null ? $"{labels.Name} time" : $"{labels.Name} time, {labels.Note}");
     }
 
     private void BindHeader(Border header, int index)
@@ -513,6 +566,26 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
             gutter.Children.Add(label);
         }
         return gutter;
+    }
+
+    /// <summary>The secondary ruler's hour labels, aligned with the primary ones; <see cref="ShowRuler"/> sets their text.</summary>
+    private Grid BuildRuler()
+    {
+        var ruler = new Grid { Height = DayHeight };
+        for (var h = 1; h < 24; h++)
+        {
+            var label = new TextBlock
+            {
+                Style = Theme.Style("CaptionTextBlockStyle"),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(0, DayColumnPanel.PixelsFor(h * 60) - 8, 8, 0),
+            };
+            label.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondaryBrush");
+            _rulerHours[h] = label;
+            ruler.Children.Add(label);
+        }
+        return ruler;
     }
 
     /// <summary>The days a timed event touches (it is clipped to each).</summary>

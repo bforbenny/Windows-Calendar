@@ -7,6 +7,7 @@ using Serilog;
 using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Store;
+using WindowsCalendar.Core.Views;
 
 namespace WindowsCalendar.Views;
 
@@ -41,6 +42,7 @@ internal sealed partial class EventEditor
         // A series moves to another calendar in Outlook (its exceptions would be lost here). Meetings and invitations
         // are read-only, so they stay in their calendar (calendar-views R8).
         var movable = !_readOnly && master is null && !item.IsRecurring;
+        _zones = TimeZoneLabels.EventZones(item);
         Show("Event", GraphEventMapper.Read(item, master, zone), CalendarChoices(collection, movable), collection.Id);
         _calendar.IsEnabled = movable;
         var message = collection.ReadOnly ? "This calendar is read-only."

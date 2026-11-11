@@ -57,6 +57,17 @@ public sealed record Collection(
 public sealed record CalendarSet(string Id, string Name, int Position);
 
 /// <summary>
+/// The secondary timezone ruler (timezone-handling R8, calendar-sets R11): on or off, and its zone (a Windows id; kept
+/// while off). Two rulers are the same when both are off, or both on in the same zone.
+/// </summary>
+public sealed record RulerChoice(bool On, string? ZoneId)
+{
+    public static readonly RulerChoice Off = new(false, null);
+
+    public bool SameAs(RulerChoice other) => On == other.On && (!On || ZoneId == other.ZoneId);
+}
+
+/// <summary>
 /// A cached event or task (local-store-offline R2): the raw server payload plus normalised columns.
 /// RemoteId is the CalDAV UID or Graph id; null until the server knows the item. SeriesId is the Graph id of an
 /// occurrence's series master. ReadOnly marks an event the app must not change (an MS365 meeting). Unaccepted marks
@@ -114,7 +125,10 @@ public sealed record CollectionChanges(int Added, int Updated, int Removed)
     public bool Any => Added + Updated + Removed > 0;
 }
 
-/// <summary>An occurrence with what the views need to draw it (calendar-views). Completed is for tasks.</summary>
+/// <summary>
+/// An occurrence with what the views need to draw it (calendar-views). Completed is for tasks. TimeZone is the event's
+/// own start zone id as stored (timezone-handling R9).
+/// </summary>
 public sealed record OccurrenceView(
     string ItemId,
     string CollectionId,
@@ -130,7 +144,8 @@ public sealed record OccurrenceView(
     bool Unaccepted = false,
     bool Completed = false,
     ShowAs ShowAs = ShowAs.Busy,
-    string? JoinUrl = null);
+    string? JoinUrl = null,
+    string? TimeZone = null);
 
 /// <summary>
 /// A search result (search R3, R5, R7): the item and occurrence to open, its date (null for an undated task), and its

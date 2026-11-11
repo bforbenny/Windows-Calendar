@@ -404,7 +404,7 @@ internal sealed class SettingsPage : UserControl
         return panel;
     }
 
-    // ---- Appearance (calendar-shading R7) ----
+    // ---- Appearance (calendar-shading R7, timezone-handling R8) ----
 
     private SpacedStack Appearance()
     {
@@ -429,6 +429,12 @@ internal sealed class SettingsPage : UserControl
             Foreground = Theme.Brush("TextSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
         });
+        // The secondary timezone ruler, saved with the active calendar set (timezone-handling R8, calendar-sets R11);
+        // a change can mark the set "(modified)", so the selector refreshes too.
+        if (Store is { } store)
+        {
+            panel.Children.Add(RulerPicker.Build(store, () => SetsChanged?.Invoke()));
+        }
         return panel;
     }
 

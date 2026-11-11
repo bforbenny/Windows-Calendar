@@ -3,7 +3,7 @@ using WindowsCalendar.Core.Store;
 
 namespace WindowsCalendar.Core.Tests;
 
-/// <summary>Calendar sets in the store (calendar-sets R1, R2, R5, R8, R9).</summary>
+/// <summary>Calendar sets in the store (calendar-sets R1, R2, R5, R8, R9, R11).</summary>
 public sealed class CalendarSetTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("wincal-sets-").FullName;
@@ -268,6 +268,129 @@ public sealed class CalendarSetTests : IDisposable
         Assert.False(_store.IsActiveSetModified());
         Assert.Equal(0, Count("SELECT COUNT(*) FROM calendar_set_members;"));
         Assert.Equal(0, Count("SELECT COUNT(*) FROM meta WHERE key = 'active_set';"));
+    }
+
+    // ---- Secondary timezone ruler per set (calendar-sets R11) ----
+
+    private static readonly RulerChoice London = new(true, "GMT Standard Time");
+    private static readonly RulerChoice Tokyo = new(true, "Tokyo Standard Time");
+
+    [Fact]
+    public void Ruler_IsOffUntilSet()
+    {
+        Assert.Equal(RulerChoice.Off, _store.GetRuler());
+    }
+
+    [Fact]
+    public void Ruler_ChangedWhileAllIsActive_IsTheDefaultAtOnce_NeverModified()
+    {
+        _store.SetRuler(London);
+
+        Assert.Equal(London, _store.GetRuler());
+        Assert.False(_store.IsActiveSetModified());
+        var work = SaveWork();
+        _store.SwitchToSet(work.Id);
+        _store.SetRuler(Tokyo);
+        _store.SwitchToSet(null);
+        Assert.Equal(London, _store.GetRuler());
+    }
+
+    [Fact]
+    public void Ruler_SavedWithANewSet_AndAppliedOnSwitch()
+    {
+        _store.SetRuler(London);
+        var work = SaveWork();
+        _store.SetRuler(Tokyo);
+        var tokyo = _store.CreateCalendarSet("Tokyo");
+
+        _store.SwitchToSet(work.Id);
+        Assert.Equal(London, _store.GetRuler());
+        _store.SwitchToSet(tokyo.Id);
+        Assert.Equal(Tokyo, _store.GetRuler());
+        Assert.False(_store.IsActiveSetModified());
+    }
+
+    [Fact]
+    public void Ruler_ChangedWhileASetIsActive_MarksItModified_UntilUpdate()
+    {
+        var work = SaveWork();
+        _store.SetRuler(Tokyo);
+
+        Assert.True(_store.IsActiveSetModified());
+        Assert.Equal(0, Count("SELECT COUNT(*) FROM meta WHERE key = 'ruler_default';"));
+        _store.UpdateCalendarSet(work.Id);
+        Assert.False(_store.IsActiveSetModified());
+        _store.SwitchToSet(null);
+        _store.SwitchToSet(work.Id);
+        Assert.Equal(Tokyo, _store.GetRuler());
+    }
+
+    [Fact]
+    public void Ruler_ZoneChangedWhileOff_IsNotAModification()
+    {
+        SaveWork();
+        _store.SetRuler(new RulerChoice(false, "Tokyo Standard Time"));
+        Assert.False(_store.IsActiveSetModified());
+        _store.SetRuler(Tokyo);
+        Assert.True(_store.IsActiveSetModified());
+    }
+
+    [Fact]
+    public void Ruler_SetWithoutOne_UsesTheAllDefault()
+    {
+        var work = SaveWork();
+        Execute("UPDATE calendar_sets SET ruler_on = NULL, ruler_zone = NULL;");
+        _store.SwitchToSet(null);
+        _store.SetRuler(London);
+
+        _store.SwitchToSet(work.Id);
+        Assert.Equal(London, _store.GetRuler());
+        Assert.False(_store.IsActiveSetModified());
+        _store.SetRuler(Tokyo);
+        Assert.True(_store.IsActiveSetModified());
+    }
+
+    [Fact]
+    public void Ruler_DeletingTheActiveSet_AppliesTheAllDefault()
+    {
+        _store.SetRuler(London);
+        var work = SaveWork();
+        _store.SetRuler(Tokyo);
+        _store.UpdateCalendarSet(work.Id);
+
+        _store.DeleteCalendarSet(work.Id);
+        Assert.Equal(London, _store.GetRuler());
+    }
+
+    [Fact]
+    public void Migration_AddsTheRulerColumns_ExistingSetsHaveNone()
+    {
+        var work = SaveWork();
+        _store.Dispose();
+        using (var c = new SqliteConnection($"Data Source={DbPath};Pooling=False"))
+        {
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "ALTER TABLE calendar_sets DROP COLUMN ruler_on; ALTER TABLE calendar_sets DROP COLUMN ruler_zone; PRAGMA user_version = 16;";
+            cmd.ExecuteNonQuery();
+        }
+
+        _store = LocalStore.Open(DbPath);
+
+        Assert.Equal(1, Count("SELECT COUNT(*) FROM calendar_sets WHERE ruler_on IS NULL AND ruler_zone IS NULL;"));
+        _store.SwitchToSet(null);
+        _store.SetRuler(London);
+        _store.SwitchToSet(work.Id);
+        Assert.Equal(London, _store.GetRuler());
+    }
+
+    private void Execute(string sql)
+    {
+        using var c = new SqliteConnection($"Data Source={DbPath};Pooling=False");
+        c.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = sql;
+        cmd.ExecuteNonQuery();
     }
 
     private long Count(string sql)
