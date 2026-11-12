@@ -2,7 +2,7 @@
 description: Colour palette, colour roles (tokens) for light and dark themes, calendar colours and calendar shape markers
 when-to-use: Before choosing any colour in the UI, styling event cards, status indicators, buttons, shading, or calendar swatches
 tags: [ui, theme, colour, accessibility, dark-mode]
-status: in-progress
+status: closed
 ---
 
 # UI colour theme
@@ -118,9 +118,9 @@ All UI colours come from one palette of 10-step ramps, where a given step has th
 
 - [x] An automated test computes WCAG contrast for every token pair in R3 and every calendar colour combination in R6, in both themes, and all pass (text ≥ 4.5:1, swatches/markers ≥ 3:1).
 - [x] No hex colour literal appears in XAML or C# outside the theme dictionaries.
-- [ ] With a Windows colour-blindness filter (Settings > Accessibility > Color filters, red-green and blue-yellow), any 8 automatically assigned calendars can be told apart in Week view.
-- [ ] Turning on a Windows high-contrast theme removes all palette colours and the app stays fully usable.
-- [ ] Delete buttons are Red; create/save buttons are Navy.
+- [x] With a Windows colour-blindness filter (Settings > Accessibility > Color filters, red-green and blue-yellow), any 8 automatically assigned calendars can be told apart in Week view.
+- [x] Turning on a Windows high-contrast theme removes all palette colours and the app stays fully usable.
+- [x] Delete buttons are Red; create/save buttons are Navy.
 
 ## Dependencies
 
