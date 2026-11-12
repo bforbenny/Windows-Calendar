@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+    xmlns:sys="clr-namespace:System;assembly=System.Runtime"
     ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
         <ResourceDictionary>
@@ -13,26 +14,45 @@
                 <ui:ControlsDictionary />
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- Type ramp (ui-style R2): Caption 12/16, Body 14/20, Body Strong 14/20 semibold, Subtitle 20/28, Title 28/36. -->
+            <!-- App font (ui-style R1): Segoe UI Variable, Segoe UI where it is missing. Set on each window, which the
+                 controls inherit; menus and tooltips are separate trees and get it from the styles below. -->
+            <FontFamily x:Key="AppFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+            <Style TargetType="ContextMenu" BasedOn="{StaticResource {x:Type ContextMenu}}">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+            </Style>
+            <Style TargetType="ToolTip" BasedOn="{StaticResource {x:Type ToolTip}}">
+                <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
+            </Style>
+
+            <!-- Type ramp (ui-style R2): Caption 12/16, Body 14/20, Body Strong 14/20 semibold, Subtitle 20/28, Title 28/36.
+                 The sizes are resources so TextScale can grow them with Windows Text size (display-scaling R8). -->
+            <sys:Double x:Key="CaptionFontSize">12</sys:Double>
+            <sys:Double x:Key="CaptionLineHeight">16</sys:Double>
+            <sys:Double x:Key="BodyFontSize">14</sys:Double>
+            <sys:Double x:Key="BodyLineHeight">20</sys:Double>
+            <sys:Double x:Key="SubtitleFontSize">20</sys:Double>
+            <sys:Double x:Key="SubtitleLineHeight">28</sys:Double>
+            <sys:Double x:Key="TitleFontSize">28</sys:Double>
+            <sys:Double x:Key="TitleLineHeight">36</sys:Double>
             <Style x:Key="CaptionTextBlockStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="12" />
-                <Setter Property="LineHeight" Value="16" />
+                <Setter Property="FontSize" Value="{DynamicResource CaptionFontSize}" />
+                <Setter Property="LineHeight" Value="{DynamicResource CaptionLineHeight}" />
             </Style>
             <Style x:Key="BodyTextBlockStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="14" />
-                <Setter Property="LineHeight" Value="20" />
+                <Setter Property="FontSize" Value="{DynamicResource BodyFontSize}" />
+                <Setter Property="LineHeight" Value="{DynamicResource BodyLineHeight}" />
             </Style>
             <Style x:Key="BodyStrongTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource BodyTextBlockStyle}">
                 <Setter Property="FontWeight" Value="SemiBold" />
             </Style>
             <Style x:Key="SubtitleTextBlockStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="20" />
-                <Setter Property="LineHeight" Value="28" />
+                <Setter Property="FontSize" Value="{DynamicResource SubtitleFontSize}" />
+                <Setter Property="LineHeight" Value="{DynamicResource SubtitleLineHeight}" />
                 <Setter Property="FontWeight" Value="SemiBold" />
             </Style>
             <Style x:Key="TitleTextBlockStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="28" />
-                <Setter Property="LineHeight" Value="36" />
+                <Setter Property="FontSize" Value="{DynamicResource TitleFontSize}" />
+                <Setter Property="LineHeight" Value="{DynamicResource TitleLineHeight}" />
                 <Setter Property="FontWeight" Value="SemiBold" />
             </Style>
         </ResourceDictionary>

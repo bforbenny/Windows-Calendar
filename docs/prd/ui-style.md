@@ -2,7 +2,7 @@
 description: Typography, spacing, corner radius, hit targets, motion and locale formats for the whole UI
 when-to-use: Before styling any screen, control, text, animation, or date/time display
 tags: [ui, typography, spacing, motion, locale]
-status: in-progress
+status: closed
 ---
 
 # UI style
@@ -33,13 +33,17 @@ The app follows Windows 11 Fluent conventions so it looks native and stays sharp
 
 ## Build details
 
-- R5: dense controls (sidebar checkboxes and chevrons, Month's "+n more", card checkboxes, the Join pill) keep their look; their clickable area is enlarged to 32×32 epx with padding or a transparent margin.
-- R7: fixed date patterns (e.g. "MMM d", "ddd d MMM") are built from the culture's own month-day pattern, so the day and month order follows the region. A Windows region change is applied live: the cached culture data is cleared and the views redraw.
+- R1: the app font is "Segoe UI Variable Text", falling back to Segoe UI, set on each window (the controls inherit it) and on the menu and tooltip styles.
+- R5: dense controls (sidebar checkboxes and chevrons, Month's "+n more", card checkboxes, the Join pill) keep their look; their clickable area is enlarged to 32×32 epx with padding or a transparent margin. Exception: "+n more" is clickable across the whole cell width at the chip-row height, since a taller area would cover the chip above or the next week.
+- R7: fixed date patterns (e.g. "MMM d", "ddd d MMM") take their day and month order from the Windows short-date pattern (day first when it puts d before M, as quick add does), since Windows lets the user change that pattern but not the month-day one. A Windows region change is applied live: the cached culture data is cleared and the views redraw.
 
 ## Decisions
 
 - 2026-11-12: the period title uses Subtitle, not Title (user's choice).
 - 2026-11-12: small controls get a larger hit area rather than a larger look (user's choice).
+- 2026-11-12: the pending-changes badge on Sync uses Caption (12 epx), not 10 epx, so no text is below 12 epx (user's choice).
+- 2026-11-12: the date order comes from the short-date pattern, not the month-day pattern, so a customised short date (e.g. dd MMM yyyy on en-US) is followed (user's choice).
+- 2026-11-12: "+n more" keeps the chip-row height and is clickable across the cell instead of 32 epx tall (user's choice).
 
 ## Out of scope
 
@@ -49,9 +53,9 @@ The app follows Windows 11 Fluent conventions so it looks native and stays sharp
 
 ## Acceptance criteria
 
-- [ ] All text uses the app text styles from R2; no hard-coded font sizes outside the style definitions.
-- [ ] Switching Windows to 24-hour time changes times in all views after restart (or live, if Windows notifies).
-- [ ] With Windows "Animation effects" off, view switches and flyouts appear without animation.
+- [x] All text uses the app text styles from R2; no hard-coded font sizes outside the style definitions.
+- [x] Switching Windows to 24-hour time changes times in all views after restart (or live, if Windows notifies).
+- [x] With Windows "Animation effects" off, view switches and flyouts appear without animation.
 
 ## Dependencies
 

@@ -54,19 +54,22 @@ public static partial class QuickAddParser
             title.Length == 0 ? "Add a title" : targetError);
     }
 
-    /// <summary>The preview chips (R4), e.g. "Fri 6 Nov", "13:00–14:00", "Cafe Rio", "Work", "Every weekday".</summary>
-    public static IReadOnlyList<string> Chips(QuickAddResult result)
+    /// <summary>
+    /// The preview chips (R4), e.g. "Fri 6 Nov", "13:00–14:00", "Cafe Rio", "Work", "Every weekday", in the
+    /// <paramref name="culture"/>'s date order and clock (ui-style R7); the current culture by default.
+    /// </summary>
+    public static IReadOnlyList<string> Chips(QuickAddResult result, CultureInfo? culture = null)
     {
-        var culture = CultureInfo.InvariantCulture;
+        culture ??= CultureInfo.CurrentCulture;
         var chips = new List<string>();
         if (result.Kind == QuickAddKind.Task)
         {
             chips.Add("Task");
         }
-        chips.Add(result.Start.ToString("ddd d MMM", culture));
+        chips.Add(result.Start.ToString(Views.DateFormats.WeekdayMonthDay(culture), culture));
         if (result.Kind == QuickAddKind.Event)
         {
-            chips.Add(result.AllDay ? "All day" : result.Start.ToString("HH:mm", culture) + "–" + result.End.ToString("HH:mm", culture));
+            chips.Add(result.AllDay ? "All day" : result.Start.ToString("t", culture) + "–" + result.End.ToString("t", culture));
             if (result.Location is not null)
             {
                 chips.Add(result.Location);

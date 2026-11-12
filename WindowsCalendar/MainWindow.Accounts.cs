@@ -23,7 +23,8 @@ public sealed partial class MainWindow
     /// <summary>Account name, collapsing its group, with its options menu (Remove account, account-management R8).</summary>
     private Grid AccountHeader(Account account, string flag, UIElement group)
     {
-        var header = new Grid { Margin = new Thickness(0, 8, 0, 2) };
+        // The row is 32 epx for the hit areas (ui-style R5), 6 epx taller than before; the margin gives it back.
+        var header = new Grid { Margin = new Thickness(0, 4, 0, 0) };
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(Collapser(flag, new TextBlock

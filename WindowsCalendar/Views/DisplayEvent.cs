@@ -187,7 +187,6 @@ internal static class EventCard
         {
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             var join = JoinButton(e);
-            join.Margin = new Thickness(4, 0, 0, 0);
             Grid.SetColumn(join, 2);
             row.Children.Add(join);
         }
@@ -259,8 +258,11 @@ internal static class EventCard
         return brush;
     }
 
-    /// <summary>A small Join button; pressing it neither opens nor drags the card.</summary>
-    private static Wpf.Ui.Controls.Button JoinButton(DisplayEvent e)
+    /// <summary>
+    /// A small Join button; pressing it neither opens nor drags the card. A transparent band above and below makes the
+    /// hit area at least 32 epx tall without changing its look (ui-style R5).
+    /// </summary>
+    private static FrameworkElement JoinButton(DisplayEvent e)
     {
         var link = e.Join!;
         var button = new Wpf.Ui.Controls.Button
@@ -268,17 +270,33 @@ internal static class EventCard
             Content = "Join",
             // Filled in the accent colour, so it stands out on the tinted card (high contrast keeps its own colours).
             Appearance = Wpf.Ui.Controls.ControlAppearance.Primary,
-            FontSize = 12,
             Padding = new Thickness(6, 0, 6, 1),
             MinHeight = 0,
             MinWidth = 0,
             VerticalAlignment = VerticalAlignment.Top,
             ToolTip = $"Join {link.Provider} meeting (Ctrl+J when selected)",
         };
+        button.SetResourceReference(Control.FontSizeProperty, "CaptionFontSize");
         AutomationProperties.SetName(button, $"Join {link.Provider} meeting: {e.Title}");
         // The button handles the mouse itself, so pressing it neither opens nor drags the card.
         button.Click += (_, _) => MeetingJoin.Launch(link);
-        return button;
+        var target = new Border
+        {
+            Background = ViewParts.Clickable,
+            Child = button,
+            Padding = new Thickness(0, 8, 0, 8),
+            Margin = new Thickness(4, -8, 0, -8),
+            VerticalAlignment = VerticalAlignment.Top,
+            Cursor = System.Windows.Input.Cursors.Hand,
+        };
+        // The button marks its own clicks handled, so these see only presses on the band.
+        target.MouseLeftButtonDown += (_, args) => args.Handled = true;
+        target.MouseLeftButtonUp += (_, args) =>
+        {
+            args.Handled = true;
+            MeetingJoin.Launch(link);
+        };
+        return target;
     }
 
     /// <summary>An empty checkbox in the list colour before a task's title; ticking it completes the task.</summary>
@@ -288,10 +306,11 @@ internal static class EventCard
         box.Foreground = colour;
         if (e.Checkable)
         {
-            // A larger hit area than the glyph, so a click near it completes rather than opens.
+            // A 32 x 32 epx hit area round the glyph (ui-style R5), so a click near it completes rather than opens; the
+            // negative margin keeps the card's layout. The card clips what falls outside it.
             var target = new Border
             {
-                Background = ViewParts.Clickable, Child = box, Padding = new Thickness(4, 2, 4, 2), Margin = new Thickness(-4, -2, -4, -2),
+                Background = ViewParts.Clickable, Child = box, Padding = new Thickness(10), Margin = new Thickness(-10),
                 ToolTip = "Mark complete",
             };
             AutomationProperties.SetName(target, $"Mark complete: {e.Title}");

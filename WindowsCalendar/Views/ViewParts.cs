@@ -211,6 +211,9 @@ internal static class ViewParts
         {
             Content = Icon(glyph, 14),
             Padding = new Thickness(8),
+            // At least 32 x 32 epx to click (ui-style R5).
+            MinWidth = 32,
+            MinHeight = 32,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             ToolTip = name,

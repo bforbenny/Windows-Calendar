@@ -29,6 +29,7 @@ namespace WindowsCalendar;
 public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 {
     private const string SidebarHiddenFlag = "sidebar-hidden";
+    private const double SidebarMinWindowWidth = 1200;
 
     private readonly TimeGridView _week = new();
     private readonly MonthGridView _month = new();
@@ -43,6 +44,8 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private DateOnly? _pendingDay;
     private bool _quitting;
     private bool _renderPending;
+    // The window is narrower than SidebarMinWindowWidth (display-scaling R4).
+    private bool _narrow;
     private int _conflictsDismissed;
     private readonly DispatcherTimer _undoTimer = new() { Interval = TimeSpan.FromSeconds(8) };
     // PayloadBefore is null for a created copy, which undo deletes.
@@ -59,12 +62,15 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         Theme.Apply(Theme.SystemTheme());
         Icon = BitmapFrame.Create(new Uri(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico")));
 
-        // Closing hides to the tray; only Quit really closes (app-platform R5).
+        SetupPlacement();
+
+        // Closing hides to the tray; only Quit really closes (app-platform R5). The place is saved first (display-scaling R3).
         Closing += (_, e) =>
         {
             if (!_quitting)
             {
                 e.Cancel = true;
+                SavePlacement();
                 Hide();
             }
         };
@@ -203,6 +209,16 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                     RenderView();
                 });
             }
+            // A Windows region change (clock, date order, first day of week) applies live (ui-style R7).
+            else if (e.Category == Microsoft.Win32.UserPreferenceCategory.Locale)
+            {
+                Dispatcher.BeginInvoke(() =>
+                {
+                    CultureInfo.CurrentCulture.ClearCachedData();
+                    Log.Information("Windows region settings changed; redrawing");
+                    RenderView();
+                });
+            }
         };
 
         // Move the current-time line every minute; at midnight the window and today's shading move on. Each tick is
@@ -220,6 +236,9 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         StartMinuteTimer();
 
         ShowSidebar(Store?.GetUiFlag(SidebarHiddenFlag) != true);
+        SizeChanged += (_, e) => OnWidthChanged(e.NewSize.Width);
+        // Windows Text size changed: the text rows are resized, so the views redraw (display-scaling R8).
+        TextScale.Changed += RenderView;
         ShowAccounts();
         RenderView();
         ShowConflicts();
@@ -570,12 +589,33 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnToggleSidebar(object sender, RoutedEventArgs e) => ToggleSidebar();
 
-    /// <summary>The hamburger and Ctrl+B hide the sidebar fully; the state is kept across restarts (calendar-views R2b).</summary>
+    /// <summary>
+    /// The hamburger and Ctrl+B hide the sidebar fully; the state is kept across restarts (calendar-views R2b). In a
+    /// narrow window they show it for the moment only, without changing the saved state (display-scaling R4).
+    /// </summary>
     private void ToggleSidebar()
     {
         var show = Sidebar.Visibility != Visibility.Visible;
         ShowSidebar(show);
-        Store?.SetUiFlag(SidebarHiddenFlag, !show);
+        if (!_narrow)
+        {
+            Store?.SetUiFlag(SidebarHiddenFlag, !show);
+        }
+    }
+
+    /// <summary>
+    /// Below <see cref="SidebarMinWindowWidth"/> the sidebar hides; widening the window again brings back the saved
+    /// state (display-scaling R4). A window that starts narrow starts with it hidden.
+    /// </summary>
+    private void OnWidthChanged(double width)
+    {
+        var narrow = width < SidebarMinWindowWidth;
+        if (narrow == _narrow)
+        {
+            return;
+        }
+        _narrow = narrow;
+        ShowSidebar(!narrow && Store?.GetUiFlag(SidebarHiddenFlag) != true);
     }
 
     private void ShowSidebar(bool show) => Sidebar.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
@@ -659,7 +699,8 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 Style = Theme.Style("BodyStrongTextBlockStyle"),
                 TextTrimming = TextTrimming.CharacterEllipsis,
             }, section);
-            heading.Margin = new Thickness(0, AccountList.Children.Count == 0 ? 4 : 20, 0, 2);
+            // The heading is 4 epx taller for its 32 epx hit area (ui-style R5); the margins give it back.
+            heading.Margin = new Thickness(0, AccountList.Children.Count == 0 ? 2 : 18, 0, 0);
             AccountList.Children.Add(heading);
             AccountList.Children.Add(section);
 
@@ -710,10 +751,13 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         {
             Content = content,
             Padding = new Thickness(2, 4, 2, 4),
+            // At least 32 epx tall to click (ui-style R5).
+            MinHeight = 32,
             Background = Brushes.Transparent,
             BorderThickness = new Thickness(0),
             HorizontalAlignment = HorizontalAlignment.Stretch,
             HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            VerticalContentAlignment = VerticalAlignment.Center,
         };
         void Apply()
         {
@@ -787,30 +831,6 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             WindowState = WindowState.Normal;
         }
         Activate();
-    }
-
-    /// <summary>
-    /// If any part of the window is outside the screens (a monitor unplugged, scaling changed), centres it on the
-    /// primary screen's work area, shrunk to fit if needed (app-platform R5). Maximised windows are left to Windows.
-    /// </summary>
-    private void KeepOnScreen()
-    {
-        if (WindowState != WindowState.Normal)
-        {
-            return;
-        }
-        var screens = new Rect(SystemParameters.VirtualScreenLeft, SystemParameters.VirtualScreenTop,
-            SystemParameters.VirtualScreenWidth, SystemParameters.VirtualScreenHeight);
-        if (screens.Contains(new Rect(Left, Top, ActualWidth, ActualHeight)))
-        {
-            return;
-        }
-        var area = SystemParameters.WorkArea;
-        Width = Math.Min(Width, area.Width);
-        Height = Math.Min(Height, area.Height);
-        Left = area.Left + (area.Width - Width) / 2;
-        Top = area.Top + (area.Height - Height) / 2;
-        Log.Information("Window was off-screen; moved onto the primary screen");
     }
 
     public void CloseForQuit()

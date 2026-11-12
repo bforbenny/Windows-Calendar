@@ -269,7 +269,7 @@ public sealed partial class MainWindow
             return "No date";
         }
         var local = start.ToLocalTime();
-        var day = local.ToString("ddd d MMM yyyy", CultureInfo.CurrentCulture);
+        var day = local.ToString(DateFormats.WeekdayMonthDay(CultureInfo.CurrentCulture) + " yyyy", CultureInfo.CurrentCulture);
         return result.AllDay ? day : $"{day}, {local.ToString("t", CultureInfo.CurrentCulture)}";
     }
 

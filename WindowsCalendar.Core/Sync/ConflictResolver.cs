@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
 using WindowsCalendar.Core.Store;
+using WindowsCalendar.Core.Views;
 
 namespace WindowsCalendar.Core.Sync;
 
@@ -124,9 +125,10 @@ public static class ConflictResolver
     private static string Text(string? value) => string.IsNullOrWhiteSpace(value) ? "(none)" : value.Trim();
 
     private static string Time(DateTime wall, bool allDay, DateTime day) =>
-        allDay ? wall.ToString("ddd d MMM", CultureInfo.CurrentCulture)
-        : wall.Date == day ? wall.ToString("HH:mm", CultureInfo.CurrentCulture)
-        : wall.ToString("ddd d MMM HH:mm", CultureInfo.CurrentCulture);
+        allDay ? wall.ToString(DateFormats.WeekdayMonthDay(CultureInfo.CurrentCulture), CultureInfo.CurrentCulture)
+        : wall.Date == day ? wall.ToString("t", CultureInfo.CurrentCulture)
+        : wall.ToString(DateFormats.WeekdayMonthDay(CultureInfo.CurrentCulture) + " " + CultureInfo.CurrentCulture.DateTimeFormat.ShortTimePattern,
+            CultureInfo.CurrentCulture);
 
     private static string ShowAsText(ShowAs value) => value switch
     {

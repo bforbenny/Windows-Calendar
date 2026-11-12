@@ -47,6 +47,7 @@ public sealed partial class TrayFlyout : Window
         Topmost = true;
         WindowStartupLocation = WindowStartupLocation.Manual;
         SetResourceReference(BackgroundProperty, "SurfaceBaseBrush");
+        SetResourceReference(FontFamilyProperty, "AppFontFamily");
 
         _date.Style = Theme.Style("BodyStrongTextBlockStyle");
         _date.TextTrimming = TextTrimming.CharacterEllipsis;
@@ -312,7 +313,7 @@ public sealed partial class TrayFlyout : Window
         _list.Children.Clear();
         if (Store is not { } store || store.GetAccounts().Count == 0)
         {
-            _date.Text = now.ToString("ddd d MMM", CultureInfo.CurrentCulture);
+            _date.Text = now.ToString(DateFormats.WeekdayMonthDay(CultureInfo.CurrentCulture), CultureInfo.CurrentCulture);
             _next.Text = "";
             _list.Children.Add(Note("No accounts yet"));
             return;
@@ -326,7 +327,7 @@ public sealed partial class TrayFlyout : Window
         var tasks = store.GetTasks().Where(t => collections.ContainsKey(t.CollectionId));
         var content = FlyoutList.Build(occurrences, tasks, store.GetHolidayCollectionId(), now, zone);
 
-        var date = now.ToString("ddd d MMM", CultureInfo.CurrentCulture);
+        var date = now.ToString(DateFormats.WeekdayMonthDay(CultureInfo.CurrentCulture), CultureInfo.CurrentCulture);
         _date.Text = content.Holiday is { } holiday ? $"{date} · {holiday}" : date;
         _next.Text = FlyoutList.NextText(content, now, zone, CultureInfo.CurrentCulture);
 

@@ -12,6 +12,7 @@ using Windows.Data.Xml.Dom;
 using Windows.UI.Notifications;
 using WindowsCalendar.Core.Reminders;
 using WindowsCalendar.Core.Store;
+using WindowsCalendar.Core.Views;
 using WindowsCalendar.Views;
 
 namespace WindowsCalendar;
@@ -343,17 +344,18 @@ internal static class ReminderToasts
             return "Task";
         }
         var start = TimeZoneInfo.ConvertTime(startUtc, TimeZoneInfo.Local);
+        var day = DateFormats.WeekdayMonthDay(System.Globalization.CultureInfo.CurrentCulture);
         if (r.Kind == ItemKind.Task)
         {
-            return r.AllDay ? $"Due {start:ddd d MMM}" : $"Due {start:ddd d MMM}, {start:t}";
+            return r.AllDay ? $"Due {start.ToString(day)}" : $"Due {start.ToString(day)}, {start:t}";
         }
         if (r.AllDay)
         {
-            return $"{start:ddd d MMM}, all day";
+            return $"{start.ToString(day)}, all day";
         }
         var end = TimeZoneInfo.ConvertTime(r.End ?? startUtc, TimeZoneInfo.Local);
         return end.Date == start.Date
-            ? $"{start:ddd d MMM}, {start:t} – {end:t}"
-            : $"{start:ddd d MMM}, {start:t} – {end:ddd d MMM}, {end:t}";
+            ? $"{start.ToString(day)}, {start:t} – {end:t}"
+            : $"{start.ToString(day)}, {start:t} – {end.ToString(day)}, {end:t}";
     }
 }

@@ -54,6 +54,18 @@ public sealed class LocalStoreTests : IDisposable
     }
 
     [Fact]
+    public void UiText_PersistsAcrossReopen()
+    {
+        _store.SetUiText("window-placement", "normal;0,0,10,10");
+        _store.SetUiText("window-placement", "max;1,2,30,40");
+        _store.Dispose();
+
+        using var reopened = LocalStore.Open(DbPath);
+        Assert.Equal("max;1,2,30,40", reopened.GetUiText("window-placement"));
+        Assert.Null(reopened.GetUiText("never-set"));
+    }
+
+    [Fact]
     public void ChangesPersistAcrossReopen()
     {
         _store.CreateItem(NewItem());

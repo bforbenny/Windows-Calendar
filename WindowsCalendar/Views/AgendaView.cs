@@ -31,10 +31,7 @@ internal sealed class AgendaView : UserControl, IScrollingView, IDragHost
     public AgendaView()
     {
         _body = new VirtualStrip(Orientation.Horizontal, scrollBars: true, NewList, (list, index) => BindList((StackPanel)list, index));
-        _headers = new VirtualStrip(Orientation.Horizontal, scrollBars: false, () => new Border(), (header, index) => BindHeader((Border)header, index))
-        {
-            Height = 68,
-        };
+        _headers = new VirtualStrip(Orientation.Horizontal, scrollBars: false, () => new Border(), (header, index) => BindHeader((Border)header, index));
         var root = new Grid();
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -78,6 +75,7 @@ internal sealed class AgendaView : UserControl, IScrollingView, IDragHost
     public void SetData(DateOnly first, int days, IReadOnlyList<DisplayEvent> events, IReadOnlyDictionary<DateOnly, string> holidays)
     {
         (_first, _count, _holidays) = (first, days, holidays);
+        _headers.Height = TextScale.Of(68);
         // Multi-day events appear on each day they span (R5).
         _byDay = events
             .SelectMany(e => Enumerable.Range(0, e.LastDay.DayNumber - e.FirstDay.DayNumber + 1)

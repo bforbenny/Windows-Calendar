@@ -1070,6 +1070,23 @@ public sealed partial class LocalStore : IDisposable
         }
     }
 
+    /// <summary>A UI text value (e.g. the window placement, display-scaling R3); null when never set.</summary>
+    public string? GetUiText(string name)
+    {
+        lock (_gate)
+        {
+            return GetMeta(null, "ui:" + name);
+        }
+    }
+
+    public void SetUiText(string name, string value)
+    {
+        lock (_gate)
+        {
+            SetMeta(null, "ui:" + name, value);
+        }
+    }
+
     /// <summary>
     /// Rebuilds the whole index if the day or the Windows timezone changed since the last full build (rolling
     /// window; timezone-handling R6). Returns true if it rebuilt. Call TimeZoneInfo.ClearCachedData first so a

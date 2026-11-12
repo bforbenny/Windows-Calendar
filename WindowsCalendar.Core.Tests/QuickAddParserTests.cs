@@ -23,6 +23,9 @@ public sealed class QuickAddParserTests
 
     private static DateTime D(string text) => DateTime.Parse(text, CultureInfo.InvariantCulture);
 
+    // Chips follow the culture (ui-style R7); these tests use en-GB order and the 24-hour clock.
+    private static IReadOnlyList<string> Chips(QuickAddResult r) => QuickAddParser.Chips(r, CultureInfo.GetCultureInfo("en-GB"));
+
     private static QuickAddResult Parse(string phrase, bool dayFirst = true, DateTime? now = null, DateTime? slot = null,
         bool slotAllDay = false, bool taskByDefault = false, QuickAddTarget[]? targets = null) =>
         QuickAddParser.Parse(phrase, now ?? Now, new QuickAddOptions(dayFirst, targets ?? All, slot, slotAllDay, taskByDefault));
@@ -625,7 +628,7 @@ public sealed class QuickAddParserTests
         Assert.Equal("x", r.Title);
         Assert.Equal(new DateTime(2026, 11, 13), r.Start.Date);
         Assert.Equal(new RepeatRule(RepeatFrequency.Weekly, 1, [DayOfWeek.Friday], null, null, null), r.Repeat);
-        Assert.Contains("Every Friday", QuickAddParser.Chips(r));
+        Assert.Contains("Every Friday", Chips(r));
     }
 
     [Fact]
@@ -777,27 +780,32 @@ public sealed class QuickAddParserTests
     public void Chips_for_an_event()
     {
         var r = Parse("Lunch with Sam fri 1pm at Cafe Rio #Personal");
-        Assert.Equal(["Fri 13 Nov", "13:00–14:00", "Cafe Rio", "Personal"], QuickAddParser.Chips(r));
+        Assert.Equal(["Fri 13 Nov", "13:00–14:00", "Cafe Rio", "Personal"], Chips(r));
     }
 
     [Fact]
     public void Chips_for_a_recurring_event()
     {
-        Assert.Equal(["Wed 11 Nov", "09:15–09:30", "Work", "Every weekday"], QuickAddParser.Chips(Parse("Standup weekdays 9:15 for 15m")));
-        Assert.Equal(["Wed 11 Nov", "All day", "Work", "Every day"], QuickAddParser.Chips(Parse("Pills every day")));
-        Assert.Equal(["Fri 13 Nov", "All day", "Work", "Every Friday"], QuickAddParser.Chips(Parse("Gym every fri")));
-        Assert.Equal(["Wed 11 Nov", "All day", "Work", "Every month"], QuickAddParser.Chips(Parse("Rent every month")));
+        Assert.Equal(["Wed 11 Nov", "09:15–09:30", "Work", "Every weekday"], Chips(Parse("Standup weekdays 9:15 for 15m")));
+        Assert.Equal(["Wed 11 Nov", "All day", "Work", "Every day"], Chips(Parse("Pills every day")));
+        Assert.Equal(["Fri 13 Nov", "All day", "Work", "Every Friday"], Chips(Parse("Gym every fri")));
+        Assert.Equal(["Wed 11 Nov", "All day", "Work", "Every month"], Chips(Parse("Rent every month")));
     }
 
     [Fact]
     public void Chips_for_a_task()
     {
-        Assert.Equal(["Task", "Thu 12 Nov", "Tasks"], QuickAddParser.Chips(Parse("task submit report tomorrow")));
+        Assert.Equal(["Task", "Thu 12 Nov", "Tasks"], Chips(Parse("task submit report tomorrow")));
     }
 
     [Fact]
+    public void Chips_follow_the_culture_date_order_and_clock() =>
+        Assert.Equal(["Fri Nov 13", "1:00 PM–2:00 PM", "Cafe Rio", "Personal"],
+            QuickAddParser.Chips(Parse("Lunch with Sam fri 1pm at Cafe Rio #Personal"), CultureInfo.GetCultureInfo("en-US")));
+
+    [Fact]
     public void Chips_mark_a_hidden_target() =>
-        Assert.Equal(["Wed 11 Nov", "All day", "Holidays (hidden)"], QuickAddParser.Chips(Parse("Lunch #Outlook/Hol")));
+        Assert.Equal(["Wed 11 Nov", "All day", "Holidays (hidden)"], Chips(Parse("Lunch #Outlook/Hol")));
 
     // Mixed H:MM and am/pm ranges (R6)
 
@@ -863,7 +871,7 @@ public sealed class QuickAddParserTests
     {
         var options = new QuickAddOptions(true, All, D("2026-11-20 14:30"));
         var parsed = QuickAddParser.Parse(phrase, Now, options);
-        QuickAddParser.Chips(parsed);
+        Chips(parsed);
         QuickAddParser.Parse(phrase, Now, options with { DayFirst = false, TaskByDefault = true });
         for (var caret = -1; caret <= phrase.Length + 1; caret++)
         {

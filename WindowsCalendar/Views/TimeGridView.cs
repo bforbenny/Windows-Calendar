@@ -20,7 +20,8 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
 {
     private const double GutterWidth = 56;
     private const double RulerWidth = 64;
-    private const double LaneHeight = 22;
+    // All-day lane chips grow with Windows Text size (display-scaling R8).
+    private static double LaneHeight => TextScale.Of(22);
     private const int VisibleDays = 7;
     private static readonly double DayHeight = DayColumnPanel.PixelsFor(24 * 60);
 
@@ -145,7 +146,7 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
     {
         (_first, _count, _holidays) = (first, days, holidays);
         // The header grows a line for holiday names only when there are any (calendar-shading interim).
-        _headers.Height = holidays.Keys.Any(d => d >= first && d < first.AddDays(days)) ? 68 : 52;
+        _headers.Height = TextScale.Of(holidays.Keys.Any(d => d >= first && d < first.AddDays(days)) ? 68 : 52);
         _timed = events.Where(e => !e.InAllDayLane)
             .SelectMany(e => Days(e).Select(d => (Day: d, Event: e)))
             .GroupBy(x => x.Day)

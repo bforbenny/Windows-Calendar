@@ -10,6 +10,7 @@
     WindowBackdropType="Mica"
     WindowCornerPreference="Round"
     WindowStartupLocation="CenterScreen"
+    FontFamily="{StaticResource AppFontFamily}"
     UseLayoutRounding="True">
 
     <ui:FluentWindow.Resources>
@@ -142,11 +143,11 @@
                                     ToolTip="Show changes waiting to sync">
                                 <Button.Template>
                                     <ControlTemplate TargetType="Button">
-                                        <Border x:Name="Pill" Background="{DynamicResource TodayChipBrush}" CornerRadius="8"
-                                                MinWidth="16" Height="16" Padding="4,0" BorderThickness="1"
+                                        <Border x:Name="Pill" Background="{DynamicResource TodayChipBrush}" CornerRadius="9"
+                                                MinWidth="18" MinHeight="18" Padding="4,0" BorderThickness="1"
                                                 BorderBrush="{DynamicResource SurfaceBaseBrush}">
                                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                              TextElement.FontSize="10" TextElement.FontWeight="SemiBold"
+                                                              TextElement.FontSize="{DynamicResource CaptionFontSize}" TextElement.FontWeight="SemiBold"
                                                               TextElement.Foreground="{DynamicResource TodayChipTextBrush}" />
                                         </Border>
                                         <ControlTemplate.Triggers>

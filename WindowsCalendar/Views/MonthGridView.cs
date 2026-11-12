@@ -17,13 +17,14 @@ namespace WindowsCalendar.Views;
 internal sealed class MonthGridView : UserControl, IScrollingView, IDragHost
 {
     private const int VisibleWeeks = 5;
-    private const double DayNumberHeight = 28;
-    private const double ChipHeight = 20;
+    // Rows holding text grow with Windows Text size (display-scaling R8).
+    private static double DayNumberHeight => TextScale.Of(28);
+    private static double ChipHeight => TextScale.Of(20);
     private const double ChipSpacing = 2;
     // Week numbers left of the rows, inside each row (calendar-shading R7 interim).
     private const double WeekColumnWidth = 36;
 
-    private readonly Grid _weekdays = new() { Height = 24 };
+    private readonly Grid _weekdays = new();
     private readonly ColumnDefinition _weekColumn = new() { Width = new GridLength(0) };
     private readonly VirtualStrip _strip;
 
@@ -95,6 +96,7 @@ internal sealed class MonthGridView : UserControl, IScrollingView, IDragHost
     {
         (_first, _weekCount, _events, _holidays) = (first, days / 7, events, holidays);
         _weekColumn.Width = new GridLength(WeekColumn);
+        _weekdays.Height = TextScale.Of(24);
         _weekdays.Children.Clear();
         for (var c = 0; c < 7; c++)
         {
@@ -336,7 +338,7 @@ internal sealed class MonthGridView : UserControl, IScrollingView, IDragHost
             Root.BorderBrush = Theme.Brush("DividerBrush");
             Root.Background = ViewParts.DayShade(date, isToday, holiday is not null) ?? ViewParts.Clickable;
             // The first of each month carries the month name, since weeks run on without month breaks.
-            _number.Text = date.Day == 1 ? date.ToString("MMM d") : date.Day.ToString();
+            _number.Text = date.Day == 1 ? date.ToString(DateFormats.MonthDay(System.Globalization.CultureInfo.CurrentCulture)) : date.Day.ToString();
             _number.Style = Theme.Style(isToday || date.Day == 1 ? "BodyStrongTextBlockStyle" : "BodyTextBlockStyle");
             _number.Foreground = isToday ? Theme.Brush("TodayChipTextBrush") : Theme.Brush("TextPrimaryBrush");
             _chip.Background = isToday ? Theme.Brush("TodayChipBrush") : null;
@@ -432,10 +434,28 @@ internal sealed class MonthGridView : UserControl, IScrollingView, IDragHost
                 continue;
             }
             var date = weekStart.AddDays(d);
-            var more = new TextBlock { Style = Theme.Style("CaptionTextBlockStyle"), Margin = new Thickness(4, 2, 4, 0) };
+            // The whole row across the cell is clickable, a larger hit area than the link (ui-style R5); the link keeps
+            // keyboard access.
+            var more = new TextBlock
+            {
+                Style = Theme.Style("CaptionTextBlockStyle"),
+                Padding = new Thickness(4, 2, 4, 0),
+                Background = ViewParts.Clickable,
+                Cursor = System.Windows.Input.Cursors.Hand,
+            };
             var link = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run($"+{hidden[d]} more"));
             link.Click += (_, _) => DayRequested?.Invoke(date);
             more.Inlines.Add(link);
+            more.MouseLeftButtonDown += (_, args) => args.Handled = true;
+            more.MouseLeftButtonUp += (_, args) =>
+            {
+                // A press on the link text is the link's own click.
+                if (args.OriginalSource is not System.Windows.Documents.TextElement)
+                {
+                    args.Handled = true;
+                    DayRequested?.Invoke(date);
+                }
+            };
             Grid.SetRow(more, _capacity - 1);
             Grid.SetColumn(more, d);
             layer.Children.Add(more);

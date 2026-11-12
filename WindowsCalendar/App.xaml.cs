@@ -157,7 +157,10 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        Views.TextScale.Start();
         _window = new MainWindow();
+        // Signing out or shutting down skips Quit; the window place is saved here too (display-scaling R3).
+        SessionEnding += (_, _) => _window?.SavePlacement();
         _trayIcon = CreateTrayIcon();
         StartSyncScheduling();
 
@@ -698,6 +701,7 @@ public partial class App : Application
     private void Quit()
     {
         Log.Information("App quit");
+        _window?.SavePlacement();
         _scheduler?.Dispose();
         SystemEvents.TimeChanged -= OnTimeChanged;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;

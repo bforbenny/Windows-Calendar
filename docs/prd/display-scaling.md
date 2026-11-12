@@ -2,7 +2,7 @@
 description: Layout rules for display scaling and window sizes, targeting 1920x1080 at 100% and the Framework 13 laptop at 150%
 when-to-use: Before working on window layout, sizing, responsive behaviour, multi-monitor moves, or DPI-related rendering
 tags: [ui, layout, dpi, scaling, multi-monitor]
-status: in-progress
+status: closed
 ---
 
 # Display scaling and layout
@@ -39,7 +39,7 @@ The app is used on two displays: an external 1920×1080 monitor at 100% scaling 
 
 ## Build details
 
-- R3: the placement is saved and restored with Win32 GetWindowPlacement / SetWindowPlacement (physical pixels and the maximised state, correct across monitors with different scaling), then the off-screen check already in place.
+- R3: the placement is saved and restored with Win32 GetWindowPlacement / SetWindowPlacement (physical pixels and the maximised state, correct across monitors with different scaling), then the off-screen check already in place. It is saved in the local store's UI state when the window hides to the tray, on Quit and when the Windows session ends.
 - R4: showing the sidebar with the hamburger while the window is narrower than 1200 epx does not change the saved state; a narrow window always starts with it hidden.
 - Toolbar (R1 reference width): the quick-add box is gone ([quick-add](quick-add.md)), the sync status is the Sync button's tooltip ([ui-states](ui-states.md) R1), and search sits in the title bar ([search](search.md) R2), so the toolbar fits at the 1000 epx minimum without narrowing.
 - R8: WPF does not follow Windows Text size, so the app reads it (UISettings.TextScaleFactor) and scales its text styles, live when it changes. Month chips, day headers and other text rows grow with the text; timed event cards keep their time-based height, so a short event may clip and relies on its tooltip.
@@ -57,11 +57,11 @@ The app is used on two displays: an external 1920×1080 monitor at 100% scaling 
 
 ## Acceptance criteria
 
-- [ ] At 1504×1003 epx (Framework 13 at 150%), Day, Week, Month and Agenda views and the event editor are fully usable with no clipped controls.
-- [ ] Dragging the window from the 100% monitor to the 150% panel re-renders sharply with no layout break.
-- [ ] Undocking with the window last placed on the external monitor opens the window on the laptop panel.
-- [ ] At Windows Text size 150%, no text in the main views is clipped.
-- [ ] Narrowing the window below 1200 epx hides the sidebar; the hamburger shows it; widening the window again restores the saved state.
+- [x] At 1504×1003 epx (Framework 13 at 150%), Day, Week, Month and Agenda views and the event editor are fully usable with no clipped controls.
+- [x] Dragging the window from the 100% monitor to the 150% panel re-renders sharply with no layout break.
+- [x] Undocking with the window last placed on the external monitor opens the window on the laptop panel.
+- [x] At Windows Text size 150%, no text in the main views is clipped.
+- [x] Narrowing the window below 1200 epx hides the sidebar; the hamburger shows it; widening the window again restores the saved state.
 
 ## Dependencies
 
