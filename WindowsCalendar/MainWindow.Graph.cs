@@ -14,6 +14,12 @@ public sealed partial class MainWindow
     private bool IsGraph(Collection collection) => _graphAccounts.Contains(collection.AccountId);
 
     /// <summary>
+    /// Undo refusal for an MS365 series change that made Exchange drop changed occurrences: they can't be put back
+    /// (undo R5).
+    /// </summary>
+    internal const string LostExceptionsRefusal = "Changed occurrences that were dropped can't be restored, so this change can't be undone.";
+
+    /// <summary>
     /// A drop on an MS365 event: a single event or one occurrence is PATCHed; for a series the scope is asked, and a
     /// change that moves the series' time asks first when stored exceptions would be lost.
     /// </summary>
@@ -37,7 +43,7 @@ public sealed partial class MainWindow
         }
         var fields = GraphEventMapper.Read(item, master, zone) with { AllDay = target.AllDay, Start = target.Start, End = target.End };
         var changedId = item.Id;
-        var before = item.RawPayload;
+        var lost = 0;
         Item? edited = null;
         Item? following = null;
         try
@@ -48,9 +54,9 @@ public sealed partial class MainWindow
             }
             else
             {
-                (changedId, before) = (master.Id, master.RawPayload);
+                changedId = master.Id;
                 var split = scope == EditScope.Following ? GraphRecurrence.SplitSeries(master, recurrence, fields, e.Collection, zone) : null;
-                var lost = GraphRecurrence.Exceptions(store.GetSeriesItems(item.CollectionId, master.RemoteId!),
+                lost = GraphRecurrence.Exceptions(store.GetSeriesItems(item.CollectionId, master.RemoteId!),
                     split is null ? null : TimeZoneInfo.ConvertTime(recurrence, zone).DateTime, zone);
                 if (!await LostDialog.ConfirmAsync("Move the series?", "Move", lost))
                 {
@@ -62,15 +68,21 @@ public sealed partial class MainWindow
             {
                 return;
             }
-            if (following is not null)
+            using (var undo = store.BeginUndo("Event moved"))
             {
-                store.SplitItem(edited, following);
+                if (following is not null)
+                {
+                    store.SplitItem(edited, following);
+                }
+                else
+                {
+                    store.UpdateItem(edited);
+                }
+                if (lost > 0)
+                {
+                    undo.Refuse(LostExceptionsRefusal);
+                }
             }
-            else
-            {
-                store.UpdateItem(edited);
-            }
-            _lastChange = (changedId, before, edited.RawPayload, following);
             ShowUndo(scope switch
             {
                 EditScope.Series => "Series moved",

@@ -170,9 +170,11 @@ public sealed partial class MainWindow
                     }
                 }
             }
-            store.CreateItem(created);
+            using (store.BeginUndo("Quick add"))
+            {
+                store.CreateItem(created);
+            }
             Log.Information("{Kind} {ItemId} created by quick add", result.Kind, created.Id);
-            _lastChange = (created.Id, null, created.RawPayload, null);
             // The clash and short-gap check runs for the main window's quick add only (schedule-gap-warning R1).
             ShowUndo(result.Kind == QuickAddKind.Task ? "Task added" : "Event added", canUndo: true,
                 note: check && result.Kind != QuickAddKind.Task

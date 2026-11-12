@@ -20,6 +20,7 @@ namespace WindowsCalendar.Views;
 internal sealed class SettingsPage : UserControl
 {
     private const string WeekNumbersFlag = "week-numbers";
+    private const string TasksHiddenFlag = "tasks-hidden-in-calendar";
 
     private readonly ListBox _sections = new() { Width = 220, SelectionMode = SelectionMode.Single, BorderThickness = new Thickness(0), Background = System.Windows.Media.Brushes.Transparent };
     private readonly ContentControl _content = new()
@@ -480,6 +481,20 @@ internal sealed class SettingsPage : UserControl
             Foreground = Theme.Brush("TextSecondaryBrush"),
             TextWrapping = TextWrapping.Wrap,
         });
+        // Tasks with a due date in Week, Month and Agenda (tasks R6); on unless turned off, so the flag stores "hidden".
+        var tasks = new Wpf.Ui.Controls.ToggleSwitch
+        {
+            Content = "Show tasks in the calendar",
+            IsChecked = TasksInCalendarOn(Store),
+        };
+        tasks.Click += (_, _) =>
+        {
+            var on = tasks.IsChecked == true;
+            Store?.SetUiFlag(TasksHiddenFlag, !on);
+            Log.Information("Tasks in calendar {State}", on ? "on" : "off");
+            Changed?.Invoke();
+        };
+        panel.Children.Add(tasks);
         // The secondary timezone ruler, saved with the active calendar set (timezone-handling R8, calendar-sets R11);
         // a change can mark the set "(modified)", so the selector refreshes too.
         if (Store is { } store)
@@ -491,6 +506,9 @@ internal sealed class SettingsPage : UserControl
 
     /// <summary>Whether week numbers are on (read by the window before each render).</summary>
     public static bool WeekNumbersOn(LocalStore? store) => store?.GetUiFlag(WeekNumbersFlag) == true;
+
+    /// <summary>Whether tasks with a due date show in Week, Month and Agenda (tasks R6, default on).</summary>
+    public static bool TasksInCalendarOn(LocalStore? store) => store?.GetUiFlag(TasksHiddenFlag) != true;
 
     private static SpacedStack Section(string title, string? description)
     {

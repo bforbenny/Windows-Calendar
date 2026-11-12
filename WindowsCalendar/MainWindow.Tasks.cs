@@ -32,6 +32,7 @@ public sealed partial class MainWindow
         _tasks.DeleteOldCompleted += async items => await DeleteOldCompletedAsync(items);
         EventCard.TaskChecked += e => SetTaskCompleted(e.ItemId, true);
         _taskEditor.Changed += RenderView;
+        _taskEditor.UndoOffered += title => ShowUndo(title, canUndo: true);
         _taskEditor.OpenChanged += PlaceEditor;
         SetupNewSwitch();
     }
@@ -128,9 +129,11 @@ public sealed partial class MainWindow
             }
             if (edited is not null)
             {
-                store.UpdateItem(edited);
+                using (store.BeginUndo("Task ticked"))
+                {
+                    store.UpdateItem(edited);
+                }
                 Log.Information("Task {ItemId} {State}", itemId, advancedTo is not null ? "advanced" : completed ? "completed" : "reopened");
-                _lastChange = (itemId, item.RawPayload, edited.RawPayload, null);
                 ShowUndo(advancedTo is { } next ? $"Task advanced to {next.ToString("d", System.Globalization.CultureInfo.CurrentCulture)}"
                     : completed ? "Task completed" : "Task reopened", canUndo: true);
             }

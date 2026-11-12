@@ -512,6 +512,7 @@ public sealed partial class LocalStore : IDisposable
             IndexItem(_connection, tx, item.Id);
             Enqueue(tx, item.Id, OutboxOperation.Create, item.RawPayload, null, groupId);
             tx.Commit();
+            Record(item.Id, null, item);
         }
         LocalChanged?.Invoke();
     }
@@ -522,11 +523,13 @@ public sealed partial class LocalStore : IDisposable
         {
             using var tx = _connection.BeginTransaction();
             var baseEtag = GetLiveEtag(tx, item.Id);
+            var before = ReadRow(tx, item.Id)!.Value.Item;
             Execute(_connection, tx, UpdateItemSql, ItemParameters(tx, item));
             RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
             IndexItem(_connection, tx, item.Id);
             Enqueue(tx, item.Id, OutboxOperation.Update, item.RawPayload, baseEtag, groupId);
             tx.Commit();
+            Record(item.Id, before, item);
         }
         LocalChanged?.Invoke();
     }
@@ -541,10 +544,12 @@ public sealed partial class LocalStore : IDisposable
         {
             using var tx = _connection.BeginTransaction();
             var baseEtag = GetLiveEtag(tx, itemId);
+            var before = ReadRow(tx, itemId)!.Value.Item;
             Execute(_connection, tx,
                 "UPDATE items SET deleted = 1 WHERE id = $id; DELETE FROM occurrences WHERE item_id = $id;", ("$id", itemId));
-            Enqueue(tx, itemId, OutboxOperation.Delete, null, baseEtag, groupId);
+            var merged = Enqueue(tx, itemId, OutboxOperation.Delete, null, baseEtag, groupId);
             tx.Commit();
+            Record(itemId, before, null, merged == OutboxOperation.Update);
         }
         LocalChanged?.Invoke();
     }
@@ -560,15 +565,8 @@ public sealed partial class LocalStore : IDisposable
         lock (_gate)
         {
             using var tx = _connection.BeginTransaction();
-            var entries = new List<(long Id, OutboxOperation Op, bool InFlight)>();
-            using (var cmd = Command(_connection, tx, "SELECT id, operation, in_flight FROM outbox WHERE item_id = $id ORDER BY id;", ("$id", itemId)))
-            using (var r = cmd.ExecuteReader())
-            {
-                while (r.Read())
-                {
-                    entries.Add((r.GetInt64(0), Enum.Parse<OutboxOperation>(r.GetString(1)), r.GetBoolean(2)));
-                }
-            }
+            var entries = ReadEntries(tx, itemId);
+            var before = ReadRow(tx, itemId)?.Item;
 
             if (entries is [{ Op: OutboxOperation.Create, InFlight: false } create])
             {
@@ -590,6 +588,15 @@ public sealed partial class LocalStore : IDisposable
             RebuildItemOccurrences(tx, id, OccurrenceWindow());
             IndexItem(_connection, tx, id);
             tx.Commit();
+            if (id == itemId)
+            {
+                Record(id, before, moved with { Id = id });
+            }
+            else
+            {
+                Record(id, null, moved);
+                Record(itemId, before, null);
+            }
         }
         LocalChanged?.Invoke();
         return id;
@@ -607,6 +614,7 @@ public sealed partial class LocalStore : IDisposable
             var group = Guid.NewGuid().ToString("N");
             var window = OccurrenceWindow();
             var baseEtag = GetLiveEtag(tx, original.Id);
+            var before = ReadRow(tx, original.Id)!.Value.Item;
             Execute(_connection, tx, UpdateItemSql, ItemParameters(tx, original));
             RebuildItemOccurrences(tx, original.Id, window);
             IndexItem(_connection, tx, original.Id);
@@ -616,27 +624,8 @@ public sealed partial class LocalStore : IDisposable
             IndexItem(_connection, tx, following.Id);
             Enqueue(tx, following.Id, OutboxOperation.Create, following.RawPayload, null, group);
             tx.Commit();
-        }
-        LocalChanged?.Invoke();
-    }
-
-    /// <summary>Undo of a split (undo R5): the original put back, then the new series deleted, in one linked group.</summary>
-    public void UndoSplit(Item restored, string followingId)
-    {
-        lock (_gate)
-        {
-            using var tx = _connection.BeginTransaction();
-            var group = Guid.NewGuid().ToString("N");
-            var baseEtag = GetLiveEtag(tx, restored.Id);
-            Execute(_connection, tx, UpdateItemSql, ItemParameters(tx, restored));
-            RebuildItemOccurrences(tx, restored.Id, OccurrenceWindow());
-            IndexItem(_connection, tx, restored.Id);
-            Enqueue(tx, restored.Id, OutboxOperation.Update, restored.RawPayload, baseEtag, group);
-            var followingEtag = GetLiveEtag(tx, followingId);
-            Execute(_connection, tx,
-                "UPDATE items SET deleted = 1 WHERE id = $id; DELETE FROM occurrences WHERE item_id = $id;", ("$id", followingId));
-            Enqueue(tx, followingId, OutboxOperation.Delete, null, followingEtag, group);
-            tx.Commit();
+            Record(original.Id, before, original);
+            Record(following.Id, null, following);
         }
         LocalChanged?.Invoke();
     }
@@ -1786,9 +1775,10 @@ public sealed partial class LocalStore : IDisposable
 
     /// <summary>
     /// Adds an outbox entry, coalescing with the item's latest entry when that entry is not grouped
-    /// and not in flight, and the new change is not grouped (R4).
+    /// and not in flight, and the new change is not grouped (R4). Returns the operation of the entry it merged into,
+    /// or null for a new entry.
     /// </summary>
-    private void Enqueue(SqliteTransaction tx, string itemId, OutboxOperation op, string? payload, string? baseEtag, string? groupId)
+    private OutboxOperation? Enqueue(SqliteTransaction tx, string itemId, OutboxOperation op, string? payload, string? baseEtag, string? groupId)
     {
         if (groupId is null)
         {
@@ -1807,15 +1797,15 @@ public sealed partial class LocalStore : IDisposable
                     case (OutboxOperation.Create, OutboxOperation.Update):
                     case (OutboxOperation.Update, OutboxOperation.Update):
                         Execute(_connection, tx, "UPDATE outbox SET payload = $p WHERE id = $id;", ("$p", payload), ("$id", lastId));
-                        return;
+                        return lastOp;
                     case (OutboxOperation.Create, OutboxOperation.Delete):
                         // Never reached the server: drop the entry and the item.
                         Execute(_connection, tx, "DELETE FROM outbox WHERE id = $id; DELETE FROM items WHERE id = $item;",
                             ("$id", lastId), ("$item", itemId));
-                        return;
+                        return lastOp;
                     case (OutboxOperation.Update, OutboxOperation.Delete):
                         Execute(_connection, tx, "UPDATE outbox SET operation = 'Delete', payload = NULL WHERE id = $id;", ("$id", lastId));
-                        return;
+                        return lastOp;
                 }
             }
         }
@@ -1827,6 +1817,7 @@ public sealed partial class LocalStore : IDisposable
             """,
             ("$item", itemId), ("$op", op.ToString()), ("$payload", payload), ("$etag", baseEtag),
             ("$created", _time.GetUtcNow().ToUnixTimeMilliseconds()), ("$group", groupId));
+        return null;
     }
 
     /// <summary>Etag of a live (not deleted) item; throws if there is none.</summary>

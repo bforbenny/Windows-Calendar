@@ -217,6 +217,12 @@ internal sealed partial class TaskEditor : UserControl
     /// <summary>Raised after a change is saved to the store, so the views redraw.</summary>
     public event Action? Changed;
 
+    /// <summary>
+    /// Raised with the banner title after a change that offers Undo (a delete, a move to another list); other edits
+    /// here are undo steps without a banner (undo R3).
+    /// </summary>
+    public event Action<string>? UndoOffered;
+
     /// <summary>Raised when the panel opens or closes.</summary>
     public event Action? OpenChanged;
 
@@ -477,7 +483,10 @@ internal sealed partial class TaskEditor : UserControl
                 : GraphTasks.Edit(item, fields, TimeZoneInfo.Local);
             if (edited is not null)
             {
-                store.UpdateItem(edited);
+                using (store.BeginUndo("Task edited"))
+                {
+                    store.UpdateItem(edited);
+                }
                 if (_calDav && _collection is { } list)
                 {
                     // Completing a repeating task advances it (tasks R7), and a due move shifts a relative reminder: show what was saved.
@@ -534,7 +543,10 @@ internal sealed partial class TaskEditor : UserControl
             var fields = ReadFields(new TaskFields("", false, null, "normal", null));
             var task = _calDav ? CalDavTasks.Create(list, fields, TimeZoneInfo.Local, DateTimeOffset.UtcNow)
                 : GraphTasks.Create(list, fields, TimeZoneInfo.Local);
-            store.CreateItem(task);
+            using (store.BeginUndo("Task added"))
+            {
+                store.CreateItem(task);
+            }
             ShowSavedDue(fields, task);
             Log.Information("Task {ItemId} created", task.Id);
             _newList = null;
@@ -571,8 +583,12 @@ internal sealed partial class TaskEditor : UserControl
         }
         try
         {
-            store.DeleteItem(id);
+            using (store.BeginUndo("Task deleted"))
+            {
+                store.DeleteItem(id);
+            }
             Log.Information("Task {ItemId} deleted", id);
+            UndoOffered?.Invoke("Task deleted");
         }
         catch (Exception ex)
         {

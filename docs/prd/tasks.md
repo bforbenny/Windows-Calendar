@@ -2,7 +2,7 @@
 description: Tasks/to-dos from Radicale (VTODO) and Microsoft To Do, shown and edited in one tasks UI
 when-to-use: Before working on task lists, task editing, or task sync mapping
 tags: [tasks, vtodo, todo, ui]
-status: in-progress
+status: closed
 ---
 
 # Tasks
@@ -37,7 +37,7 @@ Tasks from Radicale VTODO collections and Microsoft To Do lists appear in a unif
 - R7b. Repeat on Microsoft To Do tasks (reopened 2026-11-11): the task editor shows the event editor's Repeat panel (Doesn't repeat / Daily / Weekly on chosen days / Monthly / Yearly, interval, ends) under the due date, mapped to the todoTask `recurrence` (patternedRecurrence: pattern from the rule, range start = the due date). Setting a repeat on a task with no due date sets the due date to today, or to the first chosen weekday for Weekly. Changing the rule applies to the task as a whole; there is no this-and-following for tasks. Radicale task rules stay view-only. Quick add can set a repeat on a task ([quick-add](quick-add.md) R2).
 - R7a. Special To Do lists such as Flagged emails are read-only ([sync-ms365](sync-ms365.md) R9).
 - R8. Subtasks/checklist items are not shown (dropped 2026-11-12, see Out of scope); a move from To Do still warns that they may be lost (R11).
-- R11. Task list field (added 2026-11-12): the task editor has a List drop-down, for new and existing tasks, listing every writable task list (To Do and Radicale) with its account. A move queues a create in the new list and a delete in the old one as one linked outbox group ([calendar-views](calendar-views.md) R8 pattern). It first asks "Move to <list>?" with what the task can't take along whenever anything would be lost, within the account too; a move from Microsoft To Do always lists "Checklist steps, files and linked items, if the task has any" (sync does not download them, so the app can't tell), so every move from To Do asks. The drop-down acts only on a committed choice (closing it on an item), never on arrow keys while it is closed. Mapped across accounts: title, notes, due date (a Radicale due time is lost going to To Do), completed, importance (R4), first reminder and the repeat rule where the Repeat panel can express it (else the move is refused with a message). Lost to To Do: due time, extra alarms, percent-complete, categories, skipped dates and changed occurrences of a repeat, and other VTODO properties. Lost to Radicale: checklist items, linked resources. Moves are not undoable yet. A Microsoft To Do task gets a new id when it moves; a Radicale task keeps its UID.
+- R11. Task list field (added 2026-11-12): the task editor has a List drop-down, for new and existing tasks, listing every writable task list (To Do and Radicale) with its account. A move queues a create in the new list and a delete in the old one as one linked outbox group ([calendar-views](calendar-views.md) R8 pattern). It first asks "Move to <list>?" with what the task can't take along whenever anything would be lost, within the account too; a move from Microsoft To Do always lists "Checklist steps, files and linked items, if the task has any" (sync does not download them, so the app can't tell), so every move from To Do asks. The drop-down acts only on a committed choice (closing it on an item), never on arrow keys while it is closed. Mapped across accounts: title, notes, due date (a Radicale due time is lost going to To Do), completed, importance (R4), first reminder and the repeat rule where the Repeat panel can express it (else the move is refused with a message). Lost to To Do: due time, extra alarms, percent-complete, categories, skipped dates and changed occurrences of a repeat, and other VTODO properties. Lost to Radicale: checklist items, linked resources. A move is one undo step ([undo](undo.md)). A Microsoft To Do task gets a new id when it moves; a Radicale task keeps its UID.
 - R12. The Tasks view's "New task" box has a list drop-down next to it (writable task lists, with account), remembered across sessions; it starts on the default task list. `#list` typed in the text overrides it.
 - R9. Unknown VTODO properties are preserved on edit (see [sync-radicale](sync-radicale.md) R8).
 - R10. Delete old completed tasks (added 2026-11-12): with the Completed filter on, the Tasks view shows a "Delete completed tasks older than 1 year (N)" link when N > 0. It deletes, on the server, the completed tasks in the visible writable task lists whose completion time (`completedDateTime` / COMPLETED, else last modified) is more than 365 days ago. Read-only lists and repeating tasks are skipped. A confirmation dialog lists the count per task list (account in brackets) with a red Delete button; there is no undo. The deletes go through the outbox like any task delete, so they can still be discarded from the pending changes list ([ui-states](ui-states.md)) until they are sent.
@@ -50,9 +50,9 @@ Tasks from Radicale VTODO collections and Microsoft To Do lists appear in a unif
 - Until a new event or task is created, the panel heading is a drop-down ("New event" / "New task") that switches to the other kind, keeping the typed title; the other fields start from their defaults.
 - R1, R2, R5: clicking a task opens the task editor in the event editor's place, with the same auto-save. Fields: title, completed, due date (date only for To Do; an optional time for Radicale from slice 3), Repeat (R7b), reminder ([reminders-notifications](reminders-notifications.md) R5a), importance (Low / Normal / High) and notes. The task list is shown but cannot be changed. Delete asks for confirmation, like events.
 - View-only in the editor and calendar (the checkbox is disabled): Radicale tasks (their writes come later), Flagged emails tasks (R7a) and read-only lists. Repeating To Do tasks whose pattern the Repeat panel can't show can only be completed or reopened (R7).
-- R6: open tasks with a due date show in Week (all-day lane, or at the due time for a Radicale task with one), Month and Agenda as an item with a checkbox before the title in the list colour. Ticking it completes a To Do task without opening the editor; clicking elsewhere on the item opens the editor. Likewise in the Tasks view, the checkbox only completes or reopens, and clicking the rest of the row opens the editor. Task items cannot be dragged. Completed tasks are hidden from these views. The settings toggle comes with [settings-page](settings-page.md); until then they are always shown.
+- R6: open tasks with a due date show in Week (all-day lane, or at the due time for a Radicale task with one), Month and Agenda as an item with a checkbox before the title in the list colour. Ticking it completes a To Do task without opening the editor; clicking elsewhere on the item opens the editor. Likewise in the Tasks view, the checkbox only completes or reopens, and clicking the rest of the row opens the editor. Task items cannot be dragged. Completed tasks are hidden from these views. The settings toggle is built in the fourth slice.
 - Tasks are placed on their due date, not their start date.
-- Undo for task edits and deletes, the R6 settings toggle and Radicale task writes come later.
+- Undo for task edits and deletes, the R6 settings toggle and Radicale task writes came in later slices (below).
 
 ## Interim (second slice: task editing safety, undo, cleanup, added 2026-11-12)
 
@@ -77,7 +77,12 @@ Tasks from Radicale VTODO collections and Microsoft To Do lists appear in a unif
 - Undo for ticks, the conflict field list and R10 (delete old completed) cover Radicale tasks too.
 - Quick add and the New task box can create tasks in Radicale lists; `#` on a task matches every writable task list. A repeat phrase on a Radicale task writes an RRULE ([quick-add](quick-add.md)).
 - R11 and R12 are built.
-- Not in this slice: editing a Radicale task's repeat rule in the editor, checklist items, undo of moves.
+- Not in this slice: editing a Radicale task's repeat rule in the editor (out of scope).
+
+## Interim (fourth slice: settings toggle, undo, added 2026-11-12)
+
+- R6: Settings > Appearance has "Show tasks in the calendar" (on by default). When it is off, Week, Month and Agenda show no tasks; the Tasks view and the tray are unchanged.
+- Task edits, creates, deletes and moves (R11) are undoable with the [undo](undo.md) second slice. A delete still asks first, then shows "Task deleted · Undo".
 
 ## Out of scope
 
@@ -87,18 +92,18 @@ Tasks from Radicale VTODO collections and Microsoft To Do lists appear in a unif
 
 ## Acceptance criteria
 
-- [ ] Create/complete/delete a task on each backend, offline and online; the change is visible in Microsoft To Do / another CalDAV client.
-- [ ] A task with a due date appears on the calendar on that date.
-- [ ] Priority round-trips per the R4 mapping.
-- [ ] Setting Weekly on Friday on a To Do task in the editor shows it repeating in Microsoft To Do; completing it there or here brings the next Friday's instance after sync.
-- [ ] Changing a repeating To Do task back to "Doesn't repeat" removes the repeat in Microsoft To Do.
-- [ ] A sync while typing notes in the task editor leaves the typed text in place.
-- [ ] Ticking a task on the calendar shows "Task completed · Undo"; Undo brings it back open, and Microsoft To Do agrees after sync.
-- [ ] Create, edit (title, notes, due date and time, importance, reminder), complete and delete a Radicale task; another CalDAV client (DAVx5 / Thunderbird) shows the change after sync, and properties the app doesn't know survive.
-- [ ] Ticking a weekly repeating Radicale task moves it to next week's date and keeps it open; Undo puts it back.
-- [ ] Moving a task between two To Do lists, between two Radicale lists, and To Do ⇄ Radicale (with the confirmation listing what's lost) leaves exactly one copy in the target list after sync; a weekly repeat survives the move.
-- [ ] The New task box's list drop-down is remembered after restarting the app; `#list` in the text overrides it.
-- [ ] "Delete completed tasks older than 1 year" shows the right count, asks for confirmation, and the tasks are gone from Microsoft To Do after sync; newer completed, open, repeating and Flagged emails tasks are untouched.
+- [x] Create/complete/delete a task on each backend, offline and online; the change is visible in Microsoft To Do / another CalDAV client.
+- [x] A task with a due date appears on the calendar on that date.
+- [x] Priority round-trips per the R4 mapping.
+- [x] Setting Weekly on Friday on a To Do task in the editor shows it repeating in Microsoft To Do; completing it there or here brings the next Friday's instance after sync.
+- [x] Changing a repeating To Do task back to "Doesn't repeat" removes the repeat in Microsoft To Do.
+- [x] A sync while typing notes in the task editor leaves the typed text in place.
+- [x] Ticking a task on the calendar shows "Task completed · Undo"; Undo brings it back open, and Microsoft To Do agrees after sync.
+- [x] Create, edit (title, notes, due date and time, importance, reminder), complete and delete a Radicale task; another CalDAV client (DAVx5 / Thunderbird) shows the change after sync, and properties the app doesn't know survive.
+- [x] Ticking a weekly repeating Radicale task moves it to next week's date and keeps it open; Undo puts it back.
+- [x] Moving a task between two To Do lists, between two Radicale lists, and To Do ⇄ Radicale (with the confirmation listing what's lost) leaves exactly one copy in the target list after sync; a weekly repeat survives the move.
+- [x] The New task box's list drop-down is remembered after restarting the app; `#list` in the text overrides it.
+- [x] "Delete completed tasks older than 1 year" shows the right count, asks for confirmation, and the tasks are gone from Microsoft To Do after sync; newer completed, open, repeating and Flagged emails tasks are untouched.
 
 ## Open questions
 

@@ -41,7 +41,7 @@ public sealed partial class MainWindow
         ("Alt+Shift+Up / Down", "Shorten / lengthen the selected event by 15 minutes"),
         ("Esc", "Close the panel or Settings, or clear the selection"),
         ("Ctrl+N", "New event, or New task in Tasks"),
-        ("Ctrl+Z", "Undo the last move, duplicate or quick add"),
+        ("Ctrl+Z", "Undo the last change (again for earlier ones)"),
         ("F5", "Sync now"),
         ("Ctrl+,", "Settings"),
         ("Ctrl+B", "Hide or show the sidebar"),

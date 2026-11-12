@@ -335,6 +335,33 @@ internal static class ReminderToasts
         }
     }
 
+    /// <summary>
+    /// One toast at the end of a sync run that kept new conflict copies (conflict-resolution R5): the count only, no
+    /// titles or contents.
+    /// </summary>
+    internal static void ShowNewConflicts(int count)
+    {
+        var xml = $"""
+            <toast>
+              <visual><binding template="ToastGeneric">
+                <text>{Escape(count == 1 ? "1 new conflict" : $"{count} new conflicts")}</text>
+                <text>Changed both here and on the server: the server version was kept, and your version is saved.</text>
+              </binding></visual>
+            </toast>
+            """;
+        try
+        {
+            var doc = new XmlDocument();
+            doc.LoadXml(xml);
+            ToastNotificationManager.CreateToastNotifier().Show(new ToastNotification(doc));
+            Log.Information("New-conflicts toast shown for {Count} conflicts", count);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("New-conflicts toast failed: {Type}: {Message}", ex.GetType().Name, ex.Message);
+        }
+    }
+
     private static string Escape(string text) => SecurityElement.Escape(text) ?? "";
 
     private static string When(Reminder r)

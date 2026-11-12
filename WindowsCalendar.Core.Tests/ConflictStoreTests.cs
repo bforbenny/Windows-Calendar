@@ -245,19 +245,4 @@ public sealed class ConflictStoreTests : IDisposable
         Assert.Empty(_store.GetOutbox());
         Assert.Equal("v1", _store.GetItem("i1")!.RawPayload);
     }
-
-    [Fact]
-    public void UndoSplit_RestoresOriginalThenDeletesNewSeries()
-    {
-        SeedSynced();
-        _store.SplitItem(NewItem("short", "\"e1\""), NewItem("rest", id: "new", href: "https://example.test/cal/new.ics"));
-
-        _store.UndoSplit(NewItem("v1", "\"e1\""), "new");
-
-        Assert.Equal("v1", _store.GetItem("i1")!.RawPayload);
-        Assert.Null(_store.GetItem("new"));
-        var undo = _store.GetOutbox().Skip(2).ToList();
-        Assert.Equal([("i1", OutboxOperation.Update), ("new", OutboxOperation.Delete)], undo.Select(e => (e.ItemId, e.Operation)));
-        Assert.Equal(undo[0].GroupId, undo[1].GroupId);
-    }
 }

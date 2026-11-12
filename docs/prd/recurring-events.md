@@ -2,7 +2,7 @@
 description: Recurring event model across Graph and CalDAV, and edit scopes this-occurrence / this-and-following / whole-series, online and offline
 when-to-use: Before working on recurrence rules, occurrence expansion, or editing/deleting recurring events or tasks
 tags: [recurrence, rrule, events, sync, offline]
-status: in-progress
+status: closed
 ---
 
 # Recurring events
@@ -55,7 +55,7 @@ Recurring events can be created, edited and deleted with three scopes: **this oc
   - This and following: the series is split as in R6, and the new series gets the new rule. The same confirmation applies to the overrides that move to the new series.
   - On the first occurrence, This and following acts as All (R6). Not offered for meetings you organise (R6).
 - **Doesn't repeat** on an existing series: with All, the series becomes a single event at its first occurrence (overrides and EXDATEs are dropped, after confirmation). With This and following, the series ends before this occurrence and this occurrence becomes a new single event, one linked outbox group.
-- Not yet: undo for rule changes, and rule creation from quick add.
+- Rule creation from quick add is built with [quick-add](quick-add.md) R2. Undo for rule changes is built with the [undo](undo.md) second slice (one step, no banner).
 
 ## Interim (MS365: this event, entire series, this and following, rule editing)
 
@@ -66,7 +66,7 @@ Recurring events can be created, edited and deleted with three scopes: **this oc
 - Rule editing (R3): the Repeat panel reads and writes Graph patterns: daily, weekly (days of week), absoluteMonthly (day D), relativeMonthly (1st-4th or last weekday), absoluteYearly; ranges noEnd, numbered (After N times) and endDate (On date, inclusive). Other patterns (e.g. relativeYearly, several weekdays on a monthly pattern) are shown read-only (R7). Doesn't repeat with All replaces the series with a single event at its first occurrence (a create, then the series delete, one linked group); with This and following the series ends before this occurrence and this occurrence becomes a single event.
 - Exchange drops a series' exceptions when its time or pattern changes, and drops the original's exceptions after a split point. Before such a change the app counts the stored exceptions affected and asks ("N changed occurrences will be lost"); cancelling saves nothing.
 - Series-wide time and rule changes reach the occurrences when the sync that sends them pulls the calendar again (seconds when online; on reconnect when offline). Title and location changes show at once. A new series (or the new half of a split) shows its first occurrence until it is sent.
-- Undo works for drags (one occurrence, the series, or a split) and for deleting this and following events, on the master for series changes. Deleting one occurrence has no Undo yet.
+- Undo works for every change ([undo](undo.md) second slice). Deleting one occurrence can be undone until the delete is sent; after that it is refused. A change that made Exchange drop changed occurrences is refused (undo R5).
 - A series cannot be moved to another calendar from the editor (its exceptions would be lost); single events can.
 
 ## Out of scope
@@ -76,9 +76,9 @@ Recurring events can be created, edited and deleted with three scopes: **this oc
 
 ## Acceptance criteria
 
-- [ ] For each backend: create a weekly series; edit one occurrence; delete one occurrence; edit the whole series; split with "this and following" — each result is verified in Outlook / another CalDAV client.
-- [ ] The same five operations performed offline sync correctly on reconnect.
-- [ ] A series with an unsupported rule from the server survives an edit to its title unchanged.
+- [x] For each backend: create a weekly series; edit one occurrence; delete one occurrence; edit the whole series; split with "this and following" — each result is verified in Outlook / another CalDAV client.
+- [x] The same five operations performed offline sync correctly on reconnect.
+- [x] A series with an unsupported rule from the server survives an edit to its title unchanged.
 
 ## Dependencies
 

@@ -213,10 +213,10 @@ internal sealed partial class EventEditor : UserControl
     public event Action? OpenChanged;
 
     /// <summary>
-    /// Raised after one occurrence, or an occurrence and those after it, was deleted: banner title, item id, payload
-    /// before and after, for Undo (undo interim).
+    /// Raised with the banner title after a change that offers Undo (a delete, a move to another calendar); other
+    /// edits here are undo steps without a banner (undo R3).
     /// </summary>
-    public event Action<string, string, string, string>? OccurrenceDeleted;
+    public event Action<string>? UndoOffered;
 
     public bool IsOpen => Visibility == Visibility.Visible;
 
@@ -602,6 +602,8 @@ internal sealed partial class EventEditor : UserControl
         var zone = TimeZoneInfo.Local;
         try
         {
+            // One field change is one undo step (calendar-views R6d); a repeating change saved after a question has its own.
+            using var undo = store.BeginUndo("Event edited");
             if (_itemId is null)
             {
                 if (fields.Title.Length == 0)
@@ -657,6 +659,7 @@ internal sealed partial class EventEditor : UserControl
                     _itemId = store.MoveItem(item.Id, CalDavEvents.MoveTo(item, target));
                     item = store.GetItem(_itemId)!;
                     Log.Information("Event {ItemId} moved to another calendar", _itemId);
+                    UndoOffered?.Invoke("Event moved to another calendar");
                 }
                 if (_recurrence is { } recurrence)
                 {
@@ -726,14 +729,17 @@ internal sealed partial class EventEditor : UserControl
                 {
                     return;
                 }
-                if (split.Following is { } following)
+                using (Store!.BeginUndo("Event edited"))
                 {
-                    Store!.SplitItem(split.Original, following);
-                    _itemId = following.Id;
-                }
-                else
-                {
-                    Store!.UpdateItem(split.Original);
+                    if (split.Following is { } following)
+                    {
+                        Store!.SplitItem(split.Original, following);
+                        _itemId = following.Id;
+                    }
+                    else
+                    {
+                        Store!.UpdateItem(split.Original);
+                    }
                 }
                 _recurrence = split.Recurrence;
                 _scope = EditScope.Series;
@@ -765,7 +771,10 @@ internal sealed partial class EventEditor : UserControl
             {
                 return;
             }
-            Store!.UpdateItem(edited);
+            using (Store!.BeginUndo("Event edited"))
+            {
+                Store!.UpdateItem(edited);
+            }
             _recurrence = to;
             _shownStart = FormStart();
             Log.Information("Repeating event {ItemId} changed ({Scope})", item.Id, _scope);
@@ -842,7 +851,10 @@ internal sealed partial class EventEditor : UserControl
             }
             else if (CalDavRecurrence.ChangeRule(item, _recurrence, false, _repeat.Read(), target, TimeZoneInfo.Local, DateTimeOffset.UtcNow) is { } change)
             {
-                store.UpdateItem(change.Original);
+                using (store.BeginUndo("Repeat changed"))
+                {
+                    store.UpdateItem(change.Original);
+                }
                 RuleSaved(change);
             }
         }
@@ -909,15 +921,18 @@ internal sealed partial class EventEditor : UserControl
                     return;
                 }
             }
-            if (change.Following is { } following)
+            using (store.BeginUndo("Repeat changed"))
             {
-                store.SplitItem(change.Original, following);
-                _itemId = following.Id;
-                _scope = EditScope.Series;
-            }
-            else
-            {
-                store.UpdateItem(change.Original);
+                if (change.Following is { } following)
+                {
+                    store.SplitItem(change.Original, following);
+                    _itemId = following.Id;
+                    _scope = EditScope.Series;
+                }
+                else
+                {
+                    store.UpdateItem(change.Original);
+                }
             }
             RuleSaved(change);
         }
@@ -991,7 +1006,7 @@ internal sealed partial class EventEditor : UserControl
     }
 
     /// <summary>
-    /// Asks first until undo exists (R10 interim). A repeating event asks the scope: one occurrence, or it and the
+    /// Asks first, then offers Undo (calendar-views R10). A repeating event asks the scope: one occurrence, or it and the
     /// following ones, go at once with Undo; the entire series (or "following" from the first) asks for confirmation.
     /// </summary>
     private async System.Threading.Tasks.Task DeleteAsync()
@@ -1033,10 +1048,12 @@ internal sealed partial class EventEditor : UserControl
                         var deleted = scope == EditScope.Following
                             ? CalDavRecurrence.DeleteFollowing(item, recurrence, zone, DateTimeOffset.UtcNow)!
                             : CalDavRecurrence.DeleteOccurrence(item, recurrence, zone, DateTimeOffset.UtcNow);
-                        store.UpdateItem(deleted);
+                        using (store.BeginUndo("Occurrence deleted"))
+                        {
+                            store.UpdateItem(deleted);
+                        }
                         Log.Information("Occurrence(s) of event {ItemId} deleted ({Scope})", id, scope);
-                        OccurrenceDeleted?.Invoke(scope == EditScope.Following ? "Following events deleted" : "Occurrence deleted",
-                            id, item.RawPayload, deleted.RawPayload);
+                        UndoOffered?.Invoke(scope == EditScope.Following ? "Following events deleted" : "Occurrence deleted");
                     }
                 }
                 catch (Exception ex)
@@ -1062,8 +1079,12 @@ internal sealed partial class EventEditor : UserControl
         }
         try
         {
-            store.DeleteItem(id);
+            using (store.BeginUndo("Event deleted"))
+            {
+                store.DeleteItem(id);
+            }
             Log.Information("Event {ItemId} deleted", id);
+            UndoOffered?.Invoke(_recurrence is null ? "Event deleted" : "Series deleted");
         }
         catch (Exception ex)
         {

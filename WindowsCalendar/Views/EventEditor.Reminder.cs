@@ -97,7 +97,10 @@ internal sealed partial class EventEditor
             }
             if (GraphEvents.EditReminder(target, master, reminder, zone) is { } edited)
             {
-                store.UpdateItem(edited);
+                using (store.BeginUndo("Reminder changed"))
+                {
+                    store.UpdateItem(edited);
+                }
                 Log.Information("Reminder of event {ItemId} changed", target.Id);
                 Changed?.Invoke();
             }

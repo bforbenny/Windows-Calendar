@@ -48,8 +48,6 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     private bool _narrow;
     private int _conflictsDismissed;
     private readonly DispatcherTimer _undoTimer = new() { Interval = TimeSpan.FromSeconds(8) };
-    // PayloadBefore is null for a created copy, which undo deletes.
-    private (string ItemId, string? PayloadBefore, string PayloadAfter, Item? Following)? _lastChange;
     // Sidebar names of the collections being pulled now, for the hue wave (ui-states R1).
     private readonly HashSet<string> _syncing = [];
     private readonly Dictionary<string, TextBlock> _names = [];
@@ -111,7 +109,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
         EventDrag.DuplicateRequested += e => Duplicate(e, null);
 
-        // Esc cancels a drag; Ctrl+Z undoes the latest move unless a text box is being typed in (undo R3). Alt+key
+        // Esc cancels a drag; Ctrl+Z undoes the latest change unless a text box is being typed in (undo R3). Alt+key
         // arrives as a system key.
         PreviewKeyDown += (_, e) =>
         {
@@ -155,7 +153,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 ToggleSidebar();
             }
             else if (key == Key.Z && Keyboard.Modifiers == ModifierKeys.Control
-                && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase && _lastChange is not null)
+                && Keyboard.FocusedElement is not System.Windows.Controls.Primitives.TextBoxBase && Store?.UndoSteps.Count > 0)
             {
                 e.Handled = true;
                 Undo();
@@ -166,6 +164,17 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             _undoTimer.Stop();
             BannerFade.SetOpen(UndoBar, false);
         };
+        // A newer step closes the banner offering Undo for an older one, so its Undo is always the latest (undo R3).
+        if (Store is { } undoStore)
+        {
+            undoStore.UndoSteps.Pushed += () =>
+            {
+                if (UndoButton.Visibility == Visibility.Visible)
+                {
+                    BannerFade.SetOpen(UndoBar, false);
+                }
+            };
+        }
         // Closing the conflicts banner hides it for the session, until the count grows (conflict-resolution R5).
         System.ComponentModel.DependencyPropertyDescriptor.FromProperty(Wpf.Ui.Controls.InfoBar.IsOpenProperty, typeof(Wpf.Ui.Controls.InfoBar))
             .AddValueChanged(ConflictBar, (_, _) =>
@@ -184,11 +193,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         };
         EditorHost.Child = _editor;
         _editor.Changed += RenderView;
-        _editor.OccurrenceDeleted += (title, id, before, after) =>
-        {
-            _lastChange = (id, before, after, null);
-            ShowUndo(title, canUndo: true);
-        };
+        _editor.UndoOffered += title => ShowUndo(title, canUndo: true);
         _editor.OpenChanged += PlaceEditor;
         SetupTasks();
         SetupQuickAdd();
@@ -381,15 +386,17 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             {
                 return;
             }
-            if (following is not null)
+            using (Store.BeginUndo("Event moved"))
             {
-                Store.SplitItem(edited, following);
+                if (following is not null)
+                {
+                    Store.SplitItem(edited, following);
+                }
+                else
+                {
+                    Store.UpdateItem(edited);
+                }
             }
-            else
-            {
-                Store.UpdateItem(edited);
-            }
-            _lastChange = (item.Id, item.RawPayload, edited.RawPayload, following);
             ShowUndo(scope switch
             {
                 EditScope.Series => "Series moved",
@@ -412,55 +419,68 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
     }
 
     /// <summary>
-    /// Puts the previous version of the event back (undo R4). Refused if the server changed the event since (R6): its
-    /// payload is no longer the one the action wrote.
+    /// Undoes the newest step of the stack (undo R2, R4): the views redraw, and an open editor reloads, or closes if its
+    /// item is gone. A refusal (R5, R6) or a re-created MS365 item (R8) says so in the banner.
     /// </summary>
     private void Undo()
     {
-        if (_lastChange is not { } change || Store is not { } store)
+        if (Store is not { } store)
         {
             return;
         }
-        _lastChange = null;
-        if (change.PayloadBefore is null)
-        {
-            UndoDuplicate(store, change.ItemId);
-            return;
-        }
+        UndoResult result;
         try
         {
-            if (store.GetItem(change.ItemId) is not { } item || item.RawPayload != change.PayloadAfter
-                || (change.Following is { } split && store.GetItem(split.Id)?.RawPayload != split.RawPayload))
-            {
-                ShowUndo("This item changed on the server; can't undo", canUndo: false);
-                return;
-            }
-            var restored = item.Kind == ItemKind.Task
-                ? _collections.TryGetValue(item.CollectionId, out var taskList) && !IsGraph(taskList)
-                    ? Core.CalDav.CalDavTasks.Restore(item, change.PayloadBefore, TimeZoneInfo.Local)
-                    : Core.Graph.GraphTasks.Restore(item, change.PayloadBefore, TimeZoneInfo.Local)
-                : _collections.TryGetValue(item.CollectionId, out var collection) && IsGraph(collection)
-                ? Core.Graph.GraphEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local)
-                : CalDavEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local);
-            if (change.Following is { } following)
-            {
-                // Undo of a split (undo R5): the original back and the new series deleted, one linked group.
-                store.UndoSplit(restored, following.Id);
-            }
-            else
-            {
-                store.UpdateItem(restored);
-            }
-            BannerFade.SetOpen(UndoBar, false);
-            Log.Information("Change to {Kind} {ItemId} undone", item.Kind, change.ItemId);
+            result = store.UndoLast((before, current) => _collections.TryGetValue(before.CollectionId, out var collection)
+                ? UndoRestore.For(before, current, collection, IsGraph(collection), TimeZoneInfo.Local)
+                : null);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Undoing change to event {ItemId} failed", change.ItemId);
+            Log.Error(ex, "Undo failed");
+            return;
+        }
+        if (result.Step is not { } step)
+        {
+            return;
+        }
+        Log.Information("Undo of {Label} ({Count} items): {Outcome}", step.Label, step.Changes.Count, result.Outcome);
+        switch (result.Outcome)
+        {
+            case UndoOutcome.ChangedOnServer:
+                ShowUndo("This item changed on the server; can't undo", canUndo: false);
+                return;
+            case UndoOutcome.Sending:
+                ShowUndo("Can't undo yet", canUndo: false, "This change is being sent; try again in a moment.");
+                return;
+            case UndoOutcome.CannotRecreate:
+                ShowUndo("Can't undo", canUndo: false, "This occurrence was already deleted on the server, so it can't be restored.");
+                return;
+            case UndoOutcome.Refused:
+                ShowUndo("Can't undo", canUndo: false, step.Refusal!);
+                return;
+            case UndoOutcome.Recreated:
+                ShowUndo(step.Changes.Any(c => c.Before?.Kind == ItemKind.Task) ? "Task restored" : "Event restored", canUndo: false,
+                    "It was already deleted on the server, so it was added again as new: attendees and online meeting details are not restored.");
+                break;
+            default:
+                BannerFade.SetOpen(UndoBar, false);
+                break;
         }
         RenderView();
-        _editor.Reload(change.ItemId);
-        _taskEditor.Reload(change.ItemId, _collections);
+        foreach (var id in step.Changes.Select(c => c.ItemId))
+        {
+            if (_editor.ItemId == id && store.GetItem(id) is null)
+            {
+                _editor.Hide();
+            }
+            if (_taskEditor.ItemId == id && store.GetItem(id) is null)
+            {
+                _taskEditor.Hide();
+            }
+            _editor.Reload(id);
+            _taskEditor.Reload(id, _collections);
+        }
     }
 
     private void OnUndo(object sender, RoutedEventArgs e) => Undo();
@@ -506,8 +526,9 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var watch = Stopwatch.StartNew();
         var start = first.ToDateTime(TimeOnly.MinValue);
         var from = new DateTimeOffset(start, TimeZoneInfo.Local.GetUtcOffset(start));
+        var showTasks = SettingsPage.TasksInCalendarOn(Store);
         var occurrences = (Store?.GetOccurrenceViews(from, from.AddDays(days + 1)) ?? [])
-            .Where(o => (o.Kind == ItemKind.Event || !o.Completed) && _collections.ContainsKey(o.CollectionId))
+            .Where(o => (o.Kind == ItemKind.Event || (showTasks && !o.Completed)) && _collections.ContainsKey(o.CollectionId))
             .ToList();
         // Clash and short-gap marks among the shown events, when the active set's switch is on (schedule-gap-warning R11).
         ProblemMarks.All = Store is { } store && store.GetClashCheck(store.ActiveSetId)

@@ -38,7 +38,10 @@ public sealed partial class MainWindow
             {
                 copy = CalDavEvents.Duplicate(item, e.Recurrence, e.Collection, zone, DateTimeOffset.UtcNow, times);
             }
-            store.CreateItem(copy);
+            using (store.BeginUndo("Event duplicated"))
+            {
+                store.CreateItem(copy);
+            }
         }
         catch (EditRefusedException ex)
         {
@@ -53,7 +56,6 @@ public sealed partial class MainWindow
         Log.Information("Event {ItemId} duplicated as {CopyId}", item.Id, copy.Id);
 
         // Undo deletes the copy (duplicate-event R2, undo R4).
-        _lastChange = (copy.Id, null, copy.RawPayload, null);
         ShowUndo("Event duplicated", canUndo: true, note: copy.StartUtc is { } start && copy.EndUtc is { } end
             ? ScheduleWarning.For(store, copy.Id, start, end, copy.AllDay, e.ShowAs) : null);
         _selectedKey = EventCard.SelectedKey = $"{copy.Id}|";
@@ -64,35 +66,5 @@ public sealed partial class MainWindow
             ShowEventEditor();
             _editor.OpenExisting(copy.Id, null, _collections);
         }
-    }
-
-    /// <summary>
-    /// Deletes the copy: an unsent create is simply dropped from the outbox, a sent one is deleted on the server
-    /// (undo R4). Edits made to the copy since are deleted with it.
-    /// </summary>
-    private void UndoDuplicate(LocalStore store, string copyId)
-    {
-        try
-        {
-            if (_editor.ItemId == copyId)
-            {
-                _editor.Hide();
-            }
-            if (_taskEditor.ItemId == copyId)
-            {
-                _taskEditor.Hide();
-            }
-            if (store.GetItem(copyId) is not null)
-            {
-                store.DeleteItem(copyId);
-            }
-            BannerFade.SetOpen(UndoBar, false);
-            Log.Information("Added item {ItemId} undone", copyId);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Undoing duplicate {ItemId} failed", copyId);
-        }
-        RenderView();
     }
 }

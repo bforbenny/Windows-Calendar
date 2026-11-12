@@ -135,6 +135,7 @@ internal sealed partial class EventEditor
             _itemId = store.MoveItem(item.Id, GraphEvents.MoveTo(item, target, zone));
             item = store.GetItem(_itemId)!;
             Log.Information("Event {ItemId} moved to another calendar", _itemId);
+            UndoOffered?.Invoke("Event moved to another calendar");
         }
         if (GraphEvents.Edit(item, null, fields, zone) is { } edited)
         {
@@ -196,7 +197,10 @@ internal sealed partial class EventEditor
                 }
                 if (GraphEvents.Edit(occurrence, master, fields, zone) is { } edited)
                 {
-                    store.UpdateItem(edited);
+                    using (store.BeginUndo("Event edited"))
+                    {
+                        store.UpdateItem(edited);
+                    }
                     _recurrence = edited.StartUtc;
                 }
             }
@@ -209,7 +213,14 @@ internal sealed partial class EventEditor
                     ShowFields(current);
                     return;
                 }
-                store.SplitItem(split.Original, split.Following);
+                using (var undo = store.BeginUndo("Event edited"))
+                {
+                    store.SplitItem(split.Original, split.Following);
+                    if (lost > 0)
+                    {
+                        undo.Refuse(MainWindow.LostExceptionsRefusal);
+                    }
+                }
                 _itemId = split.Following.Id;
                 _occurrenceId = null;
                 _recurrence = split.Following.StartUtc;
@@ -218,14 +229,22 @@ internal sealed partial class EventEditor
             }
             else
             {
-                if (moved && !await LostDialog.ConfirmAsync("Change the series?", "Change", GraphRecurrence.Exceptions(series, null, zone)))
+                var lost = moved ? GraphRecurrence.Exceptions(series, null, zone) : 0;
+                if (moved && !await LostDialog.ConfirmAsync("Change the series?", "Change", lost))
                 {
                     ShowFields(current);
                     return;
                 }
                 if (GraphRecurrence.EditSeries(master, recurrence, fields, zone) is { } edited)
                 {
-                    store.UpdateItem(edited);
+                    using (var undo = store.BeginUndo("Event edited"))
+                    {
+                        store.UpdateItem(edited);
+                        if (lost > 0)
+                        {
+                            undo.Refuse(MainWindow.LostExceptionsRefusal);
+                        }
+                    }
                     _recurrence = recurrence + (Utc(fields.Walls(zone).Start) - Utc(current.Start));
                 }
                 // From the first occurrence, "this and following" is the whole series.
@@ -259,7 +278,10 @@ internal sealed partial class EventEditor
         {
             return;
         }
-        store.UpdateItem(updated);
+        using (store.BeginUndo("Repeat changed"))
+        {
+            store.UpdateItem(updated);
+        }
         GraphRuleSaved(_repeat.Read().Frequency == RepeatFrequency.None ? null : updated.StartUtc);
     }
 
@@ -285,22 +307,35 @@ internal sealed partial class EventEditor
             return;
         }
         var repeats = rule.Frequency != RepeatFrequency.None;
-        if (change is { Updated: { } original, Created: { } following })
+        DateTimeOffset? saved;
+        using (var undo = store.BeginUndo("Repeat changed"))
         {
-            store.SplitItem(original, following);
-            _itemId = following.Id;
-            GraphRuleSaved(repeats ? following.StartUtc : null);
+            if (change is { Updated: { } original, Created: { } following })
+            {
+                store.SplitItem(original, following);
+                _itemId = following.Id;
+                saved = repeats ? following.StartUtc : null;
+            }
+            else if (change is { ReplacesMaster: true, Created: { } single })
+            {
+                _itemId = store.MoveItem(master.Id, single);
+                saved = null;
+            }
+            else if (change.Updated is { } updated)
+            {
+                store.UpdateItem(updated);
+                saved = updated.StartUtc;
+            }
+            else
+            {
+                return;
+            }
+            if (change.Lost > 0)
+            {
+                undo.Refuse(MainWindow.LostExceptionsRefusal);
+            }
         }
-        else if (change is { ReplacesMaster: true, Created: { } single })
-        {
-            _itemId = store.MoveItem(master.Id, single);
-            GraphRuleSaved(null);
-        }
-        else if (change.Updated is { } updated)
-        {
-            store.UpdateItem(updated);
-            GraphRuleSaved(updated.StartUtc);
-        }
+        GraphRuleSaved(saved);
     }
 
     /// <summary>After a rule change: the panel follows the series' first occurrence, or the single event.</summary>
@@ -331,15 +366,22 @@ internal sealed partial class EventEditor
         }
         if (scope == EditScope.Following && GraphRecurrence.DeleteFollowing(master, recurrence, zone) is { } truncated)
         {
-            store.UpdateItem(truncated);
+            using (store.BeginUndo("Occurrence deleted"))
+            {
+                store.UpdateItem(truncated);
+            }
             Log.Information("Occurrence(s) of event {ItemId} deleted ({Scope})", masterId, scope);
-            OccurrenceDeleted?.Invoke("Following events deleted", masterId, master.RawPayload, truncated.RawPayload);
+            UndoOffered?.Invoke("Following events deleted");
             return true;
         }
         if (scope == EditScope.Occurrence && _occurrenceId is { } id)
         {
-            store.DeleteItem(id);
+            using (store.BeginUndo("Occurrence deleted"))
+            {
+                store.DeleteItem(id);
+            }
             Log.Information("Occurrence(s) of event {ItemId} deleted ({Scope})", masterId, scope);
+            UndoOffered?.Invoke("Occurrence deleted");
             return true;
         }
         return false;

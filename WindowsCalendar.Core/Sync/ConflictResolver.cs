@@ -78,6 +78,87 @@ public static class ConflictResolver
         return mapped with { Id = current.Id, CollectionId = current.CollectionId, RemoteId = current.RemoteId, Etag = current.Etag };
     }
 
+    /// <summary>
+    /// The occurrences of a CalDAV repeating series that differ between the saved local payload and the server one
+    /// (conflict-resolution R6): overrides (RECURRENCE-ID events) present on one side only or with different fields, and
+    /// EXDATEs on one side only. There is no stored base, so each line says what each side has: "Mon 3 Nov 09:00: yours
+    /// changed · server unchanged". Times are in <paramref name="zone"/>, oldest first; empty when they match.
+    /// </summary>
+    public static IReadOnlyList<string> SeriesOccurrenceDifferences(string localPayload, string serverPayload, TimeZoneInfo zone)
+    {
+        var mine = Occurrences(localPayload, zone);
+        var theirs = Occurrences(serverPayload, zone);
+        var lines = new List<(DateTimeOffset At, bool AllDay, string Text)>();
+        foreach (var at in mine.Overrides.Keys.Union(theirs.Overrides.Keys))
+        {
+            var hasMine = mine.Overrides.TryGetValue(at, out var m);
+            var hasTheirs = theirs.Overrides.TryGetValue(at, out var t);
+            if (hasMine && hasTheirs && m.Fields == t.Fields)
+            {
+                continue;
+            }
+            lines.Add((at, hasMine ? m.AllDay : t.AllDay,
+                $"yours {(hasMine ? "changed" : "unchanged")} · server {(hasTheirs ? "changed" : "unchanged")}"));
+        }
+        foreach (var at in mine.Excluded.Except(theirs.Excluded))
+        {
+            lines.Add((at, mine.AllDayExcluded.Contains(at), "yours deleted · server unchanged"));
+        }
+        foreach (var at in theirs.Excluded.Except(mine.Excluded))
+        {
+            lines.Add((at, theirs.AllDayExcluded.Contains(at), "yours unchanged · server deleted"));
+        }
+        var culture = CultureInfo.CurrentCulture;
+        return lines.OrderBy(l => l.At).Select(l =>
+        {
+            var local = TimeZoneInfo.ConvertTime(l.At, zone);
+            return $"{local.ToString(l.AllDay ? "ddd d MMM" : "ddd d MMM HH:mm", culture)}: {l.Text}";
+        }).ToList();
+    }
+
+    private sealed record SeriesOccurrences(Dictionary<DateTimeOffset, (EventFields Fields, bool AllDay)> Overrides,
+        HashSet<DateTimeOffset> Excluded, HashSet<DateTimeOffset> AllDayExcluded);
+
+    private static SeriesOccurrences Occurrences(string payload, TimeZoneInfo zone)
+    {
+        var calendar = CustomTimeZones.Load(payload) ?? throw new InvalidOperationException("The payload cannot be read.");
+        var master = CalDavEvents.Master(calendar);
+        var overrides = new Dictionary<DateTimeOffset, (EventFields, bool)>();
+        foreach (var ev in calendar.Events.Where(e => e.RecurrenceIdentifier is not null))
+        {
+            var id = ev.RecurrenceIdentifier!.StartTime;
+            overrides[OccurrenceExpander.ToUtc(id, zone)] = (CalDavEvents.Read(ev, zone).Walls(zone), !id.HasTime);
+        }
+        var excluded = new HashSet<DateTimeOffset>();
+        var allDay = new HashSet<DateTimeOffset>();
+        foreach (var date in master.ExceptionDates.GetAllDates())
+        {
+            var at = OccurrenceExpander.ToUtc(date, zone);
+            excluded.Add(at);
+            if (!date.HasTime)
+            {
+                allDay.Add(at);
+            }
+        }
+        return new SeriesOccurrences(overrides, excluded, allDay);
+    }
+
+    /// <summary>
+    /// The saved local version as an item of its own, for restoring it when the item is gone (conflict-resolution R3):
+    /// the payload read as a stored item of <paramref name="graph"/>'s kind, under the conflict's item and collection ids.
+    /// </summary>
+    public static Item RestoreSource(string localPayload, string itemId, string collectionId, ItemKind kind, bool graph, TimeZoneInfo zone)
+    {
+        if (!graph)
+        {
+            var mapped = CalDavItemMapper.Map("", "", localPayload, zone)
+                ?? throw new InvalidOperationException("The saved local version cannot be read.");
+            return mapped with { Id = itemId, CollectionId = collectionId };
+        }
+        var item = new Item(itemId, collectionId, kind, null, localPayload);
+        return kind == ItemKind.Task ? GraphTaskMapper.Rebuild(item, localPayload, zone) : GraphEventMapper.Rebuild(item, localPayload, zone);
+    }
+
     private static List<FieldDifference> TaskDifferences(string localPayload, Item current, bool graph, TimeZoneInfo zone)
     {
         HashSet<string>? changed = null;

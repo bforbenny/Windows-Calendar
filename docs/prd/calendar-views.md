@@ -2,7 +2,7 @@
 description: Week, Month (and Agenda) calendar views with navigation, calendar colours, event create/edit, and drag to move/resize
 when-to-use: Before working on calendar UI, view rendering, or the event editor
 tags: [ui, views, events, drag-drop]
-status: in-progress
+status: closed
 ---
 
 # Calendar views
@@ -62,7 +62,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 - R7. Drag to move and drag the top or bottom edge to resize in Day/Week, snapping to 15 minutes (minimum length 15 minutes). Drag to move between days in Month and Agenda, keeping the time and length. A preview shows where the event will land; Esc cancels the drag; holding near the edge of the view scrolls it. For recurring events, a drag always asks for the scope (this / this and following / all), even while the editor panel has one. "This and following" on the first occurrence acts as "all". Dragging from the all-day lane into the grid makes a 1-hour timed event at the drop slot; dragging into the all-day lane makes an all-day event on that date. Moving an occurrence onto or past the previous or next occurrence is refused before saving, with a message.
 - R8. Moving an event to a different calendar within the **same** account is supported. Moving across accounts is a copy + delete with confirmation, queued as one linked outbox group (the delete is not sent if the copy fails). Between Microsoft 365 and CalDAV the fields are mapped in full, and the confirmation lists what cannot be carried over. Meetings and invitations (events with attendees or an organiser) cannot be moved to another calendar.
 - R9. Read-only calendars and meetings where you are an attendee cannot be dragged or edited; this is shown visually. Your own reminder on an attendee meeting stays editable ([attendees-invitations](attendees-invitations.md) R7).
-- R10. Delete: single events/occurrences are deleted immediately with an undo banner; whole-series deletes ask for confirmation; recurring deletes ask for the scope (see [undo](undo.md) R7). Meetings with attendees ask first ([attendees-invitations](attendees-invitations.md) R7–R8).
+- R10. Delete: every delete asks for confirmation and then shows the undo banner; recurring deletes ask for the scope (see [undo](undo.md) R7). Meetings with attendees ask first ([attendees-invitations](attendees-invitations.md) R7–R8).
 - R11. Keyboard: full keyboard operation per [keyboard-navigation](keyboard-navigation.md).
 - R12. Performance: switching views or periods renders in < 200 ms from the local store, for up to 2,000 occurrences in the window.
 
@@ -71,7 +71,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 - Week, Month and Agenda with the toolbar (Today, view switcher, period title, Sync now). No editor, create, drag or delete yet.
 - The week starts on the Windows first day of week.
 - Sidebar: checkbox, swatch and shape per calendar and task list. Hidden collections are remembered in the store's `meta` table; [calendar-sets](calendar-sets.md) R8 keeps them as the current visibility.
-- Colours: server colours are snapped per [ui-colour-theme](ui-colour-theme.md) interim, otherwise automatic; overrides come later.
+- Colours: server colours are snapped per [ui-colour-theme](ui-colour-theme.md) interim, otherwise automatic; colour and shape overrides are built with [ui-colour-theme](ui-colour-theme.md).
 - R1: the Tasks tab follows Agenda; open tasks with a due date show in Week, Month and Agenda per [tasks](tasks.md) interim.
 - Layout maths (overlap columns, periods) lives in `WindowsCalendar.Core` with tests; render time is logged for R12.
 
@@ -80,16 +80,16 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
 - R6, R6b (click), R6c and R6d with these fields: title, all-day, start and end, repeat ([recurring-events](recurring-events.md) R3 interim), location, description (plain text), calendar (writable calendars in every account) and Delete. Other properties stay untouched in the payload ([sync-radicale](sync-radicale.md) R8).
 - Times are edited in the Windows timezone and written in the event's own timezone; floating and UTC times stay so. New events use the Windows timezone with a VTIMEZONE.
 - Read-only calendars open view-only with a notice. Recurring events are editable per the [recurring-events](recurring-events.md) interim (this / this and following / all).
-- R5 interim: clicking an empty Week slot opens the editor on a new 1-hour event at that half hour; the all-day lane, a Month day or the empty part of an Agenda day gives an all-day event. The quick-create popup comes with [quick-add](quick-add.md).
+- R5 interim: clicking an empty Week slot opens the editor on a new 1-hour event at that half hour; the all-day lane, a Month day or the empty part of an Agenda day gives an all-day event. An empty slot now opens the quick-create popup, built with [quick-add](quick-add.md).
 - The toolbar has a "New event" split button: it opens the editor on a new 1-hour event at the next full hour, on today when today is in view, otherwise on the day in the middle of the view. Its drop-down offers New event and New task ([tasks](tasks.md) interim). In the Tasks view the button reads "New task" and opens a new task.
 - R8 within an account: the move is queued as a create in the new calendar then a delete of the old one, one linked outbox group. An unsent new event is re-targeted instead.
 - Calendar field: each choice shows its source after the name, muted: the server host for Radicale (e.g. "Personal  dav-1.bforbenny.com"), the account email for MS365. The task editor's list line shows the same.
-- R8 across accounts: picking another account's calendar saves typed changes first, then asks "Move to <calendar>?" with what the event can't take along. Move queues the create there and the delete here as one linked group; the editor then shows the moved event. Cancel keeps the event where it is. Not undoable yet.
+- R8 across accounts: picking another account's calendar saves typed changes first, then asks "Move to <calendar>?" with what the event can't take along. Move queues the create there and the delete here as one linked group; the editor then shows the moved event. Cancel keeps the event where it is. The move is one undo step ([undo](undo.md) second slice).
   - Same kind of account: CalDAV copies the stored event whole (same UID, new href). MS365 copies the fields a create may write.
   - CalDAV to MS365: title, times in the event's own timezone, all-day, location with GEO as coordinates, description, repeat rule (any the editor can show), the first reminder before the start, show-as (X-MICROSOFT-CDO-BUSYSTATUS, else TRANSP), CLASS as sensitivity, PRIORITY as importance, CATEGORIES. Listed as lost: other reminders, changed occurrences, deleted occurrences (they come back). A repeat rule the editor can't show is refused.
   - MS365 to CalDAV: the same fields the other way, with an HTML description as plain text (its formatting listed as lost), the reminder as a display VALARM, show-as as TRANSP plus X-MICROSOFT-CDO-BUSYSTATUS for tentative, out of office and working elsewhere.
   - Refused: meetings and invitations, in any account and also within one account (the Calendar field is disabled for them); repeating MS365 events (as within an account).
-- R10 interim: Delete asks for confirmation until [undo](undo.md) exists. Keyboard selection is built with [keyboard-navigation](keyboard-navigation.md). For a recurring event Delete asks for the scope: one occurrence is deleted at once with the undo banner, the entire series asks for confirmation.
+- R10: Delete asks for confirmation, then shows the undo banner ([undo](undo.md) second slice). Keyboard selection is built with [keyboard-navigation](keyboard-navigation.md). For a recurring event Delete asks for the scope: one occurrence is deleted at once with the undo banner, the entire series asks for confirmation.
 
 ### Pending user check (R8 across accounts)
 
@@ -117,20 +117,20 @@ Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or m
 
 ## Acceptance criteria
 
-- [ ] All views render events from both MS365 and Radicale in the correct calendar colours.
-- [ ] The hamburger button and Ctrl+B hide and show the sidebar; the state survives a restart.
+- [x] All views render events from both MS365 and Radicale in the correct calendar colours.
+- [x] The hamburger button and Ctrl+B hide and show the sidebar; the state survives a restart.
 - [x] The sidebar and the editor panel overlay the views; showing or hiding either never resizes the grid.
-- [ ] Collapsing the Task lists section and one account group survives a restart.
-- [ ] Subscribed, read-only and not-secure collections show a link, lock or warning icon instead of a text label, with the text as a tooltip.
-- [ ] During Sync now, each calendar's name shows the hue wave only while that calendar syncs.
-- [ ] Sync now also syncs unticked calendars; ticking one shows it at once, with no sync.
-- [ ] A calendar colour or shape changed in the app persists across restarts and is not changed on the server.
-- [ ] Each event card shows its calendar's shape marker before the title.
-- [ ] A single click opens the editor panel; a small drag moves the event instead.
-- [ ] Changing an event's title and clicking another event saves the change with no prompt, and Ctrl+Z reverts it.
-- [ ] Drag-move and resize update the server after sync.
-- [ ] Dragging a recurring occurrence prompts for the scope, and each choice behaves as specified.
-- [ ] Views work fully offline.
+- [x] Collapsing the Task lists section and one account group survives a restart.
+- [x] Subscribed, read-only and not-secure collections show a link, lock or warning icon instead of a text label, with the text as a tooltip.
+- [x] During Sync now, each calendar's name shows the hue wave only while that calendar syncs.
+- [x] Sync now also syncs unticked calendars; ticking one shows it at once, with no sync.
+- [x] A calendar colour or shape changed in the app persists across restarts and is not changed on the server.
+- [x] Each event card shows its calendar's shape marker before the title.
+- [x] A single click opens the editor panel; a small drag moves the event instead.
+- [x] Changing an event's title and clicking another event saves the change with no prompt, and Ctrl+Z reverts it.
+- [x] Drag-move and resize update the server after sync.
+- [x] Dragging a recurring occurrence prompts for the scope, and each choice behaves as specified.
+- [x] Views work fully offline.
 
 ## Dependencies
 

@@ -370,6 +370,7 @@ public partial class App : Application
         // shown or hidden (calendar-sets R7).
         var accounts = store.GetAccounts();
         var auth = Ms365;
+        var conflictsBefore = store.GetConflictCount();
         var results = await Task.WhenAll(accounts.Select(account => account.Type switch
         {
             AccountType.CalDAV => SyncRadicaleAsync(store, account, reason, cancellationToken),
@@ -385,6 +386,12 @@ public partial class App : Application
             // Server changes may move, add or remove reminders.
             ReminderToasts.Reschedule(store, ReminderPlanner.RunningWindow);
             changed = true;
+        }
+
+        // One toast per run when conflicts were kept during it (conflict-resolution R5).
+        if (store.GetConflictCount() - conflictsBefore is > 0 and var added)
+        {
+            ReminderToasts.ShowNewConflicts(added);
         }
 
         // After a resume (R6); by now Windows has shown any toasts it shows late on wake.

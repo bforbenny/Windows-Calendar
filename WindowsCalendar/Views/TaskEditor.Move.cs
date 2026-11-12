@@ -191,8 +191,12 @@ internal sealed partial class TaskEditor
         string movedId;
         try
         {
-            movedId = store.MoveItem(item.Id, result.Moved);
+            using (store.BeginUndo("Task moved"))
+            {
+                movedId = store.MoveItem(item.Id, result.Moved);
+            }
             Log.Information("Task {ItemId} moved to another list as {MovedId}", item.Id, movedId);
+            UndoOffered?.Invoke("Task moved to another list");
         }
         catch (Exception ex)
         {

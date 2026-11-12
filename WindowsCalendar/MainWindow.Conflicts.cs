@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -7,6 +8,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using Serilog;
+using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Core.Sync;
 using WindowsCalendar.Views;
@@ -84,12 +86,34 @@ public sealed partial class MainWindow
         {
             actions.Children.Add(ConflictButton("Use mine", conflict, mine: true));
         }
+        if (!conflict.OnCalendar && !conflict.LocalDeleted)
+        {
+            actions.Children.Add(RestoreButton(conflict));
+        }
         summary.Children.Add(actions);
         return new ListBoxItem
         {
             Content = summary,
             Tag = conflict.OnCalendar ? result : null,
         };
+    }
+
+    /// <summary>Restore (conflict-resolution R3): for a row whose item is gone, saves the local version as a new item.</summary>
+    private Button RestoreButton(ConflictInfo conflict)
+    {
+        var button = new Wpf.Ui.Controls.Button
+        {
+            Content = "Restore",
+            Margin = new Thickness(0, 0, 8, 0),
+            Appearance = Wpf.Ui.Controls.ControlAppearance.Primary,
+        };
+        System.Windows.Automation.AutomationProperties.SetName(button, $"Restore, {conflict.Title}");
+        button.Click += (_, e) =>
+        {
+            e.Handled = true;
+            _ = RestoreAsync(conflict);
+        };
+        return button;
     }
 
     private Button ConflictButton(string text, ConflictInfo conflict, bool mine)
@@ -184,20 +208,27 @@ public sealed partial class MainWindow
             var graph = IsGraph(collection);
             if (saved.LocalPayload is null)
             {
-                store.DeleteItem(current.Id);
+                using (store.BeginUndo("Conflict: your delete"))
+                {
+                    store.DeleteItem(current.Id);
+                }
             }
             else
             {
-                if (!graph && current.IsRecurring && !await ConfirmOverwriteAsync())
+                if (!graph && current.IsRecurring && !await ConfirmOverwriteAsync(
+                    ConflictResolver.Differences(saved.LocalPayload, current, false, TimeZoneInfo.Local),
+                    ConflictResolver.SeriesOccurrenceDifferences(saved.LocalPayload, current.RawPayload, TimeZoneInfo.Local)))
                 {
                     ShowConflictList();
                     return;
                 }
                 var mine = ConflictResolver.UseMine(current, saved.LocalPayload, graph, TimeZoneInfo.Local);
-                store.UpdateItem(mine);
+                using (store.BeginUndo("Conflict: your version"))
+                {
+                    store.UpdateItem(mine);
+                }
                 if (current.Kind == ItemKind.Event)
                 {
-                    _lastChange = (current.Id, current.RawPayload, mine.RawPayload, null);
                     ShowUndo("Your version used", canUndo: true);
                 }
             }
@@ -213,19 +244,147 @@ public sealed partial class MainWindow
         AfterConflictAction();
     }
 
-    /// <summary>Sending a whole CalDAV series replaces the server's copy, so it asks first.</summary>
-    private async Task<bool> ConfirmOverwriteAsync()
+    /// <summary>
+    /// Sending a whole CalDAV series replaces the server's copy, so it lists what that overwrites first (conflict-resolution
+    /// R6): the series fields that differ and the occurrences (overrides, deleted dates) that differ.
+    /// </summary>
+    private async Task<bool> ConfirmOverwriteAsync(IReadOnlyList<FieldDifference> fields, IReadOnlyList<string> occurrences)
     {
         ConflictPopup.IsOpen = false;
+        var content = new SpacedStack { Spacing = 8 };
+        content.Children.Add(new TextBlock
+        {
+            Text = "This repeating series is sent as you saved it and replaces the version on the server.",
+            TextWrapping = TextWrapping.Wrap,
+        });
+        var lines = fields.Select(d => $"{d.Field}: {d.Yours} (yours), {d.Server} (server)").Concat(occurrences).ToList();
+        if (lines.Count > 0)
+        {
+            content.Children.Add(new TextBlock { Text = "This overwrites:", TextWrapping = TextWrapping.Wrap });
+            content.Children.Add(new ScrollViewer
+            {
+                MaxHeight = 260,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = new TextBlock { Text = string.Join("\n", lines.Select(l => "• " + l)), TextWrapping = TextWrapping.Wrap },
+            });
+        }
         var dialog = Destructive.Apply(new ContentDialog(DialogHost)
         {
-            Title = "Overwrite the server version?",
-            Content = "This repeating series is sent as you saved it and replaces the version on the server.",
-            PrimaryButtonText = "Overwrite",
+            Title = "Use your version?",
+            Content = content,
+            PrimaryButtonText = "Use mine",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
         });
         return await dialog.ShowAsync() == ContentDialogResult.Primary;
+    }
+
+    /// <summary>
+    /// Restore as new (conflict-resolution R3): asks which writable calendar (or task list) to restore into, the original
+    /// pre-selected, creates the saved version there, then removes the conflict copy (no undo). What the target
+    /// cannot take along is listed first; a Microsoft 365 meeting is refused.
+    /// </summary>
+    private async Task RestoreAsync(ConflictInfo conflict)
+    {
+        if (Store is not { } store)
+        {
+            return;
+        }
+        try
+        {
+            if (store.GetConflict(conflict.Id) is not { LocalPayload: { } payload } saved)
+            {
+                AfterConflictAction();
+                return;
+            }
+            var kind = saved.Kind == ItemKind.Task ? CollectionKind.TaskList : CollectionKind.Calendar;
+            var fromGraph = _collections.TryGetValue(saved.CollectionId, out var original)
+                ? IsGraph(original) : payload.TrimStart().StartsWith('{');
+            var accounts = store.GetAccounts();
+            var choices = _collections.Values
+                .Where(c => c.Kind == kind && !c.ReadOnly && c.SourceUrl is null && accounts.Any(a => a.Id == c.AccountId)).ToList();
+            if (choices.Count == 0)
+            {
+                ShowUndo("Can't restore this item", canUndo: false, "There is no calendar or list to restore it into.");
+                return;
+            }
+
+            ConflictPopup.IsOpen = false;
+            var picker = new ComboBox { MinWidth = 280 };
+            foreach (var c in choices)
+            {
+                var source = accounts.FirstOrDefault(a => a.Id == c.AccountId) is { } account ? "  " + CollectionSource.For(account) : "";
+                picker.Items.Add(new ComboBoxItem { Content = c.Name + source, Tag = c });
+            }
+            picker.SelectedIndex = Math.Max(0, choices.FindIndex(c => c.Id == saved.CollectionId));
+            var ask = new SpacedStack { Spacing = 8 };
+            ask.Children.Add(new TextBlock
+            {
+                Text = kind == CollectionKind.Calendar ? "Restore this event as a new event in:" : "Restore this task as a new task in:",
+                TextWrapping = TextWrapping.Wrap,
+            });
+            ask.Children.Add(picker);
+            var pick = new ContentDialog(DialogHost)
+            {
+                Title = kind == CollectionKind.Calendar ? "Restore to which calendar?" : "Restore to which list?",
+                Content = ask,
+                PrimaryButtonText = "Restore",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            if (await pick.ShowAsync() != ContentDialogResult.Primary || (picker.SelectedItem as ComboBoxItem)?.Tag is not Collection target)
+            {
+                ShowConflictList();
+                return;
+            }
+
+            TransferResult result;
+            try
+            {
+                var source = ConflictResolver.RestoreSource(payload, saved.ItemId, saved.CollectionId, saved.Kind, fromGraph, TimeZoneInfo.Local);
+                result = saved.Kind == ItemKind.Task
+                    ? TaskTransfer.Move(source, fromGraph, target, IsGraph(target), TimeZoneInfo.Local, DateTimeOffset.UtcNow)
+                    : EventTransfer.Move(source, fromGraph, target, IsGraph(target), TimeZoneInfo.Local, DateTimeOffset.UtcNow);
+            }
+            catch (EditRefusedException ex)
+            {
+                ShowUndo("Can't restore this item", canUndo: false, ex.Message);
+                ShowConflictList();
+                return;
+            }
+            if (result.Lost.Count > 0)
+            {
+                var lost = new SpacedStack { Spacing = 8 };
+                lost.Children.Add(new TextBlock { Text = "It can't take along:", TextWrapping = TextWrapping.Wrap });
+                lost.Children.Add(new TextBlock { Text = string.Join("\n", result.Lost.Select(l => "• " + l)), TextWrapping = TextWrapping.Wrap });
+                var confirm = new ContentDialog(DialogHost)
+                {
+                    Title = $"Restore to {target.Name}?",
+                    Content = lost,
+                    PrimaryButtonText = "Restore",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                };
+                if (await confirm.ShowAsync() != ContentDialogResult.Primary)
+                {
+                    ShowConflictList();
+                    return;
+                }
+            }
+
+            // Not undoable (undo out of scope: conflict choices): undoing the create would leave no copy at all, as the
+            // conflict copy is removed here.
+            store.CreateItem(result.Moved);
+            store.DeleteConflict(conflict.Id);
+            ShowUndo("Restored", canUndo: false, $"Added to {target.Name}.");
+            Log.Information("Conflict {Id} resolved: restored as {ItemId}", conflict.Id, result.Moved.Id);
+            RenderView();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Restoring conflict {Id} failed", conflict.Id);
+        }
+        AfterConflictAction();
     }
 
     /// <summary>Refreshes the banner and the list after a conflict is resolved; the popup closes when none are left.</summary>

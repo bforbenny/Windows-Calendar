@@ -138,8 +138,12 @@ internal sealed partial class EventEditor
         string movedId;
         try
         {
-            movedId = store.MoveItem(item.Id, result.Moved);
+            using (store.BeginUndo("Event moved"))
+            {
+                movedId = store.MoveItem(item.Id, result.Moved);
+            }
             Log.Information("Event {ItemId} moved to another account as {MovedId}", item.Id, movedId);
+            UndoOffered?.Invoke("Event moved to another calendar");
         }
         catch (Exception ex)
         {
