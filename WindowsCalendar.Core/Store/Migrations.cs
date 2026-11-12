@@ -251,6 +251,12 @@ internal static class Migrations
         ALTER TABLE items ADD COLUMN declined INTEGER NOT NULL DEFAULT 0;
         INSERT INTO meta (key, value) VALUES ('remap-declined', '1');
         """,
+
+        // v20: an MS365 event you organised with only yourself as attendee is not a meeting (attendees-invitations
+        // R2); existing events' read-only flag is read again once on open.
+        """
+        INSERT INTO meta (key, value) VALUES ('remap-meeting', '1');
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

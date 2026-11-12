@@ -61,10 +61,55 @@ public static class GraphEventMapper
             JoinUrl: JoinLink.FromGraph(ev)?.Url);
     }
 
-    /// <summary>A meeting: it has attendees, or someone else organised it. The app does not change meetings.</summary>
-    internal static bool IsMeeting(JsonElement ev) =>
-        (ev.TryGetProperty("attendees", out var a) && a.ValueKind == JsonValueKind.Array && a.GetArrayLength() > 0)
-        || (ev.TryGetProperty("isOrganizer", out var o) && o.ValueKind == JsonValueKind.False);
+    /// <summary>
+    /// A meeting: someone else organised it, or it has an attendee other than the organiser (attendees-invitations R2).
+    /// The app does not change meetings.
+    /// </summary>
+    internal static bool IsMeeting(JsonElement ev)
+    {
+        if (ev.TryGetProperty("isOrganizer", out var o) && o.ValueKind == JsonValueKind.False)
+        {
+            return true;
+        }
+        if (!ev.TryGetProperty("attendees", out var a) || a.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+        var organiser = ev.TryGetProperty("organizer", out var org) ? Address(org) : null;
+        return a.EnumerateArray().Any(attendee =>
+            organiser is null || !string.Equals(Address(attendee), organiser, StringComparison.OrdinalIgnoreCase));
+
+        static string? Address(JsonElement recipient) =>
+            recipient.ValueKind == JsonValueKind.Object && recipient.TryGetProperty("emailAddress", out var e)
+                ? GraphClient.Text(e, "address") : null;
+    }
+
+    /// <summary>Whether a stored payload is a meeting (for the one-off re-read of stored events).</summary>
+    internal static bool IsMeeting(string payload)
+    {
+        using var doc = JsonDocument.Parse(payload);
+        return IsMeeting(doc.RootElement);
+    }
+
+    /// <summary>
+    /// The event's Outlook link (attendees-invitations R6): its <c>webLink</c> when it is HTTPS on an Outlook host,
+    /// else null.
+    /// </summary>
+    public static Uri? OutlookLink(string payload)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            return GraphClient.Text(doc.RootElement, "webLink") is { } text
+                && Uri.TryCreate(text, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps
+                && uri.Host.ToLowerInvariant() is "outlook.office365.com" or "outlook.office.com" or "outlook.live.com"
+                ? uri : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     /// <summary>
     /// An invitation you have not accepted: you are not the organiser, and your response is none, not responded or

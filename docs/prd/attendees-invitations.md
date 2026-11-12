@@ -41,6 +41,11 @@ The app shows who is invited to a meeting and whether you still need to respond,
 - The "needs response" glyph and the editor's "You have not responded" text come later; until then the muted style is the only marker.
 - Replaced by [event-show-as](event-show-as.md) R5 (2026-11-06, branch `event-show-as`): the muted outline looked the same as Free, so unanswered invitations are now drawn by their show-as, which is usually Tentative. Until the "needs response" glyph is built, an unanswered invitation has no marker of its own.
 
+## Interim (meeting test and Open in Outlook, MS365)
+
+- 2026-11-12, R2: an MS365 event is a meeting (view-only, except your reminder) when you did not organise it (`isOrganizer` false) or it has an attendee whose address differs from the organiser's. An event you organised with only yourself as attendee is your own event and can be edited. Stored events are read again once on upgrade, so this takes effect without a re-sync.
+- 2026-11-12, R6, first part: the editor's notice for a view-only MS365 meeting ("Meetings can't be changed from this app yet, except your reminder.") has an "Open in Outlook" link on the line under it, which opens the event's Graph `webLink` (an occurrence without its own uses its series') with the Windows default handler. Only an HTTPS link on an Outlook host (`outlook.office365.com`, `outlook.office.com`, `outlook.live.com`) is opened; the link is not logged. The button on every MS365 event comes later.
+
 ## Out of scope
 
 - Accept / Tentative / Decline and Propose new time in the app (done in Outlook via R6).

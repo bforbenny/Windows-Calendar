@@ -48,7 +48,7 @@ Each MS365 account syncs its calendars and To Do task lists through Microsoft Gr
 - R12: an edit remembers which fields it changed (subject, start/end and all-day, location, body); the PATCH sends only those. A changed location is sent as `location.displayName`. The description is always editable: unchanged it is never sent; changed, it replaces the body as plain text.
 - R8 for writes: a new event is written in the Windows timezone; an edited event keeps its own timezone (`originalStartTimeZone`) when Windows knows it, else the Windows timezone. All-day events are written as midnight-to-midnight dates with `isAllDay`.
 - Editable in the app: create, edit, delete, drag, move to another calendar (a create in the new calendar, then a delete, one linked group), undo, and the recurring operations in [recurring-events](recurring-events.md). Calendars with `canEdit` false stay read-only.
-- Meetings stay view-only: an event (or the series of an occurrence) with attendees, or one you did not organise, cannot be edited, dragged or deleted from the app, so the app never sends meeting updates or cancellations.
+- Meetings stay view-only: an event (or the series of an occurrence) with attendees other than you, or one you did not organise ([attendees-invitations](attendees-invitations.md) R2), cannot be edited, dragged or deleted from the app, so the app never sends meeting updates or cancellations.
 
 ## Interim (third slice: To Do)
 

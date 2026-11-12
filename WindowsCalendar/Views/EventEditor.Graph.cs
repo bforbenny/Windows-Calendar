@@ -19,6 +19,9 @@ namespace WindowsCalendar.Views;
 internal sealed partial class EventEditor
 {
     private string? _occurrenceId;
+    private Uri? _outlookLink;
+    // Under the notice of a view-only meeting (attendees-invitations R6 interim); the notice bar does not show content.
+    private readonly System.Windows.Controls.TextBlock _outlook = new() { Visibility = System.Windows.Visibility.Collapsed };
 
     private bool IsGraphCalendar(Collection collection) =>
         Store?.GetAccounts().FirstOrDefault(a => a.Id == collection.AccountId)?.Type == AccountType.MS365;
@@ -50,6 +53,31 @@ internal sealed partial class EventEditor
             : _readOnly ? "Meetings can't be changed from this app yet, except your reminder."
             : _savedRule is null ? "Repeats. This repeat pattern can't be changed here." : "";
         ShowNotice(message, InfoBarSeverity.Informational);
+        // A meeting links to Outlook, where it can be changed (attendees-invitations R6 interim).
+        _outlookLink = _reminderOnly
+            ? GraphEventMapper.OutlookLink(item.RawPayload) ?? (master is null ? null : GraphEventMapper.OutlookLink(master.RawPayload))
+            : null;
+        _outlook.Visibility = _outlookLink is null ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+    }
+
+    /// <summary>Opens the event in Outlook with the Windows default handler. The link is not logged.</summary>
+    private async void OpenInOutlook()
+    {
+        if (_outlookLink is not { } link)
+        {
+            return;
+        }
+        try
+        {
+            if (!await Windows.System.Launcher.LaunchUriAsync(link))
+            {
+                Log.Warning("Windows did not open the event in Outlook");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Opening the event in Outlook failed");
+        }
     }
 
     /// <summary>The open event's fields: the occurrence's own until the whole series is chosen, then the series' at that occurrence.</summary>

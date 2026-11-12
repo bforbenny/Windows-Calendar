@@ -101,6 +101,10 @@ internal sealed partial class EventEditor : UserControl
 
         var form = new SpacedStack { Spacing = 12, Margin = new Thickness(16, 0, 16, 16) };
         form.Children.Add(_notice);
+        var openInOutlook = new System.Windows.Documents.Hyperlink(new System.Windows.Documents.Run("Open in Outlook"));
+        openInOutlook.Click += (_, _) => OpenInOutlook();
+        _outlook.Inlines.Add(openInOutlook);
+        form.Children.Add(_outlook);
         form.Children.Add(_join);
         form.Children.Add(ViewParts.Field("Title", _title));
         form.Children.Add(_allDay);
@@ -333,6 +337,7 @@ internal sealed partial class EventEditor : UserControl
         var end = allDay ? start.Date.AddDays(1) : start.AddHours(1);
         Show("New event", fields ?? new EventFields(title, allDay, start, end, null, null, allDay ? ShowAs.Free : ShowAs.Busy), choices, defaultId);
         _notice.IsOpen = false;
+        _outlook.Visibility = Visibility.Collapsed;
         _ = Dispatcher.BeginInvoke(DispatcherPriority.Input, () => _title.Focus());
     }
 
@@ -415,6 +420,7 @@ internal sealed partial class EventEditor : UserControl
     {
         _notice.Message = message;
         _notice.Severity = severity;
+        _outlook.Visibility = Visibility.Collapsed;
         _notice.IsOpen = message.Length > 0;
     }
 

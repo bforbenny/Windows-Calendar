@@ -923,6 +923,73 @@ public sealed class GraphEventMapperTests
         Assert.Equal("Weekly", GraphEventMapper.Read(occurrence, master, Singapore).Title);
     }
 
+    private const string Hour = """
+        "start":{"dateTime":"2026-11-17T00:00:00","timeZone":"UTC"},"end":{"dateTime":"2026-11-17T01:00:00","timeZone":"UTC"}
+        """;
+    private const string Ben = """{"emailAddress":{"name":"Ben","address":"ben@example.test"}}""";
+    private const string Amy = """{"emailAddress":{"name":"Amy","address":"amy@example.test"}}""";
+
+    [Theory]
+    // Only yourself as attendee (Outlook adds the organiser to some events): your own event.
+    [InlineData($$"""{"isOrganizer":true,"organizer":{{Ben}},"attendees":[{{Ben}}]}""", false)]
+    [InlineData("""{"isOrganizer":true,"organizer":{"emailAddress":{"address":"BEN@example.test"}},"attendees":[{"emailAddress":{"address":"ben@example.test"}}]}""", false)]
+    [InlineData($$"""{"isOrganizer":true,"organizer":{{Ben}},"attendees":[{{Ben}},{{Amy}}]}""", true)]
+    [InlineData($$"""{"isOrganizer":true,"attendees":[{{Ben}}]}""", true)]
+    [InlineData("""{"isOrganizer":true,"organizer":null,"attendees":[{"emailAddress":null}]}""", true)]
+    [InlineData($$"""{"isOrganizer":false,"organizer":{{Amy}},"attendees":[]}""", true)]
+    public void Meeting_HasAnAttendeeOtherThanTheOrganiser(string fields, bool meeting)
+    {
+        var item = Map($$"""{"id":"e1","type":"singleInstance",{{Hour}},{{fields[1..]}}""")!;
+
+        Assert.Equal(meeting, item.ReadOnly);
+    }
+
+    [Theory]
+    [InlineData("https://outlook.office365.com/owa/?itemid=AAMk&exvsurl=1&path=/calendar/item", true)]
+    [InlineData("https://outlook.office.com/calendar/item/AAMk", true)]
+    [InlineData("http://outlook.office365.com/owa/?itemid=AAMk", false)]
+    [InlineData("https://outlook.office365.com.example.test/owa", false)]
+    [InlineData("not a link", false)]
+    public void OutlookLink_IsHttpsOnAnOutlookHost(string link, bool kept)
+    {
+        var payload = JsonSerializer.Serialize(new { id = "e1", webLink = link });
+
+        Assert.Equal(kept ? new Uri(link) : null, GraphEventMapper.OutlookLink(payload));
+        Assert.Null(GraphEventMapper.OutlookLink("""{"id":"e1"}"""));
+    }
+
+    [Fact]
+    public void Migration_ReadsTheMeetingFlagOfExistingEventsAgain()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "wc-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "store.db");
+        var store = LocalStore.Open(path);
+        store.AddDiscoveredAccount(new Account("a1", AccountType.MS365, "Work"),
+            [new DiscoveredCollection("cal1", "Calendar", CollectionKind.Calendar, false, true)]);
+        var calendar = store.GetCollections("a1").Single().Id;
+        var own = Map($$"""{"id":"e1","type":"singleInstance",{{Hour}},"isOrganizer":true,"organizer":{{Ben}},"attendees":[{{Ben}}]}""")!;
+        var meeting = Map($$"""{"id":"e2","type":"singleInstance",{{Hour}},"isOrganizer":false,"organizer":{{Amy}}}""")!;
+        store.CreateItem(own with { CollectionId = calendar, ReadOnly = true });
+        store.CreateItem(meeting with { CollectionId = calendar });
+        store.Dispose();
+        using (var c = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={path};Pooling=False"))
+        {
+            c.Open();
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = "PRAGMA user_version = 19;";
+            cmd.ExecuteNonQuery();
+        }
+
+        var reopened = LocalStore.Open(path);
+        var (ownReadOnly, meetingReadOnly) = (reopened.GetItem(own.Id)!.ReadOnly, reopened.GetItem(meeting.Id)!.ReadOnly);
+        reopened.Dispose();
+        Directory.Delete(dir, recursive: true);
+
+        Assert.False(ownReadOnly);
+        Assert.True(meetingReadOnly);
+    }
+
     [Theory]
     [InlineData("""{"id":"e1","type":"singleInstance","isCancelled":true,"start":{"dateTime":"2026-11-10T00:00:00","timeZone":"UTC"},"end":{"dateTime":"2026-11-10T01:00:00","timeZone":"UTC"}}""")]
     [InlineData("""{"id":"e1","type":"singleInstance"}""")]

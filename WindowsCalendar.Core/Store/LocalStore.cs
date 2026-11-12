@@ -54,6 +54,9 @@ public sealed partial class LocalStore : IDisposable
                 payload => ShowAsValues.ToGraph(CalDav.CalDavEvents.ReadShowAs(CalDav.CalDavEvents.Master(Ical.Net.Calendar.Load(payload)!))));
             Remap(connection, "remap-join-url", "join_url", "1 = 1", payload => JoinLink.FromPayload(payload)?.Url);
             RemapDeclined(connection);
+            // After v20: MS365 meetings (attendees-invitations R2).
+            Remap(connection, "remap-meeting", "read_only", "raw_payload LIKE '{%'",
+                payload => Graph.GraphEventMapper.IsMeeting(payload) ? "1" : "0");
             BuildSearchIndex(connection);
             Execute(connection, null, "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
             // Entries left in flight by a crash are sent again (R4).
