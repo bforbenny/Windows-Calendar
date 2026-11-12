@@ -28,6 +28,7 @@ public partial class App : Application
     private MainWindow? _window;
     private TaskbarIcon? _trayIcon;
     private TrayFlyout? _flyout;
+    private bool _storeTooNew;
 
     /// <summary>Whether a sync run is going, and when the last one ended (tray-flyout R3 footer; in memory only).</summary>
     internal bool SyncRunning { get; private set; }
@@ -108,7 +109,7 @@ public partial class App : Application
 
     /// <summary>
     /// Opens LocalState\store.db and runs migrations (local-store-offline R1).
-    /// Interim: failures are only logged; the on-screen message comes with ui-states.
+    /// A store newer than this build is not opened; OnStartup shows the app-updates R4 message and exits.
     /// </summary>
     private void OpenStore()
     {
@@ -121,6 +122,7 @@ public partial class App : Application
         catch (StoreTooNewException ex)
         {
             Log.Error("Local store not opened: schema {StoreVersion} is newer than supported {SupportedVersion}", ex.StoreVersion, ex.SupportedVersion);
+            _storeTooNew = true;
         }
         catch (Exception ex)
         {
@@ -157,6 +159,15 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        // A store newer than this build is left untouched (app-updates R4).
+        if (_storeTooNew)
+        {
+            MessageBox.Show("This data was created by a newer version. Install the latest version.", "WindowsCalendar",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            Log.Information("App quit: store is newer than this build");
+            Shutdown();
+            return;
+        }
         Views.TextScale.Start();
         _window = new MainWindow();
         // Signing out or shutting down skips Quit; the window place is saved here too (display-scaling R3).

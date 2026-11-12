@@ -2,7 +2,7 @@
 description: Technology stack, packaging, process model, tray icon and start-with-Windows behaviour
 when-to-use: Before any project setup, build, packaging, or process/lifecycle work
 tags: [platform, wpf, msix, tray, startup]
-status: in-progress
+status: closed
 ---
 
 # App platform
@@ -49,7 +49,7 @@ The WinUI 3 project was converted to WPF in place, on branch `wpf`, in three sli
 
 ## Acceptance criteria
 
-- [ ] App builds and installs from MSIX on Windows 11. Deferred: checked with the install steps in [app-updates](app-updates.md).
+- [x] App builds and installs from MSIX on Windows 11 (signed 1.0.40.0 installed from the `.appinstaller`, 2026-11-12; [app-updates](app-updates.md)).
 - [x] Closing the window leaves the tray icon; reminders still fire.
 - [x] Start-with-Windows toggle works across a reboot and starts in tray.
 - [x] Second launch focuses the existing window.

@@ -15,7 +15,7 @@ All synced data is held in a local SQLite database, so the app is fully usable o
 
 - R1. SQLite database in the app's LocalState folder (Microsoft.Data.Sqlite). Schema versioned with forward migrations; a store newer than the build is not opened ([app-updates](app-updates.md) R4).
   - Code lives in the `WindowsCalendar.Core` library (no WinUI), unit-tested in `WindowsCalendar.Core.Tests`. Version kept in `PRAGMA user_version`; each migration runs in its own transaction. WAL journal, foreign keys on. Times stored as UTC Unix milliseconds.
-  - Interim (until [ui-states](ui-states.md)): a too-new store is logged and not opened; the on-screen message comes later.
+  - A too-new store is logged and not opened; a message box shows the [app-updates](app-updates.md) R4 text and the app exits.
 - R2. Item storage keeps both:
   - the **raw server payload** (iCalendar text for CalDAV; Graph JSON for MS365), to avoid lossy round-trips, and
   - **normalised columns** for querying (collection, UID / Graph id, summary, start/end UTC, all-day, tz, location, status, due, completed, recurrence flags, etag / changeKey, lastModified).

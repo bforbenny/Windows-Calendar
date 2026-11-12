@@ -2,6 +2,28 @@
 
 Native Windows 11 calendar and tasks app with full offline read/write, syncing to Microsoft 365 (Microsoft Graph) and self-hosted Radicale (CalDAV). Personal use, distributed as a sideloaded MSIX.
 
+## Install
+
+The app is a sideloaded MSIX signed with a self-signed certificate ([app-updates](docs/prd/app-updates.md)). Release files are in `C:\Users\Ben\OneDrive\WindowsCalendar Releases`.
+
+First install, or a new PC (Windows 11):
+
+1. Wait for OneDrive to sync the release folder. It must be at the same path, because `WindowsCalendar.appinstaller` stores the full path.
+2. Trust the certificate once, in an elevated PowerShell:
+   `Import-Certificate -FilePath "$env:USERPROFILE\OneDrive\WindowsCalendar Releases\WindowsCalendar.cer" -CertStoreLocation Cert:\LocalMachine\TrustedPeople`
+3. Double-click `WindowsCalendar.appinstaller` and choose Install.
+4. Sign in to the accounts again. Nothing local moves to a new PC; only what is on the servers comes back.
+
+New build (on the build PC only, which holds the signing key):
+
+1. Quit the app from the tray.
+2. Run `powershell -ExecutionPolicy Bypass -File tools\package\Publish-Msix.ps1` (or the VS Code task "publish msix").
+3. Double-click `WindowsCalendar.appinstaller` to update now, or start the app from Start: it checks at most every 24 hours and offers the update.
+
+Uninstalling deletes local data, including unsynced changes and conflict copies (Settings > About). Saved Radicale passwords may stay in Credential Manager > Web Credentials after an uninstall; remove them there by hand.
+
+Do not press F5 in Visual Studio on a PC with the signed package installed: it deploys the same package and replaces it, with its local data.
+
 ## PRD index
 
 Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a new one from [_template.md](docs/prd/_template.md).

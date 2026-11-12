@@ -32,6 +32,13 @@
       "problemMatcher": []
     },
     {
+      "label": "publish msix",
+      "type": "process",
+      "command": "powershell",
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "${workspaceFolder}/tools/package/Publish-Msix.ps1"],
+      "problemMatcher": []
+    },
+    {
       "label": "open in Visual Studio",
       "type": "shell",
       "command": "start",
