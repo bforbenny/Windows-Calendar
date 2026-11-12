@@ -2,7 +2,7 @@
 description: Adding, editing and removing multiple MS365 and Radicale accounts, and how their credentials are stored
 when-to-use: Before working on sign-in, account settings, credential storage, or calendar/task-list selection
 tags: [accounts, auth, credentials, security, msal, radicale]
-status: in-progress
+status: closed
 ---
 
 # Account management
@@ -56,11 +56,11 @@ The user can connect any number of Microsoft 365 work accounts and any number of
 
 ## Acceptance criteria
 
-- [ ] Two MS365 accounts (same tenant) and two Radicale accounts can be added at the same time.
-- [ ] A calendar created on the server after setup appears in the sidebar after the next sync.
-- [ ] Adding a Radicale account with a wrong password or an untrusted certificate shows the specific message.
-- [ ] After a reboot, sync resumes without prompting (credentials taken from OS storage).
-- [ ] No password or token appears in the SQLite file, settings file, or logs.
+- [x] Two MS365 accounts (same tenant) and two Radicale accounts can be added at the same time.
+- [x] A calendar created on the server after setup appears in the sidebar after the next sync.
+- [x] Adding a Radicale account with a wrong password or an untrusted certificate shows the specific message.
+- [x] After a reboot, sync resumes without prompting (credentials taken from OS storage).
+- [x] No password or token appears in the SQLite file, settings file, or logs.
 - [x] Removing an account asks for confirmation and removes its vault entries and cached items.
 - [x] Removing an account while it is syncing logs "removed during sync" and no "Sync run failed" error; other accounts still sync.
 

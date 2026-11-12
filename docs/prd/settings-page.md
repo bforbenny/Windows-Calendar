@@ -2,7 +2,7 @@
 description: Layout and contents of the Settings page, which gathers every user setting in one place
 when-to-use: Before adding or moving any user-facing setting, or working on the Settings UI
 tags: [ui, settings]
-status: in-progress
+status: closed
 ---
 
 # Settings page
@@ -49,9 +49,9 @@ All user settings live on one Settings page inside the main window, laid out lik
 
 ## Acceptance criteria
 
-- [ ] Every user setting named in the PRDs is reachable from this page, in the section listed in R2.
-- [ ] Changing the theme or week numbers takes effect immediately without a restart.
-- [ ] Removing an account asks for confirmation.
+- [x] Every user setting named in the PRDs is reachable from this page, in the section listed in R2.
+- [x] Changing the theme or week numbers takes effect immediately without a restart.
+- [x] Removing an account asks for confirmation.
 
 ## Dependencies
 

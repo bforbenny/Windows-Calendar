@@ -2,7 +2,7 @@
 description: Plain-text location/address on events that syncs to both backends, with no map or geocoding
 when-to-use: Before working on the event location field or location sync mapping
 tags: [events, location, ui]
-status: in-progress
+status: closed
 ---
 
 # Event location
@@ -37,9 +37,9 @@ Events have a location field where the user can type a place name or address. It
 
 ## Acceptance criteria
 
-- [ ] Location entered in the app appears in Outlook and in another CalDAV client.
-- [ ] An event with GEO / Graph coordinates created elsewhere keeps them after its title is edited in the app.
-- [ ] Location text is searchable.
+- [x] Location entered in the app appears in Outlook and in another CalDAV client.
+- [x] An event with GEO / Graph coordinates created elsewhere keeps them after its title is edited in the app.
+- [x] Location text is searchable.
 
 ## Dependencies
 

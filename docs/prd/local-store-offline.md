@@ -2,7 +2,7 @@
 description: Local SQLite store, offline read/write and the outbox that pushes local changes when online
 when-to-use: Before working on the data model, persistence, offline behaviour, or the change queue
 tags: [storage, sqlite, offline, outbox, data-model]
-status: in-progress
+status: closed
 ---
 
 # Local store and offline
@@ -52,10 +52,10 @@ All synced data is held in a local SQLite database, so the app is fully usable o
 
 ## Acceptance criteria
 
-- [ ] With network disabled: create, edit and delete events and tasks; restart the app; changes persist.
-- [ ] Re-enabling the network pushes all queued changes and the server reflects them.
-- [ ] Coalescing: create then delete offline produces no server call.
-- [ ] Manual "Sync now" triggers an immediate sync for all accounts.
+- [x] With network disabled: create, edit and delete events and tasks; restart the app; changes persist.
+- [x] Re-enabling the network pushes all queued changes and the server reflects them.
+- [x] Coalescing: create then delete offline produces no server call.
+- [x] Manual "Sync now" triggers an immediate sync for all accounts.
 
 ## Dependencies
 

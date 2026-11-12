@@ -2,7 +2,7 @@
 description: Agenda view showing occurrences as day columns of plain lists, scrolling horizontally and vertically
 when-to-use: Before working on the Agenda view or list rendering of occurrences
 tags: [ui, views, agenda]
-status: in-progress
+status: closed
 ---
 
 # Agenda view
@@ -31,9 +31,9 @@ A view alongside Week and Month that shows one column per day, each a plain list
 
 ## Acceptance criteria
 
-- [ ] Agenda shows events from MS365 and Radicale in time order, one column per day, starting at today.
-- [ ] Empty days show "Nothing scheduled"; multi-day events show on each day.
-- [ ] Works offline.
+- [x] Agenda shows events from MS365 and Radicale in time order, one column per day, starting at today.
+- [x] Empty days show "Nothing scheduled"; multi-day events show on each day.
+- [x] Works offline.
 
 ## Dependencies
 

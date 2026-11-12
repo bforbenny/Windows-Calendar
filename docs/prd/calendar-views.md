@@ -89,7 +89,7 @@ The main UI provides Week and Month views (plus Agenda) of all visible calendars
   - CalDAV to MS365: title, times in the event's own timezone, all-day, location with GEO as coordinates, description, repeat rule (any the editor can show), the first reminder before the start, show-as (X-MICROSOFT-CDO-BUSYSTATUS, else TRANSP), CLASS as sensitivity, PRIORITY as importance, CATEGORIES. Listed as lost: other reminders, changed occurrences, deleted occurrences (they come back). A repeat rule the editor can't show is refused.
   - MS365 to CalDAV: the same fields the other way, with an HTML description as plain text (its formatting listed as lost), the reminder as a display VALARM, show-as as TRANSP plus X-MICROSOFT-CDO-BUSYSTATUS for tentative, out of office and working elsewhere.
   - Refused: meetings and invitations, in any account and also within one account (the Calendar field is disabled for them); repeating MS365 events (as within an account).
-- R10 interim: Delete asks for confirmation until [undo](undo.md) exists. No keyboard selection yet. For a recurring event Delete asks for the scope: one occurrence is deleted at once with the undo banner, the entire series asks for confirmation.
+- R10 interim: Delete asks for confirmation until [undo](undo.md) exists. Keyboard selection is built with [keyboard-navigation](keyboard-navigation.md). For a recurring event Delete asks for the scope: one occurrence is deleted at once with the undo banner, the entire series asks for confirmation.
 
 ### Pending user check (R8 across accounts)
 
@@ -101,7 +101,7 @@ Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or m
 
 ## Interim (third slice: drag)
 
-- R7 with mouse and pen. On touch, a swipe keeps scrolling; press-and-hold to drag comes later.
+- R7 with mouse and pen. On touch, a swipe keeps scrolling; press-and-hold to drag is out of scope.
 - Read-only calendars and subscriptions cannot be dragged. Recurring occurrences can; the drop asks for the scope (this / this and following / all, [recurring-events](recurring-events.md) interim).
 - A drop is saved like an editor change and gets the "Event moved · Undo" banner ([undo](undo.md) interim).
 
@@ -111,6 +111,7 @@ Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or m
 - Rich-text/HTML descriptions (HTML descriptions from Graph are displayed as plain text and are read-only in v1, R6).
 - Attendee/invite editing, and responding to invitations (done in Outlook via Open in Outlook, [attendees-invitations](attendees-invitations.md)).
 - Selecting several events at once.
+- Press-and-hold to drag on touch (dropped 2026-11-12; mouse and pen drag only).
 - Printing.
 - .ics file import/export and adding ICS URL subscriptions in the app (subscriptions are added in Radicale; the app fetches their feeds, [sync-radicale](sync-radicale.md) R1a).
 

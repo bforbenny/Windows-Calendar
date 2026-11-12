@@ -2,7 +2,7 @@
 description: Windows toast reminders for events and tasks, firing even when the main window is closed
 when-to-use: Before working on reminders, alarms, VALARM/reminder mapping, or toast notifications
 tags: [reminders, notifications, toast, valarm]
-status: updated
+status: closed
 ---
 
 # Reminders and notifications

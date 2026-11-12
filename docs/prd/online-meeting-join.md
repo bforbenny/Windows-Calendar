@@ -2,7 +2,7 @@
 description: Detect Teams/Zoom/Meet/Webex links on events and show a one-click Join button
 when-to-use: Before working on online-meeting link detection, the Join button, or Join actions in the tray flyout and reminder toasts
 tags: [events, online-meeting, teams, ui]
-status: in-progress
+status: closed
 ---
 
 # Online meeting join
@@ -32,7 +32,7 @@ Events that carry an online-meeting link show a Join button that opens the meeti
 ## Interim (first slice)
 
 - Built: R1, R2, R3, R5, R6, R6a (declined MS365 meetings; cancelled MS365 and CalDAV events, 2026-11-12) and R7. R4 is built for the editor and for Day, Week and Agenda cards.
-- R4 for the tray flyout and the reminder toast comes with [tray-flyout](tray-flyout.md) and [reminders-notifications](reminders-notifications.md). Neither exists yet.
+- R4 for the tray flyout and the reminder toast: built with [tray-flyout](tray-flyout.md) and [reminders-notifications](reminders-notifications.md).
 - Editor: a "Join Teams meeting" (or Zoom, Google Meet, Webex) button at the top of the form, also on read-only meetings. A link typed into the location or description shows the button once the field loses focus.
 - Cards: a small "Join" button, filled in the accent colour so it stands out on the tinted card, at the end of the title line, shown from 10 minutes before the start until the end. It is not shown on cards too short for text, on Month chips or in the all-day lane. The provider is named in its tooltip and screen-reader name, because the narrow columns have no room for it. The views redraw just after each clock minute when an event enters or leaves that window.
 - Ctrl+Shift+J works from anywhere except a text field. With no meeting it says so. With several it shows a menu of them. Ctrl+J needs the event selected in the view.
@@ -63,7 +63,7 @@ Built on branch `online-meeting-join` (2026-11-06). The branch is stacked on `ev
 - [x] A Teams meeting from Outlook shows Join, and clicking it opens Teams.
 - [x] A Radicale event with a Zoom link in its location or notes shows Join.
 - [x] A non-HTTPS or unrecognised link never shows Join.
-- [ ] The reminder toast and the tray flyout both offer Join for a meeting with a link.
+- [x] The reminder toast and the tray flyout both offer Join for a meeting with a link.
 
 ## Dependencies
 

@@ -2,7 +2,7 @@
 description: Show-as (Busy / Free / Tentative / Out of office / Working elsewhere) on events, mapped to Graph and CalDAV
 when-to-use: Before working on the show-as field, its sync mapping, or how free/tentative/OOF events are drawn
 tags: [events, show-as, free-busy, ui]
-status: in-progress
+status: closed
 ---
 
 # Event show-as

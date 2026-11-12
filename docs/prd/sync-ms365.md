@@ -2,7 +2,7 @@
 description: Two-way sync of MS365 calendars (events) and Microsoft To Do task lists via Microsoft Graph
 when-to-use: Before working on anything that calls Microsoft Graph
 tags: [sync, ms365, graph, delta, todo]
-status: in-progress
+status: closed
 ---
 
 # MS365 sync (Microsoft Graph)
@@ -69,11 +69,11 @@ Each MS365 account syncs its calendars and To Do task lists through Microsoft Gr
 
 ## Acceptance criteria
 
-- [ ] First sync of a calendar with ≥ 500 events in the window completes without looping.
-- [ ] An event created in Outlook appears within one sync cycle (≤ 5 min); an edit made in the app appears in Outlook.
-- [ ] Deleting in either place removes it in the other.
-- [ ] Simulated 429 response is honoured with `Retry-After`.
-- [ ] To Do task created in the app appears in Microsoft To Do and vice versa.
+- [x] First sync of a calendar with ≥ 500 events in the window completes without looping.
+- [x] An event created in Outlook appears within one sync cycle (≤ 5 min); an edit made in the app appears in Outlook.
+- [x] Deleting in either place removes it in the other.
+- [x] Simulated 429 response is honoured with `Retry-After`.
+- [x] To Do task created in the app appears in Microsoft To Do and vice versa.
 
 ## Dependencies
 

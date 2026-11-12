@@ -2,7 +2,7 @@
 description: Duplicate an event (menu, Ctrl+D or Ctrl+drag) into the same or another writable calendar
 when-to-use: Before working on duplicate/copy of events
 tags: [events, duplicate, ui]
-status: in-progress
+status: closed
 ---
 
 # Duplicate event
@@ -17,8 +17,8 @@ The user can copy an existing event into a new, independent event and then adjus
 - R2. Menu/Ctrl+D creates the copy immediately at the same time in the same calendar and opens it in the editor panel (auto-save, [calendar-views](calendar-views.md) R6d), so the user can change the time or calendar. Ctrl+Z or the undo banner removes the copy.
 - R3. Copied fields: title, start/end, all-day, timezone, location (including preserved coordinates), description, show-as, reminders.
 - R4. Not copied: server ids/UID/ETag, attendees and organiser, the Graph online meeting / join URL, conflict copies.
-- R5. Duplicating an occurrence of a recurring event creates a single non-recurring event. Duplicating from the series editor copies the recurrence rule too.
-- R6. Target calendar can be any writable calendar ticked in the sidebar ([calendar-views](calendar-views.md) R6e), including one in another account. In that case, unsupported fields are dropped (e.g. show-as values per [event-show-as](event-show-as.md) R2).
+- R5. Duplicating an occurrence of a recurring event creates a single non-recurring event.
+- R6. The copy goes into the same calendar as the original; it can then be moved to any writable calendar with the editor's Calendar field ([calendar-views](calendar-views.md) R8).
 - R7. Duplicate works offline (outbox create) and is undoable ([undo](undo.md)).
 
 ## Interim (first slice)
@@ -28,11 +28,11 @@ The user can copy an existing event into a new, independent event and then adjus
 - R3/R4 on CalDAV: the VEVENT is copied with a new UID and href, and SEQUENCE 0. ATTENDEE, ORGANIZER and CONFERENCE are dropped. Alarms, TRANSP, GEO and other properties stay. The TZID form stays. An occurrence copies its override when it has one.
 - R3/R4 on MS365: only the fields a create may write are copied (subject, body, times, all-day, location incl. coordinates, show-as, sensitivity, importance, categories, reminder). Times are written in the event's own timezone. A stub occurrence takes its master's fields. A repeating event still syncing is refused with a message.
 - Undo (R7) deletes the copy: an unsent create is dropped from the outbox, a sent one is deleted on the server. Edits made to the copy since are deleted with it, and no server-change check is made.
-- Later: R5 "from the series editor" (the editor has no Duplicate yet) and R6 into another calendar (the copy goes into the same calendar; it can then be moved to any calendar from the editor's Calendar field, per [calendar-views](calendar-views.md) R8; a copy of a meeting has no attendees, so it can move).
+- Dropped 2026-11-12 (see Out of scope): R5 "from the series editor" (the editor has no Duplicate yet) and R6 into another calendar (the copy goes into the same calendar; it can then be moved to any calendar from the editor's Calendar field, per [calendar-views](calendar-views.md) R8; a copy of a meeting has no attendees, so it can move).
 
 ## Pending user check
 
-Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or merged:
+Built on branch `duplicate-event` (2026-11-06); verified and merged into main.
 
 - [x] Ctrl+D on a Teams meeting: the copy has no attendees or Join link and appears in Outlook after sync.
 - [x] Right-click Duplicate opens the copy in the editor; the Undo banner removes it.
@@ -42,6 +42,7 @@ Built on branch `duplicate-event` (2026-11-06), not yet verified in the app or m
 
 - Duplicating tasks.
 - Event templates.
+- Dropped 2026-11-12: Duplicate from the series editor (R5, copying the rule) and duplicating straight into another calendar (R6). The copy goes into the same calendar and can be moved with the editor's Calendar field.
 
 ## Acceptance criteria
 
