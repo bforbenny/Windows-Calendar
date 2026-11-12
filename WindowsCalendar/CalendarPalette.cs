@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
-using WindowsCalendar.Core.Store;
+using WindowsCalendar.Core.Views;
 using WindowsCalendar.Views;
 
 namespace WindowsCalendar;
@@ -12,20 +12,11 @@ internal sealed record CalendarBrushes(Brush Swatch, Brush Fill, Brush Text, Bru
 
 /// <summary>
 /// Calendar colours (ui-colour-theme R1, R6, R11). A colour is stored as "Hue/Level", e.g. "Navy/L1".
-/// Light: swatch/bar step 50/70/90, fill 10/20/30, text Grey 100. Dark: swatch 20/40/60, fill 90/80/70, text Night 10.
-/// The marker on a card is the swatch, except dark level 3, whose swatch (60) is too close to its fill (70): step 20 there
-/// (at least 5.2:1 on that fill; ui-colour-theme interim).
+/// The steps per theme and level are in <see cref="ThemeColours.Calendar"/>.
 /// High contrast: system colours only; calendars are told apart by name and shape.
 /// </summary>
 internal static class CalendarPalette
 {
-    // Ramp index (step / 10 - 1) per level 1..3.
-    private static readonly int[] LightSwatch = [4, 6, 8];
-    private static readonly int[] LightFill = [0, 1, 2];
-    private static readonly int[] DarkSwatch = [1, 3, 5];
-    private static readonly int[] DarkFill = [8, 7, 6];
-    private static readonly int[] DarkCardMarker = [1, 3, 1];
-
     private static readonly Dictionary<(string, AppTheme, bool), CalendarBrushes> Cache = [];
 
     public static CalendarBrushes For(string colour, AppTheme theme, bool highContrast)
@@ -43,16 +34,10 @@ internal static class CalendarPalette
         }
         else
         {
-            var parts = colour.Split('/');
-            var ramp = CalendarColours.Ramps.TryGetValue(parts[0], out var r) ? r : CalendarColours.Ramps["Navy"];
-            var level = parts.Length > 1 && int.TryParse(parts[1].TrimStart('L'), out var l) ? Math.Clamp(l, 1, 3) - 1 : 0;
-            var dark = theme == AppTheme.Dark;
-            var swatch = Brush(ramp[(dark ? DarkSwatch : LightSwatch)[level]]);
-            brushes = new CalendarBrushes(
-                swatch,
-                Brush(ramp[(dark ? DarkFill : LightFill)[level]]),
-                Brush(dark ? "EBEFF5" : "16181A"),
-                dark ? Brush(ramp[DarkCardMarker[level]]) : swatch);
+            var steps = ThemeColours.Calendar(colour, theme == AppTheme.Dark);
+            var swatch = Brush(steps.Swatch);
+            brushes = new CalendarBrushes(swatch, Brush(steps.Fill), Brush(steps.Text),
+                steps.CardMarker == steps.Swatch ? swatch : Brush(steps.CardMarker));
         }
         Cache[(colour, theme, highContrast)] = brushes;
         return brushes;

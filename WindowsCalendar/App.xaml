@@ -17,10 +17,12 @@
             <!-- App font (ui-style R1): Segoe UI Variable, Segoe UI where it is missing. Set on each window, which the
                  controls inherit; menus and tooltips are separate trees and get it from the styles below. -->
             <FontFamily x:Key="AppFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
-            <Style TargetType="ContextMenu" BasedOn="{StaticResource {x:Type ContextMenu}}">
+            <!-- Based on WPF-UI's named styles: a {x:Type} key here falls back to the Windows default template, which is
+                 light in the dark theme and draws an icon gutter over the item text. -->
+            <Style TargetType="ContextMenu" BasedOn="{StaticResource UiContextMenu}">
                 <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
             </Style>
-            <Style TargetType="ToolTip" BasedOn="{StaticResource {x:Type ToolTip}}">
+            <Style TargetType="ToolTip" BasedOn="{StaticResource DefaultToolTipStyle}">
                 <Setter Property="FontFamily" Value="{StaticResource AppFontFamily}" />
             </Style>
 

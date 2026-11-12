@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
+using WindowsCalendar.Core.Views;
 using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
 
@@ -15,24 +16,8 @@ internal enum AppTheme { Light, Dark }
 /// </summary>
 internal static class Theme
 {
-    // Colour roles: (light, dark). High contrast uses system colours (see HighContrastRoles).
-    private static readonly Dictionary<string, (string Light, string Dark)> Roles = new()
-    {
-        ["SurfaceBaseBrush"] = ("#FFFFFF", "#121824"),
-        ["SurfaceRaisedBrush"] = ("#FFFFFF", "#222D46"),
-        ["DividerBrush"] = ("#D2D4D9", "#2E3F61"),
-        ["ShadeTodayBrush"] = ("#F4F7FE", "#0F1E3C"),
-        ["ShadeNonWorkingBrush"] = ("#FBF6F8", "#201928"),
-        ["TextPrimaryBrush"] = ("#16181A", "#EBEFF5"),
-        ["TextSecondaryBrush"] = ("#4E535C", "#A8B7D5"),
-        ["TodayChipBrush"] = ("#155CEE", "#6E9BF4"),
-        ["TodayChipTextBrush"] = ("#FFFFFF", "#121824"),
-        ["NowLineBrush"] = ("#CD1E1E", "#EC7A7A"),
-        ["DestructiveBrush"] = ("#CD1E1E", "#EC7A7A"),
-        ["DestructiveHoverBrush"] = ("#A31717", "#F1A1A1"),
-        ["DestructivePressedBrush"] = ("#801212", "#E54B4B"),
-        ["TextOnDestructiveBrush"] = ("#FFFFFF", "#121824"),
-    };
+    // Colour roles (light, dark) are in ThemeColours.Roles; high contrast uses system colours (see HighContrastRoles).
+    private static readonly IReadOnlyDictionary<string, (string Light, string Dark)> Roles = ThemeColours.Roles;
 
     private static readonly Dictionary<string, Brush> HighContrastRoles = new()
     {

@@ -74,11 +74,12 @@ All UI colours come from one palette of 10-step ramps, where a given step has th
 
     | Part | Light L1 / L2 / L3 | Dark L1 / L2 / L3 |
     | --- | --- | --- |
-    | Swatch, shape marker, event left bar, Free outline | 50 / 70 / 90 | 20 / 40 / 60 |
+    | Swatch, shape marker, event left bar, Free outline | 50 / 70 / 90 | 20 / 40 / 50 |
     | Event fill (Busy) | 10 / 20 / 30 | 90 / 80 / 70 |
     | Event text | Grey 100 | Night 10 |
 
-  - All combinations meet WCAG AA for text (≥ 4.5:1) and 3:1 for swatches/markers against the surface.
+  - All combinations meet WCAG AA for text (≥ 4.5:1) and 3:1 for swatches/markers against the surfaces they sit on: Surface.Base, Surface.Raised, Shade.Today and Shade.NonWorking.
+  - Dark level 3 was step 60 until 2026-11-12; it fell to 2.5:1 on Surface.Raised and 3.0:1 on Shade.Today, so it moved to step 50 (at least 3.5:1). Dark levels 2 and 3 are closer in lightness as a result.
 - R7. Calendar markers: a shape (up triangle, down triangle, square, circle, pentagon) or a Fluent icon from a fixed set (Segoe Fluent Icons), drawn in the swatch colour.
   - On by default; a setting "Show calendar shapes" turns them off.
   - The marker is drawn filled in the calendar's swatch colour: as the sidebar swatch, before the title on event cards (Day/Week/Month), in Agenda rows, tray flyout rows, search results and the quick-add preview. Size 10 epx, vector-drawn.
@@ -96,7 +97,16 @@ All UI colours come from one palette of 10-step ramps, where a given step has th
 - Overrides: right-clicking a calendar or task list in the sidebar offers **Colour** (the 24 colours as a 3 x 8 grid, the current one marked), **Icon** (the 5 shapes, then about 40 Fluent icons) and, when the colour was overridden and the server has a colour, **Use server colour**. The settings page takes these over later ([settings-page](settings-page.md)).
 - A chosen colour is an override: later server colours no longer change it, until **Use server colour** returns to the (snapped) server colour. Icons and shapes never come from the server.
 - Icons are drawn at the marker size, in the swatch colour (system colours in high contrast), wherever shapes are drawn.
-- Markers on event cards sit on the card fill, which R6 does not check: dark level 3 (swatch 60 on fill 70) is only 1.4:1. On cards, a dark level 3 marker (shape, icon or task checkbox) uses step 20 of its hue instead (at least 5.2:1 on that fill). All other combinations are at least 3.3:1 and keep the swatch step; markers elsewhere sit on the surface and are unchanged.
+- Markers on event cards sit on the card fill, which R6 does not check: dark level 3 (swatch 50 on fill 70) is only 2.0:1. On cards, a dark level 3 marker (shape, icon or task checkbox) uses step 20 of its hue instead (at least 5.2:1 on that fill). All other combinations are at least 3.3:1 and keep the swatch step; markers elsewhere sit on the surface and are unchanged.
+
+## Interim (contrast test)
+
+- The automated contrast test (`ThemeContrastTests` in WindowsCalendar.Core.Tests) checks the values in `WindowsCalendar.Core/Views/ThemeColours.cs`, which the app's Theme and CalendarPalette read.
+- Text pairs (≥ 4.5:1): Text.Primary, Text.Secondary and Accent (as links) on each surface; Text.OnAccent on Accent and its hover/pressed steps; Text.OnDestructive on Destructive and its steps; Today.DateChip text on the chip; event text on each calendar fill.
+- Non-text (≥ 3:1): NowLine, Status colours and the selection outline on each surface; every calendar swatch on each surface.
+- Exempt, as WCAG allows: Text.Disabled and Divider.
+- Accent hover/pressed, Text.Disabled and the Status colours are drawn by WPF-UI today (its accent manager and SystemFillColor brushes), not by the app's tokens. The test checks their R3 palette values; switching the app to them is not done yet.
+- The hex scan fails on any `#RRGGBB(AA)` or quoted 6/8-digit hex in the app's .cs and .xaml files outside ThemeColours.cs and CalendarColours.cs.
 
 ## Out of scope
 
@@ -106,8 +116,8 @@ All UI colours come from one palette of 10-step ramps, where a given step has th
 
 ## Acceptance criteria
 
-- [ ] An automated test computes WCAG contrast for every token pair in R3 and every calendar colour combination in R6, in both themes, and all pass (text ≥ 4.5:1, swatches/markers ≥ 3:1).
-- [ ] No hex colour literal appears in XAML or C# outside the theme dictionaries.
+- [x] An automated test computes WCAG contrast for every token pair in R3 and every calendar colour combination in R6, in both themes, and all pass (text ≥ 4.5:1, swatches/markers ≥ 3:1).
+- [x] No hex colour literal appears in XAML or C# outside the theme dictionaries.
 - [ ] With a Windows colour-blindness filter (Settings > Accessibility > Color filters, red-green and blue-yellow), any 8 automatically assigned calendars can be told apart in Week view.
 - [ ] Turning on a Windows high-contrast theme removes all palette colours and the app stays fully usable.
 - [ ] Delete buttons are Red; create/save buttons are Navy.
