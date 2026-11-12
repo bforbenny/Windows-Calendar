@@ -4,26 +4,46 @@ Native Windows 11 calendar and tasks app with full offline read/write, syncing t
 
 ## Install
 
-The app is a sideloaded MSIX signed with a self-signed certificate ([app-updates](docs/prd/app-updates.md)). Release files are in `C:\Users\Ben\OneDrive\WindowsCalendar Releases`.
+The app is a sideloaded MSIX signed with a self-signed certificate ([app-updates](docs/prd/app-updates.md)). Each build is published to the [GitHub releases](https://github.com/bforbenny/Windows-Calendar/releases) and to `C:\Users\Ben\OneDrive\WindowsCalendar Releases`.
 
 First install, or a new PC (Windows 11):
 
-1. Wait for OneDrive to sync the release folder. It must be at the same path, because `WindowsCalendar.appinstaller` stores the full path.
-2. Trust the certificate once, in an elevated PowerShell:
-   `Import-Certificate -FilePath "$env:USERPROFILE\OneDrive\WindowsCalendar Releases\WindowsCalendar.cer" -CertStoreLocation Cert:\LocalMachine\TrustedPeople`
-3. Double-click `WindowsCalendar.appinstaller` and choose Install.
+1. From the [latest release](https://github.com/bforbenny/Windows-Calendar/releases/latest), download `WindowsCalendar.cer` and `WindowsCalendar.appinstaller`.
+2. Trust the certificate once, in an elevated PowerShell in the download folder:
+   `Import-Certificate -FilePath .\WindowsCalendar.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople`
+3. Open `WindowsCalendar.appinstaller` and choose Install. The app then checks the latest GitHub release for updates when it starts, at most every 24 hours, and asks before updating.
 4. Sign in to the accounts again. Nothing local moves to a new PC; only what is on the servers comes back.
 
-New build (on the build PC only, which holds the signing key):
+The app checks for updates where it was installed from: the GitHub `.appinstaller` checks GitHub, and the OneDrive `.appinstaller` checks the OneDrive folder.
 
-1. Quit the app from the tray.
-2. Run `powershell -ExecutionPolicy Bypass -File tools\package\Publish-Msix.ps1` (or the VS Code task "publish msix").
-   The script also commits and pushes the version bump and publishes a GitHub release with the `.msix`, the `.cer` and a GitHub `.appinstaller` (needs `gh auth login`).
-3. Double-click `WindowsCalendar.appinstaller` to update now, or start the app from Start: it checks at most every 24 hours and offers the update.
+## Publish a new build
+
+`tools\package\Publish-Msix.ps1` builds, signs and publishes a release. Run it only on the build PC: it holds the signing key.
+
+Before running:
+
+- Quit the app from the tray. The script stops if the app is running.
+- The GitHub CLI must be signed in (`gh auth login`). The script checks this before changing anything.
+- Commit your work first. The script commits only the version bump, but its push also sends any other unpushed commits on the branch.
+
+Run `powershell -ExecutionPolicy Bypass -File tools\package\Publish-Msix.ps1`, or the VS Code task "publish msix". In order, it:
+
+1. Adds 1 to the third part of the version in `WindowsCalendar\Package.appxmanifest` (for example 1.0.41.0 to 1.0.42.0).
+2. Finds the `CN=Ben` code-signing certificate in `Cert:\CurrentUser\My`, or creates one (5 years, private key not exportable, no password). A new certificate has to be trusted again on every PC.
+3. Builds a signed x64 MSIX in Release.
+4. Writes `WindowsCalendar_<version>_x64.msix`, `WindowsCalendar.appinstaller` and `WindowsCalendar.cer` to the OneDrive release folder (another folder with `-ReleaseDir`). Old builds are kept.
+5. Commits `Package $version` (the manifest only) and pushes.
+6. Creates the public GitHub release `v<version>` with the `.msix`, the `.cer` and a GitHub `.appinstaller`. The release notes come from `tools\package\release-notes.md`.
+
+If the build fails, the version bump is undone and nothing is published. If the commit, push or release fails, the OneDrive release is complete; finish the GitHub part by hand.
+
+To update this PC straight away, stop the app and install the new `.appinstaller`. Otherwise start the app from Start and accept the update prompt. `Add-AppxPackage -AppInstallerFile` does not accept `-ForceApplicationShutdown`, so stop the app first.
+
+## Uninstall and debugging
 
 Uninstalling deletes local data, including unsynced changes and conflict copies (Settings > About). Saved Radicale passwords may stay in Credential Manager > Web Credentials after an uninstall; remove them there by hand.
 
-Do not press F5 in Visual Studio on a PC with the signed package installed: it deploys the same package and replaces it, with its local data.
+Do not press F5 in Visual Studio, or run `Add-AppxPackage -Register` from `bin`, on a PC with the signed package installed: both replace the installed package, with its local data.
 
 ## PRD index
 

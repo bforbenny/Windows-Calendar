@@ -1,6 +1,7 @@
 # Builds a signed x64 MSIX of WindowsCalendar and writes the .msix, an .appinstaller
-# and the public .cer to the release folder. Each run bumps the third version part
-# in Package.appxmanifest. See docs/prd/app-updates.md.
+# and the public .cer to the release folder, then commits and pushes the version bump
+# and creates the GitHub release v<version>. Each run bumps the third version part
+# in Package.appxmanifest. See README "Publish a new build" and docs/prd/app-updates.md.
 param([string]$ReleaseDir = (Join-Path $env:USERPROFILE 'OneDrive\WindowsCalendar Releases'))
 
 $ErrorActionPreference = 'Stop'
