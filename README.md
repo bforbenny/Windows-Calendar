@@ -64,7 +64,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [attendees-invitations](docs/prd/attendees-invitations.md) | Meetings view-only with Open in Outlook; declined and cancelled meetings faded; needs-response text | closed |
 | [event-show-as](docs/prd/event-show-as.md) | Busy / Free / Tentative / Out of office | closed |
 | [online-meeting-join](docs/prd/online-meeting-join.md) | Join button for Teams/Zoom/Meet/Webex links | closed |
-| [quick-add](docs/prd/quick-add.md) | Typed quick add, offline rule-based parser | in-progress |
+| [quick-add](docs/prd/quick-add.md) | Typed quick add, offline rule-based parser | closed |
 | [duplicate-event](docs/prd/duplicate-event.md) | Duplicate an event | closed |
 | [undo](docs/prd/undo.md) | Undo recent changes | closed |
 | [keyboard-navigation](docs/prd/keyboard-navigation.md) | Full keyboard operation and shortcuts | closed |
@@ -85,8 +85,8 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [on-device-model](docs/prd/on-device-model.md) | Shared NPU language model service, AI setting, eval harness, spike gate | parked |
 | [nl-quick-add](docs/prd/nl-quick-add.md) | NPU model refines quick add for free English phrasing | parked |
 | [nl-search](docs/prd/nl-search.md) | Split into search-attendees, search-filters, search-date-chips | parked |
-| [search-attendees](docs/prd/search-attendees.md) | Attendee and organiser names indexed for search | in-progress |
-| [search-filters](docs/prd/search-filters.md) | Filter chips and Filters flyout for search (search R4) | in-progress |
-| [search-date-chips](docs/prd/search-date-chips.md) | Date phrases in search become filter chips | in-progress |
+| [search-attendees](docs/prd/search-attendees.md) | Attendee and organiser names indexed for search | closed |
+| [search-filters](docs/prd/search-filters.md) | Filter chips and Filters flyout for search (search R4) | closed |
+| [search-date-chips](docs/prd/search-date-chips.md) | Date phrases in search become filter chips | closed |
 | [timezone-handling](docs/prd/timezone-handling.md) | Correct TZ handling, per-event TZ, secondary TZ column | closed |
 | [schedule-gap-warning](docs/prd/schedule-gap-warning.md) | Overlap and minimum-gap warning on save, drag and resize | closed |

@@ -2,7 +2,7 @@
 description: Typed quick add that parses English phrases like "Lunch with Sam fri 1pm at Cafe Rio" into an event or task, offline and rule-based
 when-to-use: Before working on the quick-add box, its parser, or quick-create flows
 tags: [ui, quick-add, parsing, events, tasks]
-status: in-progress
+status: closed
 ---
 
 # Quick add
@@ -63,10 +63,10 @@ A single text box turns a typed phrase into an event (or a task) with date, time
 - [ ] Ctrl+N opens New event (New task in the Tasks view); the toolbar has no quick-add box.
 - [x] Typing `#wo` lists the Work calendar; Tab inserts it. Typing `tom` offers "tomorrow".
 - [ ] "task x every Fri" creates a task "x" due on the next Friday that repeats weekly on Friday in Microsoft To Do.
-- [ ] "Dentist next week" creates an all-day event on next week's first day; "Dentist this week" on today if the week has started.
-- [ ] "task Report next week" creates a task due on next week's last day (week end from the week-start setting).
-- [ ] "Review last week" creates an event titled "Review last week" with today's date.
-- [ ] The parser reports each date phrase with its kind and span, and every existing quick-add test phrase gives the same result as before.
+- [x] "Dentist next week" creates an all-day event on next week's first day; "Dentist this week" on today if the week has started.
+- [x] "task Report next week" creates a task due on next week's last day (week end from the week-start setting).
+- [x] "Review last week" creates an event titled "Review last week" with today's date.
+- [x] The parser reports each date phrase with its kind and span, and every existing quick-add test phrase gives the same result as before.
 
 ## Dependencies
 

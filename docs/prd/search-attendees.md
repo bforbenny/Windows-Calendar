@@ -2,7 +2,7 @@
 description: Attendee and organiser names and addresses are indexed so a person's name finds their meetings
 when-to-use: Before working on attendee indexing, the FTS people column, or attendee suggestions for search filters
 tags: [search, fts, attendees]
-status: in-progress
+status: closed
 ---
 
 # Search by attendee
@@ -28,12 +28,12 @@ Search ([search](search.md)) does not find meetings by who is in them. This adds
 
 ## Acceptance criteria
 
-- [ ] An item written with Graph attendees/organizer or CalDAV ATTENDEE/ORGANIZER has those names and addresses in the `people` column, in the same transaction as the item write.
-- [ ] The account's own name and address are not in `people`; searching your own name does not match every meeting.
-- [ ] After upgrading to v22, the first start rebuilds the index once from existing items and `build-search` is cleared; the next start does not rebuild.
-- [ ] Searching an attendee's or organiser's name or address finds their meetings, with the network off.
-- [ ] The people lookup for a prefix returns the matching distinct names and addresses, and none that appear in no item.
-- [ ] The performance test on ~10,000 items passes with search returning in < 100 ms.
+- [x] An item written with Graph attendees/organizer or CalDAV ATTENDEE/ORGANIZER has those names and addresses in the `people` column, in the same transaction as the item write.
+- [x] The account's own name and address are not in `people`; searching your own name does not match every meeting.
+- [x] After upgrading to v22, the first start rebuilds the index once from existing items and `build-search` is cleared; the next start does not rebuild.
+- [x] Searching an attendee's or organiser's name or address finds their meetings, with the network off.
+- [x] The people lookup for a prefix returns the matching distinct names and addresses, and none that appear in no item.
+- [x] The performance test on ~10,000 items passes with search returning in < 100 ms.
 
 ## Dependencies
 

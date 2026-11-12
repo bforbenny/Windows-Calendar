@@ -2,7 +2,7 @@
 description: Date phrases typed in search (next week, monday, march) become removable date filter chips, using the quick-add parser
 when-to-use: Before working on search date chips, the phrase-level output of the quick-add parser, or how search reads date phrases
 tags: [search, quick-add, parsing, dates]
-status: in-progress
+status: closed
 ---
 
 # Search date chips
@@ -33,14 +33,14 @@ Common date phrases typed in the search box ("next week", "monday", "march") bec
 
 ## Acceptance criteria
 
-- [ ] "next week" shows a date chip for the full calendar week after this one, instantly, and typing is not delayed.
-- [ ] "budget next week" shows the chip with "budget" as the keyword and finds the matching event in next week; the text in the box is unchanged.
-- [ ] With the week-start setting on Monday and then Sunday, "this week" covers Monday-Sunday and Sunday-Saturday respectively, including days already past.
-- [ ] "tomorrow" is that day; "monday" is Monday of the current week; "last month" is the full previous month; "march" is all of March in the current year; "5 dec" is that day.
-- [ ] A removed chip does not come back while the text is unchanged; editing the text lets it appear again.
-- [ ] "monday standup" shows the Monday chip and its matches, with "Monday standup" in another week listed below the filtered results.
-- [ ] The regression test runs every existing quick-add test phrase and the results match those before the parser change.
-- [ ] A chip before the MS365 sync window shows "searched from <date>"; with no matches, plain FTS results show under "No matches with these filters".
+- [x] "next week" shows a date chip for the full calendar week after this one, instantly, and typing is not delayed.
+- [x] "budget next week" shows the chip with "budget" as the keyword and finds the matching event in next week; the text in the box is unchanged.
+- [x] With the week-start setting on Monday and then Sunday, "this week" covers Monday-Sunday and Sunday-Saturday respectively, including days already past.
+- [x] "tomorrow" is that day; "monday" is Monday of the current week; "last month" is the full previous month; "march" is all of March in the current year; "5 dec" is that day.
+- [x] A removed chip does not come back while the text is unchanged; editing the text lets it appear again.
+- [x] "monday standup" shows the Monday chip and its matches, with "Monday standup" in another week listed below the filtered results.
+- [x] The regression test runs every existing quick-add test phrase and the results match those before the parser change.
+- [x] A chip before the MS365 sync window shows "searched from <date>"; with no matches, plain FTS results show under "No matches with these filters".
 
 ## Dependencies
 
