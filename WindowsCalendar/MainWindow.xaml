@@ -55,7 +55,7 @@
             <ui:TitleBar.CenterContent>
                 <!-- Search (search R2): centred in the title bar, hidden while Settings is open; results drop down as you
                      type; also Ctrl+F / Ctrl+E. -->
-                <Grid x:Name="TitleSearch" HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel x:Name="TitleSearch" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
                     <ui:TextBox x:Name="SearchBox" Width="360" VerticalAlignment="Center"
                                 PlaceholderText="Search" AutomationProperties.Name="Search events and tasks"
                                 TextChanged="OnSearchTextChanged" PreviewKeyDown="OnSearchKeyDown">
@@ -63,17 +63,28 @@
                             <ui:SymbolIcon Symbol="Search24" />
                         </ui:TextBox.Icon>
                     </ui:TextBox>
+                    <!-- Opens the filters panel in the search popup (search-filters R1). -->
+                    <ui:Button x:Name="SearchFiltersButton" Click="OnSearchFiltersClick" VerticalAlignment="Center" Margin="6,0,0,0"
+                               ToolTip="Filters" AutomationProperties.Name="Search filters">
+                        <ui:SymbolIcon Symbol="Filter24" />
+                    </ui:Button>
                     <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom"
                            StaysOpen="False" AllowsTransparency="True">
                         <Border Background="{DynamicResource SurfaceBaseBrush}" BorderBrush="{DynamicResource DividerBrush}"
                                 BorderThickness="1" CornerRadius="8" Padding="4" Margin="0,4,0,0">
-                            <ListBox x:Name="SearchResults" MaxHeight="480" Width="440" BorderThickness="0" Background="Transparent"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                     ItemContainerStyle="{StaticResource PopupListItem}"
-                                     PreviewMouseLeftButtonUp="OnSearchResultClicked" PreviewKeyDown="OnSearchResultsKeyDown" />
+                            <StackPanel Width="440">
+                                <!-- Active filters as removable chips, then Clear filters (search-filters R1). -->
+                                <WrapPanel x:Name="SearchChips" Visibility="Collapsed" Margin="4,4,4,0" />
+                                <!-- The filters panel, filled in code (search-filters R2); inline, not a nested popup. -->
+                                <StackPanel x:Name="SearchFilterPanel" Visibility="Collapsed" Margin="4,4,4,8" />
+                                <ListBox x:Name="SearchResults" MaxHeight="480" Width="440" BorderThickness="0" Background="Transparent"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ItemContainerStyle="{StaticResource PopupListItem}"
+                                         PreviewMouseLeftButtonUp="OnSearchResultClicked" PreviewKeyDown="OnSearchResultsKeyDown" />
+                            </StackPanel>
                         </Border>
                     </Popup>
-                </Grid>
+                </StackPanel>
             </ui:TitleBar.CenterContent>
         </ui:TitleBar>
 

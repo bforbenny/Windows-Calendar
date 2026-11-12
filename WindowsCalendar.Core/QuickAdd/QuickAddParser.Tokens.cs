@@ -82,6 +82,9 @@ internal sealed class Found
 {
     public DateOnly? Date { get; set; }
 
+    /// <summary>The last day of a range date ("next week"), which is a task's due date.</summary>
+    public DateOnly? DateEnd { get; set; }
+
     /// <summary>Minutes from midnight; <see cref="EndMin"/> may pass 1440 when a range ends on the next day.</summary>
     public int? StartMin { get; set; }
 

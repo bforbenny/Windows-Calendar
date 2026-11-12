@@ -25,7 +25,7 @@ All user settings live on one Settings page inside the main window, laid out lik
   | Working hours | working days, start and end time | [calendar-shading](calendar-shading.md) |
   | Startup and tray | start with Windows | [app-platform](app-platform.md) |
   | Keyboard shortcuts | read-only shortcut list (same as the cheat sheet) | [keyboard-navigation](keyboard-navigation.md) |
-  | About | version, open log folder, what is kept and what is lost (R7) | [app-platform](app-platform.md), [app-updates](app-updates.md) |
+  | About | version, Check for updates ([app-updates](app-updates.md) R7), open log folder, what is kept and what is lost (R7) | [app-platform](app-platform.md), [app-updates](app-updates.md) |
 
 - R3. Settings apply immediately (no Save button), consistent with the editor's auto-save.
 - R4. Destructive settings (remove account, delete calendar set) ask for confirmation (CLAUDE.md security rule 5).

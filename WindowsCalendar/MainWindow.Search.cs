@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Windows;
@@ -34,6 +35,7 @@ public sealed partial class MainWindow
         SizeChanged += (_, _) => Dispatcher.BeginInvoke(CentreSearch, DispatcherPriority.Loaded);
         TitleSearch.IsVisibleChanged += (_, _) => Dispatcher.BeginInvoke(CentreSearch, DispatcherPriority.Loaded);
         Loaded += (_, _) => CentreSearch();
+        SetupSearchFilters();
     }
 
     private void CentreSearch()
@@ -71,35 +73,95 @@ public sealed partial class MainWindow
                 ShowSearchResults();
             };
         }
+        _searchLimit = SearchPageSize;
         _searchTimer.Stop();
         _searchTimer.Start();
     }
 
+    /// <summary>
+    /// Lists the matches for the typed words and the filters (search-filters R1, R4): the popup opens for words or
+    /// filters (or the open Filters panel) and closes on an empty box without them. Shows _searchLimit results with a
+    /// "Show more" row; no matches with filters falls back to the plain words (R6).
+    /// </summary>
     private void ShowSearchResults()
     {
         var text = SearchBox.Text;
+        var hand = CurrentSearchFilter();
+        UpdateTypedDate(text);
+        RebuildChips();
+        var filter = EffectiveSearchFilter(hand);
+        var words = _typedDate?.Remaining ?? text;
+        var hasText = !string.IsNullOrWhiteSpace(text);
         SearchResults.Items.Clear();
-        if (string.IsNullOrWhiteSpace(text) || Store is not { } store)
+        if (Store is not { } store || (!hasText && filter is null && !SearchFilterPanel.IsVisible))
         {
+            SearchResults.Visibility = Visibility.Collapsed;
             SearchPopup.IsOpen = false;
             return;
         }
-        foreach (var result in store.Search(text))
+        if (hasText || filter is not null)
+        {
+            var shown = AddResults(store.Search(words, filter, _searchLimit + 1));
+            shown += AddConsumedTitleMatches(store, hand);
+            if (shown == 0 && filter is not null && hasText)
+            {
+                SearchResults.Items.Add(NoteRow("No matches with these filters"));
+                shown = AddResults(store.Search(text, null, _searchLimit + 1));
+            }
+            if (shown == 0)
+            {
+                SearchResults.Items.Add(NoteRow("No results"));
+            }
+            if (_graphAccounts.Count > 0)
+            {
+                SearchResults.Items.Add(NoteRow($"Microsoft 365 searched from {GraphSync.WindowStart(_today):d MMM yyyy}"));
+            }
+        }
+        SearchResults.Visibility = SearchResults.Items.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        SearchPopup.IsOpen = true;
+    }
+
+    /// <summary>Adds up to _searchLimit result rows, then "Show more" when the store returned more; returns the rows added.</summary>
+    private int AddResults(IReadOnlyList<SearchResult> results)
+    {
+        var shown = 0;
+        foreach (var result in results.Take(_searchLimit))
         {
             if (_collections.TryGetValue(result.CollectionId, out var collection))
             {
                 SearchResults.Items.Add(new ListBoxItem { Content = ResultRow(result, collection), Tag = result });
+                shown++;
             }
         }
-        if (SearchResults.Items.Count == 0)
+        if (results.Count > _searchLimit)
         {
-            SearchResults.Items.Add(NoteRow("No results"));
+            var more = Caption("Show more");
+            more.Margin = new Thickness(0, 4, 0, 4);
+            more.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+            var row = new ListBoxItem { Content = more, Tag = ShowMoreRow };
+            AutomationProperties.SetName(row, "Show more results");
+            SearchResults.Items.Add(row);
         }
-        if (_graphAccounts.Count > 0)
+        return shown;
+    }
+
+    /// <summary>The Tag of the "Show more" row, so it is not taken for a SearchResult.</summary>
+    private static readonly object ShowMoreRow = new();
+
+    /// <summary>Adds a page of results and keeps the keyboard on the first new one.</summary>
+    private void ShowMoreResults()
+    {
+        var before = SearchResults.Items.OfType<ListBoxItem>().Count(i => i.Tag is SearchResult);
+        _searchLimit += SearchPageSize;
+        ShowSearchResults();
+        Dispatcher.BeginInvoke(() =>
         {
-            SearchResults.Items.Add(NoteRow($"Microsoft 365 searched from {GraphSync.WindowStart(_today):d MMM yyyy}"));
-        }
-        SearchPopup.IsOpen = true;
+            if (SearchResults.Items.OfType<ListBoxItem>().Where(i => i.Tag is SearchResult).ElementAtOrDefault(before) is { } next)
+            {
+                SearchResults.SelectedItem = next;
+                next.Focus();
+            }
+        }, DispatcherPriority.Loaded);
     }
 
     private void OnSearchKeyDown(object sender, KeyEventArgs e)
@@ -125,6 +187,12 @@ public sealed partial class MainWindow
                 e.Handled = true;
                 SearchPopup.IsOpen = false;
                 break;
+            case Key.Back when SearchBox.Text.Length == 0 && _chipOrder.Count > 0:
+                // search-filters R9: Backspace in the empty box removes the last chip.
+                e.Handled = true;
+                ClearChip(_chipOrder[^1]);
+                ApplySearchFilters();
+                break;
         }
     }
 
@@ -134,6 +202,11 @@ public sealed partial class MainWindow
         {
             e.Handled = true;
             OpenSearchResult(item);
+        }
+        else if (e.Key == Key.Enter && SearchResults.SelectedItem is ListBoxItem { Tag: var marker } && ReferenceEquals(marker, ShowMoreRow))
+        {
+            e.Handled = true;
+            ShowMoreResults();
         }
         else if (e.Key == Key.Escape)
         {
@@ -152,6 +225,12 @@ public sealed partial class MainWindow
             if (hit is ListBoxItem { Tag: SearchResult } item)
             {
                 OpenSearchResult(item);
+                return;
+            }
+            if (hit is ListBoxItem { Tag: var marker } && ReferenceEquals(marker, ShowMoreRow))
+            {
+                e.Handled = true;
+                ShowMoreResults();
                 return;
             }
         }

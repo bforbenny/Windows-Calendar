@@ -269,6 +269,16 @@ internal static class Migrations
         DELETE FROM sync_state WHERE key = 'graph-chunks';
         DELETE FROM meta WHERE key = 'occurrences_built';
         """,
+
+        // v22: attendee and organiser names and addresses are searchable (search-attendees R1, R3). FTS5 cannot add a
+        // column in place, so the index is recreated with `people` and filled again once on open
+        // (LocalStore.BuildSearchIndex). The items_search_delete trigger is on items, so it survives the drop.
+        """
+        DROP TABLE search_index;
+        CREATE VIRTUAL TABLE search_index USING fts5(title, body, location, calendar, people,
+            tokenize = 'unicode61 remove_diacritics 2', prefix = '2 3');
+        INSERT OR REPLACE INTO meta (key, value) VALUES ('build-search', '1');
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

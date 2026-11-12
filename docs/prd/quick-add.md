@@ -2,7 +2,7 @@
 description: Typed quick add that parses English phrases like "Lunch with Sam fri 1pm at Cafe Rio" into an event or task, offline and rule-based
 when-to-use: Before working on the quick-add box, its parser, or quick-create flows
 tags: [ui, quick-add, parsing, events, tasks]
-status: updated
+status: in-progress
 ---
 
 # Quick add

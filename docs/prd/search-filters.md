@@ -2,7 +2,7 @@
 description: Filter chips and a Filters flyout in the search popup (type, calendar, date range, attendee, location), applied in SQL
 when-to-use: Before working on search filters, filter chips, filter-only search or the empty-results fallback
 tags: [search, filters, ui]
-status: pending
+status: in-progress
 ---
 
 # Search filters

@@ -2,7 +2,7 @@
 description: Date phrases typed in search (next week, monday, march) become removable date filter chips, using the quick-add parser
 when-to-use: Before working on search date chips, the phrase-level output of the quick-add parser, or how search reads date phrases
 tags: [search, quick-add, parsing, dates]
-status: pending
+status: in-progress
 ---
 
 # Search date chips

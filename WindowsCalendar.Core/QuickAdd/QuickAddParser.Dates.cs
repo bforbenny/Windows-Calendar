@@ -83,33 +83,78 @@ public static partial class QuickAddParser
 
     /// <summary>
     /// R2/R6: the first date in the phrase. The plain pass takes unambiguous words; the common-word pass then takes
-    /// sun, sat, wed, mar, may only when they are the last word or next to a date or time.
+    /// sun, sat, wed, mar, may only when they are the last word or next to a date or time. A range ("this week") is its
+    /// first day still to come for an event and its last day for a task (R2 Ranges).
     /// </summary>
-    private static void ReadDate(Scan scan, Found found, DateOnly today, bool dayFirst, bool commonWords)
+    private static void ReadDate(Scan scan, Found found, DateOnly today, bool dayFirst, bool commonWords, DayOfWeek weekStart)
     {
         for (var i = 0; i < scan.Count && found.Date is null; i++)
         {
-            if (scan.IsFree(i) && TryDate(scan, i, today, dayFirst, commonWords, out var date, out var first, out var last))
+            if (scan.IsFree(i) && TryDate(scan, i, today, dayFirst, commonWords, false, out var phrase, out var first, out var last))
             {
-                found.Date = date;
+                switch (phrase!.Kind)
+                {
+                    case DatePhraseKind.Weekday:
+                        found.Date = NextWeekday(today, phrase.Weekday!.Value);
+                        break;
+                    case DatePhraseKind.Week or DatePhraseKind.Month:
+                        var range = SearchDates.Range(phrase, today, weekStart);
+                        found.Date = range.From > today ? range.From : today;
+                        found.DateEnd = range.ToExclusive.AddDays(-1);
+                        break;
+                    default:
+                        found.Date = phrase.Date;
+                        break;
+                }
                 scan.Claim(QuickAddField.Date, first, last);
             }
         }
     }
 
-    private static bool TryDate(Scan scan, int i, DateOnly today, bool dayFirst, bool commonWords, out DateOnly date, out int first, out int last)
+    /// <summary>
+    /// search-date-chips R1: the first date phrase in <paramref name="text"/>, by the same scan, anchoring and order as
+    /// quick add's date, plus "last week/month" and a bare month name, which only search reads. Null when there is none.
+    /// </summary>
+    public static DatePhrase? FindDatePhrase(string text, DateOnly today, bool dayFirst)
     {
-        date = default;
+        var scan = new Scan(text);
+        foreach (var commonWords in new[] { false, true })
+        {
+            for (var i = 0; i < scan.Count; i++)
+            {
+                if (TryDate(scan, i, today, dayFirst, commonWords, true, out var phrase, out _, out _))
+                {
+                    return phrase;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static bool TryDate(Scan scan, int i, DateOnly today, bool dayFirst, bool commonWords, bool search,
+        out DatePhrase? phrase, out int first, out int last)
+    {
+        phrase = null;
         first = last = i;
         var word = scan.Lower(i);
         if (WeekdayNames.TryGetValue(word, out var day) && CommonWordWeekdays.Contains(word) == commonWords)
         {
-            date = NextWeekday(today, day);
+            phrase = Phrase(scan, DatePhraseKind.Weekday, i, i, weekday: day);
             return !commonWords || scan.Anchored(i, i);
         }
         if (MonthNames.TryGetValue(word, out var month) && CommonWordMonths.Contains(word) == commonWords)
         {
-            return TryMonthPair(scan, i, month, today, out date, out first, out last) && (!commonWords || scan.Anchored(first, last));
+            if (TryMonthPair(scan, i, month, today, out var pair, out first, out last))
+            {
+                phrase = Phrase(scan, DatePhraseKind.Day, first, last, date: pair);
+                return !commonWords || scan.Anchored(first, last);
+            }
+            if (!search)
+            {
+                return false;
+            }
+            phrase = Phrase(scan, DatePhraseKind.MonthName, i, i, month: month);
+            return !commonWords || scan.Anchored(i, i);
         }
         if (commonWords)
         {
@@ -118,14 +163,19 @@ public static partial class QuickAddParser
         switch (word)
         {
             case "today":
-                date = today;
+                phrase = Phrase(scan, DatePhraseKind.Day, i, i, date: today);
                 return true;
             case "tomorrow":
-                date = today.AddDays(1);
+                phrase = Phrase(scan, DatePhraseKind.Day, i, i, date: today.AddDays(1));
                 return true;
             case "next" when scan.IsFree(i + 1) && WeekdayNames.TryGetValue(scan.Lower(i + 1), out var nextDay):
-                date = NextWeekday(today, nextDay).AddDays(7);
                 last = i + 1;
+                phrase = Phrase(scan, DatePhraseKind.Day, i, last, date: NextWeekday(today, nextDay).AddDays(7));
+                return true;
+            case "this" or "next" or "last" when (word != "last" || search) && scan.IsFree(i + 1) && scan.Lower(i + 1) is "week" or "month":
+                last = i + 1;
+                phrase = Phrase(scan, scan.Lower(last) == "week" ? DatePhraseKind.Week : DatePhraseKind.Month, i, last,
+                    shift: word == "this" ? 0 : word == "next" ? 1 : -1);
                 return true;
             case "in" when scan.IsFree(i + 1) && scan.IsFree(i + 2) && int.TryParse(scan.Lower(i + 1), out var n) && n is >= 0 and <= 3650:
                 var unit = scan.Lower(i + 2);
@@ -133,13 +183,22 @@ public static partial class QuickAddParser
                 {
                     return false;
                 }
-                date = today.AddDays(unit.StartsWith("week", StringComparison.Ordinal) ? n * 7 : n);
                 last = i + 2;
+                phrase = Phrase(scan, DatePhraseKind.Day, i, last, date: today.AddDays(unit.StartsWith("week", StringComparison.Ordinal) ? n * 7 : n));
                 return true;
         }
         var numeric = NumericDateRegex.Match(word);
-        return numeric.Success && TryNumericDate(numeric, dayFirst, today, out date);
+        if (numeric.Success && TryNumericDate(numeric, dayFirst, today, out var numericDate))
+        {
+            phrase = Phrase(scan, DatePhraseKind.Day, i, i, date: numericDate);
+            return true;
+        }
+        return false;
     }
+
+    private static DatePhrase Phrase(Scan scan, DatePhraseKind kind, int first, int last, DateOnly? date = null,
+        DayOfWeek? weekday = null, int shift = 0, int? month = null) =>
+        new(kind, new Range(scan.Tokens[first].Start, scan.Tokens[last].End), date, weekday, shift, month);
 
     /// <summary>"5 Dec" or "Dec 5"; a day-month already past this year means next year (R6).</summary>
     private static bool TryMonthPair(Scan scan, int i, int month, DateOnly today, out DateOnly date, out int first, out int last)

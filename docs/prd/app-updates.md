@@ -2,10 +2,12 @@
 description: Installing updates of the sideloaded MSIX, keeping data across versions, and setting up a new PC
 when-to-use: Before working on packaging, versioning, schema migrations, or install instructions
 tags: [platform, msix, updates, install]
-status: closed
+status: in-progress
 ---
 
 # App updates and install
+
+> Updated on 2026-11-12: R7 adds "Check for updates" in Settings > About.
 
 ## Summary
 
@@ -19,6 +21,11 @@ The sideloaded MSIX is updated through an App Installer (`.appinstaller`) file k
 - R4. Downgrade: if the store's schema is newer than the running build understands, the app does not open the store, changes nothing, and shows "This data was created by a newer version. Install the latest version."
 - R5. Every build is signed with the same self-signed certificate ([app-platform](app-platform.md) R3). Install steps in the README cover trusting the certificate (Local Machine, Trusted People) and installing from the `.appinstaller` file, for first install and for a new PC.
 - R6. Uninstall removes LocalState, including unsynced changes and conflict copies; nothing moves to a new PC except what is on the servers. This is stated in Settings > About ([settings-page](settings-page.md) R7), and Quit warns when unsynced changes or open conflicts exist ([app-platform](app-platform.md) R5).
+- R7. Settings > About has a "Check for updates" button ([settings-page](settings-page.md) R7):
+  - it checks the source the app was installed from (`Package.CheckUpdateAvailabilityAsync`) and shows "Checking...", then "WindowsCalendar is up to date", "An update is available" (the API gives no version number) or "Couldn't check for updates: <reason>"; the reason is logged;
+  - when an update is available, an "Install and restart" button installs it from the app's own `.appinstaller` (`PackageManager.AddPackageByAppInstallerFileAsync` with force-shutdown); the app closes during the install and unsent changes stay in the store;
+  - before installing, the app registers for restart with Windows Restart Manager so it reopens after the update; if that proves unreliable, the text instead says "WindowsCalendar will close; open it again from Start after the update";
+  - when the app was not installed from an `.appinstaller` (no update source), the button is disabled with "Updates are installed from the .appinstaller file".
 
 ## Implementation (decided 2026-11-12)
 
@@ -43,6 +50,9 @@ The sideloaded MSIX is updated through an App Installer (`.appinstaller`) file k
 - [x] Launching after a new build is placed in the folder offers the update.
 - [x] Running an older build against a newer store shows the downgrade message and leaves the data unchanged.
 - [x] Following the README steps installs the app on a clean PC.
+- [ ] Check for updates with no newer release shows "WindowsCalendar is up to date".
+- [ ] With a newer GitHub release, Check for updates shows "An update is available"; Install and restart installs it, keeps data, and the app reopens (or the fallback text is shown).
+- [ ] With the network off, Check for updates shows "Couldn't check for updates" and the reason is in the log.
 
 ## Dependencies
 

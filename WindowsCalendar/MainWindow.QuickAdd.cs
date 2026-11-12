@@ -112,7 +112,7 @@ public sealed partial class MainWindow
         }
         var pattern = CultureInfo.CurrentCulture.DateTimeFormat.ShortDatePattern;
         var dayFirst = pattern.IndexOf('d') < pattern.IndexOf('M');
-        return new QuickAddOptions(dayFirst, targets, slot, slotAllDay, TaskByDefault: slot is null && _view == ViewKind.Tasks);
+        return new QuickAddOptions(dayFirst, targets, slot, slotAllDay, TaskByDefault: slot is null && _view == ViewKind.Tasks, WeekStart: WeekStart);
     }
 
     /// <summary>

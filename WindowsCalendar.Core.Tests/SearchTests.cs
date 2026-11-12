@@ -24,9 +24,9 @@ public sealed class SearchTests : IDisposable
     public SearchTests()
     {
         _store = LocalStore.Open(DbPath, _time);
-        _store.AddAccount(new Account("a1", AccountType.CalDAV, "Radicale"));
+        _store.AddAccount(new Account("a1", AccountType.CalDAV, "Radicale", Email: "me@dav.example.test"));
         _store.AddCollection(new Collection("c1", "a1", CollectionKind.Calendar, "Home", "Navy", "Circle", true, false, "https://dav.example.test/home/"));
-        _store.AddAccount(new Account("a2", AccountType.MS365, "Work"));
+        _store.AddAccount(new Account("a2", AccountType.MS365, "Work", Email: "me@work.example.test"));
         _store.AddCollection(new Collection("g1", "a2", CollectionKind.Calendar, "Calendar", "Teal", "Circle", true, false, "graph-cal"));
     }
 
@@ -47,6 +47,14 @@ public sealed class SearchTests : IDisposable
         {"id":"{{id}}","subject":"{{subject}}",{{extra}}
          "start":{"dateTime":"{{start}}","timeZone":"UTC"},"end":{"dateTime":"{{start[..^2]}}59","timeZone":"UTC"} }
         """).RootElement, "g1", TimeZoneInfo.Utc)! with { Id = id };
+
+    private static Item Todo(string uid, string summary, string? due = null) =>
+        CalDavItemMapper.Map($"https://dav.example.test/home/{uid}.ics", "\"e\"",
+            ($"BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Test//EN\nBEGIN:VTODO\nUID:{uid}\nDTSTAMP:20260101T000000Z\n"
+             + $"SUMMARY:{summary}\n{(due is null ? "" : $"DUE:{due}\n")}END:VTODO\nEND:VCALENDAR\n")
+            .Replace("\n", "\r\n"), TimeZoneInfo.Utc)! with { Id = uid, CollectionId = "c1" };
+
+    private static DateTimeOffset Utc(int month, int day) => new(2026, month, day, 0, 0, 0, TimeSpan.Zero);
 
     private static string Plain(string marked) =>
         marked.Replace(SearchResult.MarkStart.ToString(), "").Replace(SearchResult.MarkEnd.ToString(), "");
@@ -178,6 +186,89 @@ public sealed class SearchTests : IDisposable
     }
 
     [Fact]
+    public void GraphAttendeesAndOrganiser_AreSearchable_ByNameAndAddress()
+    {
+        _store.CreateItem(Graph("m1", "Budget review", "2026-11-11T01:00:00",
+            """
+            "organizer":{"emailAddress":{"name":"Olivia Organiser","address":"olivia@boss.example.test"}},
+            "attendees":[{"emailAddress":{"name":"Priya Patel","address":"priya@client.example.test"}}],
+            """));
+
+        Assert.Equal(["m1"], _store.Search("priya").Select(r => r.ItemId));
+        Assert.Equal(["m1"], _store.Search("patel").Select(r => r.ItemId));
+        Assert.Equal(["m1"], _store.Search("priya@client.example.test").Select(r => r.ItemId));
+        Assert.Equal(["m1"], _store.Search("olivia").Select(r => r.ItemId));
+        Assert.Equal(["m1"], _store.Search("olivia@boss.example.test").Select(r => r.ItemId));
+    }
+
+    [Fact]
+    public void CalDavAttendeesAndOrganiser_AreSearchable_ByNameAndAddress()
+    {
+        _store.CreateItem(CalDav("r1", "Planning", "20261110T010000Z",
+            "ORGANIZER;CN=Olivia Organiser:mailto:olivia@boss.example.test\nATTENDEE;CN=Priya Patel:MAILTO:priya@client.example.test\n"));
+
+        Assert.Equal(["r1"], _store.Search("priya").Select(r => r.ItemId));
+        Assert.Equal(["r1"], _store.Search("priya@client.example.test").Select(r => r.ItemId));
+        Assert.Equal(["r1"], _store.Search("olivia").Select(r => r.ItemId));
+        Assert.Equal(["r1"], _store.Search("olivia@boss.example.test").Select(r => r.ItemId));
+    }
+
+    [Fact]
+    public void TheAccountsOwnEntry_IsNotIndexed_NameIncluded()
+    {
+        _store.CreateItem(Graph("m1", "Budget review", "2026-11-11T01:00:00",
+            """
+            "attendees":[{"emailAddress":{"name":"Marlon Myself","address":"me@work.example.test"}},
+                         {"emailAddress":{"name":"Priya Patel","address":"priya@client.example.test"}}],
+            """));
+        _store.CreateItem(CalDav("r1", "Planning", "20261110T010000Z",
+            "ATTENDEE;CN=Marlon Myself:mailto:ME@dav.example.test\nATTENDEE;CN=Priya Patel:mailto:priya@client.example.test\n"));
+
+        Assert.Empty(_store.Search("marlon"));
+        Assert.Empty(_store.Search("me@work.example.test"));
+        Assert.Empty(_store.Search("me@dav.example.test"));
+        Assert.Equal(["m1", "r1"], _store.Search("priya").Select(r => r.ItemId).Order());
+    }
+
+    [Fact]
+    public void People_ReturnsDistinctMatchesFromVisibleNonDeletedItemsOnly()
+    {
+        _store.AddCollection(new Collection("c2", "a1", CollectionKind.Calendar, "Other", "Navy", "Circle", true, false, "https://dav.example.test/other/"));
+        _store.CreateItem(CalDav("r1", "One", "20261110T010000Z",
+            "ATTENDEE;CN=Alice Adams:mailto:alice@example.test\nATTENDEE;CN=Bob Brown:mailto:bob@example.test\n"));
+        _store.CreateItem(CalDav("r2", "Two", "20261111T010000Z",
+            "ATTENDEE;CN=Alice Adams:mailto:alice@example.test\nATTENDEE;CN=Albert Ng:mailto:albert@example.test\n"));
+        _store.CreateItem(CalDav("r3", "Three", "20261112T010000Z", "ATTENDEE;CN=Alan Gone:mailto:alan@example.test\n"));
+        _store.CreateItem(CalDav("r4", "Four", "20261113T010000Z", "ATTENDEE;CN=Alma Hidden:mailto:alma@example.test\n") with { CollectionId = "c2" });
+        _store.DeleteItem("r3");
+        _store.SetCollectionHidden("c2", true);
+
+        Assert.Equal(["Albert Ng", "albert@example.test", "Alice Adams", "alice@example.test"], _store.People("al"));
+        Assert.Equal(["Alice Adams"], _store.People("adams"));
+        Assert.Equal(2, _store.People("al", 2).Count);
+        Assert.Empty(_store.People("   "));
+        Assert.Empty(_store.People("zz"));
+    }
+
+    [Fact]
+    public void ExistingItems_GetPeopleIndexedOnOpenAfterTheUpgrade()
+    {
+        _store.CreateItem(CalDav("r1", "Planning", "20261110T010000Z", "ATTENDEE;CN=Priya Patel:mailto:priya@client.example.test\n"));
+        using (var db = new SqliteConnection($"Data Source={DbPath};Pooling=False"))
+        {
+            db.Open();
+            using var cmd = db.CreateCommand();
+            cmd.CommandText = "DELETE FROM search_index; INSERT INTO meta (key, value) VALUES ('build-search', '1');";
+            cmd.ExecuteNonQuery();
+        }
+        Assert.Empty(_store.Search("priya"));
+
+        using var reopened = LocalStore.Open(DbPath, _time);
+
+        Assert.Equal(["r1"], reopened.Search("priya").Select(r => r.ItemId));
+    }
+
+    [Fact]
     public void Ms365Series_IsOneResult_AtItsNextOccurrence()
     {
         const string series = """ "type":"occurrence","seriesMasterId":"master", """;
@@ -229,6 +320,122 @@ public sealed class SearchTests : IDisposable
     }
 
     [Fact]
+    public void KindFilter_ListsEventsOrTasksOnly()
+    {
+        _store.CreateItem(CalDav("r1", "Review notes", "20261110T010000Z"));
+        _store.CreateItem(Todo("t1", "Review forms", "20261111T090000Z"));
+
+        Assert.Equal(["r1"], _store.Search("review", new SearchFilter(Kind: SearchKind.Events)).Select(r => r.ItemId));
+        Assert.Equal(["t1"], _store.Search("review", new SearchFilter(Kind: SearchKind.Tasks)).Select(r => r.ItemId));
+        Assert.Equal(["r1", "t1"], _store.Search("review", new SearchFilter(Kind: SearchKind.All)).Select(r => r.ItemId).Order());
+    }
+
+    [Fact]
+    public void CollectionFilter_ListsOnlyTheGivenCollections_AndHiddenStayExcluded()
+    {
+        _store.CreateItem(CalDav("r1", "Review notes", "20261110T010000Z"));
+        _store.CreateItem(Graph("m1", "Review budget", "2026-11-11T01:00:00"));
+
+        Assert.Equal(["m1"], _store.Search("review", new SearchFilter(CollectionIds: ["g1"])).Select(r => r.ItemId));
+        Assert.Equal(["m1", "r1"], _store.Search("review", new SearchFilter(CollectionIds: ["c1", "g1"])).Select(r => r.ItemId).Order());
+        Assert.Empty(_store.Search("review", new SearchFilter(CollectionIds: [])));
+
+        _store.SetCollectionHidden("g1", true);
+        Assert.Empty(_store.Search("review", new SearchFilter(CollectionIds: ["g1"])));
+        Assert.Equal(["r1"], _store.Search("review", new SearchFilter(CollectionIds: ["c1", "g1"])).Select(r => r.ItemId));
+    }
+
+    [Fact]
+    public void DateRangeFilter_ShowsTheOccurrenceInRange_AndDropsOutsideAndUndated()
+    {
+        _store.CreateItem(CalDav("r1", "Gym", "20261001T010000Z", "RRULE:FREQ=WEEKLY\n"));
+        _store.CreateItem(CalDav("club", "Gym club", "20261016T020000Z"));
+        _store.CreateItem(CalDav("later", "Gym later", "20261201T010000Z"));
+        _store.CreateItem(Todo("undated", "Gym plan"));
+        _store.CreateItem(Todo("due", "Gym pay", "20261016T090000Z"));
+        var range = new SearchFilter(FromUtc: Utc(10, 14), ToUtc: Utc(10, 21));
+
+        var results = _store.Search("gym", range);
+
+        Assert.Equal(["club", "due", "r1"], results.Select(r => r.ItemId).Order());
+        var series = results.Single(r => r.ItemId == "r1");
+        Assert.True(series.IsSeries);
+        Assert.Equal(new DateTimeOffset(2026, 10, 15, 1, 0, 0, TimeSpan.Zero), series.StartUtc);
+        Assert.Equal(["later"], _store.Search("gym", new SearchFilter(FromUtc: Utc(11, 30))).Select(r => r.ItemId).Where(i => i == "later"));
+    }
+
+    [Fact]
+    public void Limit_AppliesAfterTheFilter()
+    {
+        for (var i = 0; i < 55; i++)
+        {
+            _store.CreateItem(Graph($"m{i}", "Match", "2026-11-11T01:00:00"));
+        }
+        for (var i = 0; i < 5; i++)
+        {
+            _store.CreateItem(CalDav($"h{i}", "Match", "20261110T010000Z"));
+        }
+
+        Assert.Equal(60, _store.Search("match", limit: 100).Count);
+        Assert.Equal(5, _store.Search("match", new SearchFilter(CollectionIds: ["c1"])).Count);
+        Assert.Equal(50, _store.Search("match", new SearchFilter(FromUtc: Utc(11, 1), ToUtc: Utc(12, 1))).Count);
+    }
+
+    [Fact]
+    public void FilterOnly_ListsEverythingInRange_SortedAsSearchSorts_WithPlainTitles()
+    {
+        _store.CreateItem(CalDav("far", "Alpha", "20261120T010000Z"));
+        _store.CreateItem(CalDav("near", "Beta", "20261110T010000Z"));
+        _store.CreateItem(CalDav("past", "Gamma", "20261102T010000Z"));
+        _store.CreateItem(CalDav("out", "Delta", "20261220T010000Z"));
+        _store.CreateItem(Todo("undated", "Epsilon"));
+
+        var results = _store.Search("", new SearchFilter(FromUtc: Utc(11, 1), ToUtc: Utc(12, 1)));
+
+        Assert.Equal(["near", "far", "past"], results.Select(r => r.ItemId));
+        Assert.Equal(["Beta", "Alpha", "Gamma"], results.Select(r => r.Title));
+        Assert.All(results, r => Assert.Null(r.Snippet));
+        Assert.Empty(_store.Search(""));
+        Assert.Empty(_store.Search("   ", new SearchFilter()));
+    }
+
+    [Fact]
+    public void AttendeeFilter_MatchesThePeopleColumnOnly_AsAnExactEntry()
+    {
+        _store.CreateItem(CalDav("e1", "Meeting with Alex Smith", "20261110T010000Z"));
+        _store.CreateItem(CalDav("e2", "Planning", "20261111T010000Z", "ATTENDEE;CN=Alex Smith:mailto:alex@example.test\n"));
+        _store.CreateItem(CalDav("e3", "Other", "20261112T010000Z", "ATTENDEE;CN=Alexandra Smithers:mailto:alexandra@example.test\n"));
+
+        Assert.Equal(["e2"], _store.Search("", new SearchFilter(Attendee: "Alex Smith")).Select(r => r.ItemId));
+        Assert.Equal(["e2"], _store.Search("", new SearchFilter(Attendee: "alex@example.test")).Select(r => r.ItemId));
+        Assert.Equal(["e2"], _store.Search("plan", new SearchFilter(Attendee: "Alex Smith")).Select(r => r.ItemId));
+        Assert.Empty(_store.Search("meeting", new SearchFilter(Attendee: "Alex Smith")));
+    }
+
+    [Fact]
+    public void LocationFilter_MatchesTheLocationColumnOnly()
+    {
+        _store.CreateItem(CalDav("l1", "Boardroom booking", "20261110T010000Z", "DESCRIPTION:Boardroom needed\n"));
+        _store.CreateItem(CalDav("l2", "Sync", "20261111T010000Z", "LOCATION:Boardroom Level 2\n"));
+
+        Assert.Equal(["l2"], _store.Search("", new SearchFilter(Location: "boardroom")).Select(r => r.ItemId));
+        Assert.Equal(["l2"], _store.Search("", new SearchFilter(Location: "board lev")).Select(r => r.ItemId));
+        Assert.Equal(["l2"], _store.Search("sync", new SearchFilter(Location: "boardroom")).Select(r => r.ItemId));
+        Assert.Empty(_store.Search("booking", new SearchFilter(Location: "boardroom")));
+    }
+
+    [Fact]
+    public void TitleWordsFilter_MatchesTheTitleColumnOnly()
+    {
+        _store.CreateItem(CalDav("tw1", "Monday standup", "20261110T010000Z"));
+        _store.CreateItem(CalDav("tw2", "Planning", "20261111T010000Z", "DESCRIPTION:Monday agenda\n"));
+
+        Assert.Equal(["tw1"], _store.Search("", new SearchFilter(TitleWords: "monday")).Select(r => r.ItemId));
+        Assert.Equal(["tw1"], _store.Search("standup", new SearchFilter(TitleWords: "mon")).Select(r => r.ItemId));
+        Assert.Empty(_store.Search("planning", new SearchFilter(TitleWords: "monday")));
+    }
+
+    [Fact]
     public void Search_Over10000Items_IsUnder100ms()
     {
         var start = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.Zero);
@@ -244,8 +451,8 @@ public sealed class SearchTests : IDisposable
                 INSERT INTO items (id, collection_id, kind, raw_payload, summary, start_utc, end_utc, all_day, location, is_recurring)
                 VALUES ($id, 'c1', 'Event', '{}', $summary, $s, $e, 0, $location, 0);
                 INSERT INTO occurrences (item_id, start_utc, end_utc) VALUES ($id, $s, $e);
-                INSERT INTO search_index (rowid, title, body, location, calendar)
-                VALUES (last_insert_rowid(), $summary, $body, $location, 'Home');
+                INSERT INTO search_index (rowid, title, body, location, calendar, people)
+                VALUES (last_insert_rowid(), $summary, $body, $location, 'Home', $people);
                 """;
             var id = cmd.Parameters.Add("$id", SqliteType.Text);
             var summary = cmd.Parameters.Add("$summary", SqliteType.Text);
@@ -253,11 +460,13 @@ public sealed class SearchTests : IDisposable
             var e = cmd.Parameters.Add("$e", SqliteType.Integer);
             var location = cmd.Parameters.Add("$location", SqliteType.Text);
             var body = cmd.Parameters.Add("$body", SqliteType.Text);
+            var people = cmd.Parameters.Add("$people", SqliteType.Text);
             for (var i = 0; i < 10_000; i++)
             {
                 var at = start.AddHours(i);
                 (id.Value, summary.Value, location.Value) = ($"i{i}", $"Meeting {i} project {i % 97}", $"Room {i % 40}");
                 (s.Value, e.Value) = (at.ToUnixTimeMilliseconds(), at.AddHours(1).ToUnixTimeMilliseconds());
+                people.Value = $"Alex Smith\nalex{i % 50}@example.test";
                 body.Value = $"Notes for meeting {i} with agenda items and follow ups for team {i % 13}";
                 cmd.ExecuteNonQuery();
             }
@@ -266,7 +475,7 @@ public sealed class SearchTests : IDisposable
         _store.Search("agenda"); // Warm-up: JIT and the SQLite page cache.
 
         // "meeting" matches every item, the worst case. Best of five.
-        foreach (var text in new[] { "meeting", "project 42", "room 7" })
+        foreach (var text in new[] { "meeting", "project 42", "room 7", "alex" })
         {
             var best = long.MaxValue;
             for (var run = 0; run < 5; run++)
@@ -277,6 +486,27 @@ public sealed class SearchTests : IDisposable
             }
 
             Assert.True(best < 100, $"\"{text}\" took {best} ms");
+        }
+
+        // Filtered: words and a date range, a date range alone (one month), and an attendee.
+        var filtered = new (string Name, string Text, SearchFilter Filter)[]
+        {
+            ("words and range", "meeting", new SearchFilter(FromUtc: start.AddDays(100), ToUtc: start.AddDays(130))),
+            ("range only", "", new SearchFilter(FromUtc: start.AddDays(100), ToUtc: start.AddDays(130))),
+            ("attendee", "", new SearchFilter(Attendee: "alex7@example.test")),
+            ("words and attendee", "meeting", new SearchFilter(Attendee: "Alex Smith")),
+        };
+        foreach (var (name, text, filter) in filtered)
+        {
+            var best = long.MaxValue;
+            for (var run = 0; run < 5; run++)
+            {
+                var watch = Stopwatch.StartNew();
+                Assert.NotEmpty(_store.Search(text, filter));
+                best = Math.Min(best, watch.ElapsedMilliseconds);
+            }
+
+            Assert.True(best < 100, $"{name} took {best} ms");
         }
     }
 }

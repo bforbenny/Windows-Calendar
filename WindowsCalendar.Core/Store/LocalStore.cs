@@ -797,28 +797,88 @@ public sealed partial class LocalStore : IDisposable
     /// matched occurrence, else the last one. Upcoming results come first, soonest first, then past ones, newest first,
     /// then undated tasks (R3). Titles and snippets mark matches with <see cref="SearchResult.MarkStart"/> and
     /// <see cref="SearchResult.MarkEnd"/>.
+    /// A <paramref name="filter"/> narrows the search in the query itself, before the results are counted against
+    /// <paramref name="limit"/> (search-filters R3); the date range applies to each occurrence, so a series shows its
+    /// occurrence in range. With no typed words and no attendee or location, the filter alone lists the items it
+    /// matches, titles unmarked (search-filters R4); with neither words nor a filter the result is empty.
     /// </summary>
-    public IReadOnlyList<SearchResult> Search(string text, int limit = 50)
+    public IReadOnlyList<SearchResult> Search(string text, SearchFilter? filter = null, int limit = 50)
     {
-        if (SearchText.Query(text) is not { } query)
+        var match = new List<string>();
+        if (SearchText.Query(text) is { } typed)
+        {
+            match.Add($"({typed})");
+        }
+        if (filter?.Attendee is { } attendee && SearchText.Phrase(attendee) is { } phrase)
+        {
+            match.Add($"people : {phrase}");
+        }
+        if (filter?.Location is { } place && SearchText.Query(place) is { } placeQuery)
+        {
+            match.Add($"location : ({placeQuery})");
+        }
+        if (filter?.TitleWords is { } titleWords && SearchText.Query(titleWords) is { } titleQuery)
+        {
+            match.Add($"title : ({titleQuery})");
+        }
+        var fts = match.Count > 0;
+        if (!fts && filter is not { IsEmpty: false })
         {
             return [];
         }
+        var query = string.Join(" AND ", match);
+        var conditions = new List<string>
+        {
+            "i.deleted = 0",
+            "i.collection_id NOT IN (SELECT substr(key, 8) FROM meta WHERE key LIKE 'hidden:%')",
+        };
+        var parameters = new List<(string, object?)>();
+        if (fts)
+        {
+            conditions.Insert(0, "search_index MATCH $q");
+            parameters.Add(("$q", query));
+        }
+        if (filter is not null)
+        {
+            if (filter.Kind != SearchKind.All)
+            {
+                conditions.Add("i.kind = $kind");
+                parameters.Add(("$kind", filter.Kind == SearchKind.Events ? nameof(ItemKind.Event) : nameof(ItemKind.Task)));
+            }
+            if (filter.CollectionIds is { } collections)
+            {
+                conditions.Add(collections.Count == 0 ? "0" : $"i.collection_id IN ({InList(collections)})");
+                parameters.AddRange(InParameters(collections));
+            }
+            if (filter.ToUtc is { } to)
+            {
+                conditions.Add("COALESCE(o.start_utc, i.start_utc, i.due_utc) < $to");
+                parameters.Add(("$to", to.ToUnixTimeMilliseconds()));
+            }
+            if (filter.FromUtc is { } from)
+            {
+                conditions.Add("COALESCE(o.end_utc, i.end_utc, i.due_utc) >= $from");
+                parameters.Add(("$from", from.ToUnixTimeMilliseconds()));
+            }
+        }
+        var source = fts
+            ? "search_index s JOIN items i ON i.rowid = s.rowid LEFT JOIN occurrences o ON o.item_id = i.id"
+            : "items i LEFT JOIN occurrences o ON o.item_id = i.id";
         var now = _time.GetUtcNow();
         lock (_gate)
         {
             // One row per matched item and occurrence; each group keeps its best row as it is read (R8).
             var groups = new Dictionary<string, (SearchResult Row, bool Indexed)>();
+            var plainTitles = new Dictionary<string, string>();
             using (var cmd = Command(_connection, null,
-                """
+                $"""
                 SELECT i.id, i.collection_id, i.kind, i.collection_id || '|' || COALESCE(i.series_id, i.remote_id, i.id), i.is_recurring,
                        i.all_day, i.completed_utc IS NOT NULL OR lower(COALESCE(i.status, '')) = 'completed',
                        COALESCE(o.start_utc, i.start_utc, i.due_utc), COALESCE(o.end_utc, i.end_utc, i.due_utc), o.recurrence_utc,
-                       o.item_id IS NOT NULL
-                FROM search_index s JOIN items i ON i.rowid = s.rowid LEFT JOIN occurrences o ON o.item_id = i.id
-                WHERE search_index MATCH $q AND i.deleted = 0
-                  AND i.collection_id NOT IN (SELECT substr(key, 8) FROM meta WHERE key LIKE 'hidden:%');
-                """, ("$q", query)))
+                       o.item_id IS NOT NULL, i.summary
+                FROM {source}
+                WHERE {string.Join(" AND ", conditions)};
+                """, [.. parameters]))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read())
@@ -828,6 +888,7 @@ public sealed partial class LocalStore : IDisposable
                         NullableTime(r, 7), NullableTime(r, 8), r.GetBoolean(5), r.IsDBNull(9) ? null : Time(r, 9), r.GetBoolean(4),
                         r.GetBoolean(6));
                     var indexed = r.GetBoolean(10);
+                    plainTitles[row.ItemId] = NullableString(r, 11) ?? "";
                     if (!groups.TryGetValue(group, out var best))
                     {
                         groups[group] = (row, indexed);
@@ -850,7 +911,14 @@ public sealed partial class LocalStore : IDisposable
 
             // Highlights only for the results shown (R8).
             var marks = new Dictionary<string, (string Title, string? Snippet)>();
-            if (shown.Count > 0)
+            if (!fts)
+            {
+                foreach (var shownRow in shown)
+                {
+                    marks[shownRow.ItemId] = (plainTitles[shownRow.ItemId], null);
+                }
+            }
+            else if (shown.Count > 0)
             {
                 var ids = shown.Select(r => r.ItemId).ToList();
                 using var cmd = Command(_connection, null,
@@ -1843,10 +1911,14 @@ public sealed partial class LocalStore : IDisposable
     private static void IndexItem(SqliteConnection connection, SqliteTransaction tx, string itemId)
     {
         long rowId;
-        string? title, location, calendar;
+        string? title, location, calendar, email;
         string payload;
         using (var cmd = Command(connection, tx,
-            "SELECT i.rowid, i.summary, i.location, i.raw_payload, c.name FROM items i JOIN collections c ON c.id = i.collection_id WHERE i.id = $id;",
+            """
+            SELECT i.rowid, i.summary, i.location, i.raw_payload, c.name, a.email
+            FROM items i JOIN collections c ON c.id = i.collection_id JOIN accounts a ON a.id = c.account_id
+            WHERE i.id = $id;
+            """,
             ("$id", itemId)))
         using (var r = cmd.ExecuteReader())
         {
@@ -1854,14 +1926,53 @@ public sealed partial class LocalStore : IDisposable
             {
                 return;
             }
-            (rowId, title, location, payload, calendar) = (r.GetInt64(0), NullableString(r, 1), NullableString(r, 2), r.GetString(3), r.GetString(4));
+            (rowId, title, location, payload, calendar, email) =
+                (r.GetInt64(0), NullableString(r, 1), NullableString(r, 2), r.GetString(3), r.GetString(4), NullableString(r, 5));
         }
         Execute(connection, tx,
             """
             DELETE FROM search_index WHERE rowid = $row;
-            INSERT INTO search_index (rowid, title, body, location, calendar) VALUES ($row, $title, $body, $location, $calendar);
+            INSERT INTO search_index (rowid, title, body, location, calendar, people) VALUES ($row, $title, $body, $location, $calendar, $people);
             """,
-            ("$row", rowId), ("$title", title), ("$body", SearchText.Body(payload)), ("$location", location), ("$calendar", calendar));
+            ("$row", rowId), ("$title", title), ("$body", SearchText.Body(payload)), ("$location", location), ("$calendar", calendar),
+            ("$people", SearchText.People(payload, email)));
+    }
+
+    /// <summary>
+    /// Distinct attendee and organiser names and addresses starting with <paramref name="prefix"/> (case-insensitive),
+    /// from visible, non-deleted items, sorted; for the attendee filter suggestions (search-attendees R5).
+    /// </summary>
+    public IReadOnlyList<string> People(string prefix, int limit = 10)
+    {
+        if (SearchText.Query(prefix) is not { } query)
+        {
+            return [];
+        }
+        var typed = prefix.Trim();
+        var found = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+        lock (_gate)
+        {
+            using var cmd = Command(_connection, null,
+                """
+                SELECT s.people
+                FROM search_index s JOIN items i ON i.rowid = s.rowid
+                WHERE search_index MATCH $q AND i.deleted = 0
+                  AND i.collection_id NOT IN (SELECT substr(key, 8) FROM meta WHERE key LIKE 'hidden:%');
+                """, ("$q", $"people : ({query})"));
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                foreach (var entry in (NullableString(r, 0) ?? "").Split('\n'))
+                {
+                    if (entry.StartsWith(typed, StringComparison.OrdinalIgnoreCase)
+                        || entry.Split(' ').Any(w => w.StartsWith(typed, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        found.Add(entry);
+                    }
+                }
+            }
+        }
+        return found.Take(limit).ToList();
     }
 
     /// <summary>Replaces one item's rows in the occurrence index (R3).</summary>

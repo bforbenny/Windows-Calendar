@@ -112,7 +112,7 @@ internal sealed class SettingsPage : UserControl
 
     // ---- About (settings-page R2, R7) ----
 
-    /// <summary>The package version, Open log folder, and what uninstalling deletes.</summary>
+    /// <summary>The package version, Check for updates / Install and restart (app-updates R7), Open log folder, and what uninstalling deletes.</summary>
     private static SpacedStack AboutSection()
     {
         var panel = Section("About", null);
@@ -120,6 +120,66 @@ internal sealed class SettingsPage : UserControl
         var version = new TextBlock { Text = $"WindowsCalendar\nVersion {v.Major}.{v.Minor}.{v.Build}.{v.Revision}" };
         version.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
         panel.Children.Add(version);
+
+        var source = AppUpdate.Source();
+        var check = new Button { Content = "Check for updates", HorizontalAlignment = HorizontalAlignment.Left, IsEnabled = source is not null };
+        var install = new Button { Content = "Install and restart", HorizontalAlignment = HorizontalAlignment.Left, Visibility = Visibility.Collapsed };
+        var status = new TextBlock
+        {
+            Text = source is null ? "Updates are installed from the .appinstaller file" : "",
+            Foreground = Theme.Brush("TextSecondaryBrush"),
+            TextWrapping = TextWrapping.Wrap,
+            Visibility = source is null ? Visibility.Visible : Visibility.Collapsed,
+        };
+        void Show(string text)
+        {
+            status.Text = text;
+            status.Visibility = Visibility.Visible;
+            System.Windows.Automation.AutomationProperties.SetName(status, text);
+        }
+        check.Click += async (_, _) =>
+        {
+            try
+            {
+                check.IsEnabled = false;
+                install.Visibility = Visibility.Collapsed;
+                Show("Checking for updates...");
+                var (available, message) = await AppUpdate.CheckAsync();
+                Show(message);
+                install.Visibility = available ? Visibility.Visible : Visibility.Collapsed;
+                check.IsEnabled = true;
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Check for updates click failed");
+                check.IsEnabled = true;
+            }
+        };
+        install.Click += async (_, _) =>
+        {
+            try
+            {
+                check.IsEnabled = false;
+                install.IsEnabled = false;
+                Show("Installing... WindowsCalendar will close and reopen.");
+                var error = await AppUpdate.InstallAsync(source!);
+                if (error is not null)
+                {
+                    Show($"Couldn't install the update: {error}");
+                    check.IsEnabled = true;
+                    install.IsEnabled = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "Install update click failed");
+                check.IsEnabled = true;
+                install.IsEnabled = true;
+            }
+        };
+        panel.Children.Add(check);
+        panel.Children.Add(install);
+        panel.Children.Add(status);
 
         var logs = new Button { Content = "Open log folder", HorizontalAlignment = HorizontalAlignment.Left };
         logs.Click += (_, _) =>

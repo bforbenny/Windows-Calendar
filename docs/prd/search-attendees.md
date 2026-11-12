@@ -2,7 +2,7 @@
 description: Attendee and organiser names and addresses are indexed so a person's name finds their meetings
 when-to-use: Before working on attendee indexing, the FTS people column, or attendee suggestions for search filters
 tags: [search, fts, attendees]
-status: pending
+status: in-progress
 ---
 
 # Search by attendee

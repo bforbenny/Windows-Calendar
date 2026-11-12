@@ -34,8 +34,8 @@ public static partial class QuickAddParser
                 ReadDuration(scan, found);
             }
         }
-        ReadDate(scan, found, today, options.DayFirst, commonWords: false);
-        ReadDate(scan, found, today, options.DayFirst, commonWords: true);
+        ReadDate(scan, found, today, options.DayFirst, commonWords: false, options.WeekStart);
+        ReadDate(scan, found, today, options.DayFirst, commonWords: true, options.WeekStart);
         if (!task)
         {
             ReadBareAtTime(scan, found);
@@ -45,7 +45,7 @@ public static partial class QuickAddParser
         var title = string.Join(' ', Enumerable.Range(0, scan.Count).Where(scan.IsFree).Select(i => scan.Tokens[i].Text));
         var (target, targetError) = ResolveTarget(found.TargetText, task, options.Targets);
         var slotDate = options.SlotStart is { } slot ? DateOnly.FromDateTime(slot) : today;
-        var date = AlignToRepeat(found, found.Date ?? slotDate);
+        var date = AlignToRepeat(found, (task ? found.DateEnd : null) ?? found.Date ?? slotDate);
         var (allDay, start, end) = task ? DueDate(date) : Layout(found, date, options);
         return new QuickAddResult(
             task ? QuickAddKind.Task : QuickAddKind.Event, title, allDay, start, end,

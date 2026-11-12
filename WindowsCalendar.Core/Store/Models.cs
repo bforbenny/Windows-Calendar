@@ -163,6 +163,30 @@ public sealed record OccurrenceView(
     public bool Inactive => Declined || Cancelled;
 }
 
+/// <summary>Which items a search lists (search-filters R2).</summary>
+public enum SearchKind { All, Events, Tasks }
+
+/// <summary>
+/// What narrows a search besides its typed words (search-filters R2). Null or empty members set no filter.
+/// <see cref="CollectionIds"/> is the calendars and task lists to search (an empty list matches nothing);
+/// <see cref="FromUtc"/> and <see cref="ToUtc"/> are a half-open range [From, To) in UTC; <see cref="Attendee"/> is one
+/// name or address as returned by <c>LocalStore.People</c>; <see cref="Location"/> is free text.
+/// </summary>
+public sealed record SearchFilter(
+    SearchKind Kind = SearchKind.All,
+    IReadOnlyList<string>? CollectionIds = null,
+    DateTimeOffset? FromUtc = null,
+    DateTimeOffset? ToUtc = null,
+    string? Attendee = null,
+    string? Location = null,
+    string? TitleWords = null)
+{
+    /// <summary>No filter is set (search-filters R2).</summary>
+    public bool IsEmpty =>
+        Kind == SearchKind.All && CollectionIds is null && FromUtc is null && ToUtc is null
+        && string.IsNullOrWhiteSpace(Attendee) && string.IsNullOrWhiteSpace(Location) && string.IsNullOrWhiteSpace(TitleWords);
+}
+
 /// <summary>
 /// A search result (search R3, R5, R7): the item and occurrence to open, its date (null for an undated task), and its
 /// title and snippet with matches between <see cref="MarkStart"/> and <see cref="MarkEnd"/>. Snippet is null when it
