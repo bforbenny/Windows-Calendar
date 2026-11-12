@@ -78,6 +78,23 @@ public sealed class OccurrenceTests : IDisposable
     }
 
     [Fact]
+    public void CancelledSingleEvent_IsKeptAndMarked_WithoutJoin()
+    {
+        _store.CreateItem(new Item("c1", "cal", ItemKind.Event, null, Ics(
+            "UID:c1\nDTSTART:20261110T090000Z\nDURATION:PT1H\nSTATUS:CANCELLED\nURL:https://teams.microsoft.com/l/x\nSUMMARY:Review\n")));
+        _store.CreateItem(new Item("c2", "cal", ItemKind.Event, null, Ics(
+            "UID:c2\nDTSTART:20261110T120000Z\nDURATION:PT1H\nSUMMARY:Live\n")));
+
+        var views = _store.GetOccurrenceViews(From, To);
+
+        var cancelled = views.Single(v => v.ItemId == "c1");
+        Assert.True(cancelled.Cancelled);
+        Assert.True(cancelled.Inactive);
+        Assert.Null(JoinLink.FromPayload(_store.GetItem("c1")!.RawPayload));
+        Assert.False(views.Single(v => v.ItemId == "c2").Cancelled);
+    }
+
+    [Fact]
     public void RecurringOccurrence_KeepsItsOriginalStart()
     {
         // Weekly Tuesdays 09:00 UTC; the 17 Nov occurrence moved to 11:00. One-off events get no recurrence id.

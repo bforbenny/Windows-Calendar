@@ -134,7 +134,7 @@ public static class ScheduleCheck
     /// <summary>An occurrence's key: its item and recurrence, as the views key their cards.</summary>
     public static string Key(OccurrenceView o) => $"{o.ItemId}|{o.RecurrenceUtc?.UtcTicks}";
 
-    private static bool Counts(OccurrenceView o) => o.Kind == ItemKind.Event && !o.AllDay && o.ShowAs != ShowAs.Free && !o.Declined;
+    private static bool Counts(OccurrenceView o) => o.Kind == ItemKind.Event && !o.AllDay && o.ShowAs != ShowAs.Free && !o.Inactive;
 
     private static string Title(OccurrenceView o) => string.IsNullOrWhiteSpace(o.Summary) ? "(No title)" : o.Summary;
 

@@ -12,14 +12,12 @@ namespace WindowsCalendar.Core.Graph;
 public static class GraphEventMapper
 {
     /// <summary>
-    /// The item for an event from calendarView delta or a write reply, or null when it is not kept: cancelled, or
-    /// without usable times.
+    /// The item for an event from calendarView delta or a write reply, or null when it has no usable times. Cancelled
+    /// meetings are kept, drawn faded (attendees-invitations R5).
     /// </summary>
     public static Item? Map(JsonElement ev, string collectionId, TimeZoneInfo zone)
     {
-        if (GraphClient.Text(ev, "id") is not { } id
-            || (ev.TryGetProperty("isCancelled", out var cancelled) && cancelled.ValueKind == JsonValueKind.True)
-            || Times(ev, zone) is null)
+        if (GraphClient.Text(ev, "id") is not { } id || Times(ev, zone) is null)
         {
             return null;
         }
@@ -119,6 +117,25 @@ public static class GraphEventMapper
         ev.TryGetProperty("isOrganizer", out var o) && o.ValueKind == JsonValueKind.False
         && ev.TryGetProperty("responseStatus", out var r)
         && GraphClient.Text(r, "response") is "none" or "notResponded" or "tentativelyAccepted";
+
+    /// <summary>
+    /// An invitation you have not answered at all (attendees-invitations R3): not the organiser, and the response is
+    /// none or not responded. Tentative counts as answered.
+    /// </summary>
+    public static bool NeedsResponse(string payload)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payload);
+            var ev = doc.RootElement;
+            return ev.TryGetProperty("isOrganizer", out var o) && o.ValueKind == JsonValueKind.False
+                && ev.TryGetProperty("responseStatus", out var r) && GraphClient.Text(r, "response") is "none" or "notResponded";
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
 
     /// <summary>Whether the stored payload is a series master (not drawn; its occurrences are).</summary>
     internal static bool IsSeriesMaster(string payload)

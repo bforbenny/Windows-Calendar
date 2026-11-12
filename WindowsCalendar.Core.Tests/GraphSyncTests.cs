@@ -388,15 +388,17 @@ public sealed class GraphSyncTests : IDisposable
     }
 
     [Fact]
-    public async Task CancelledEvent_IsRemoved()
+    public async Task CancelledEvent_IsKeptAndMarked()
     {
         _graph.Put("e1", Nov10, Nov10.AddHours(1));
         await SyncAsync();
 
-        _graph.Put("e1", Nov10, Nov10.AddHours(1), extra: "\"isCancelled\":true,");
+        _graph.Put("e1", Nov10, Nov10.AddHours(1), extra: "\"isCancelled\":true,\"onlineMeetingUrl\":\"https://teams.microsoft.com/l/x\",");
         await SyncAsync();
 
-        Assert.Empty(Cached());
+        var view = Assert.Single(_store.GetOccurrenceViews(Nov10.AddDays(-1), Nov10.AddDays(1)));
+        Assert.True(view.Cancelled);
+        Assert.Null(view.JoinUrl);
     }
 
     [Fact]
@@ -977,7 +979,7 @@ public sealed class GraphEventMapperTests
         {
             c.Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "PRAGMA user_version = 19;";
+            cmd.CommandText = "ALTER TABLE items DROP COLUMN cancelled; PRAGMA user_version = 19;";
             cmd.ExecuteNonQuery();
         }
 
@@ -990,8 +992,15 @@ public sealed class GraphEventMapperTests
         Assert.True(meetingReadOnly);
     }
 
+    [Fact]
+    public void WithoutTimes_IsNull() => Assert.Null(Map("""{"id":"e1","type":"singleInstance"}"""));
+
     [Theory]
-    [InlineData("""{"id":"e1","type":"singleInstance","isCancelled":true,"start":{"dateTime":"2026-11-10T00:00:00","timeZone":"UTC"},"end":{"dateTime":"2026-11-10T01:00:00","timeZone":"UTC"}}""")]
-    [InlineData("""{"id":"e1","type":"singleInstance"}""")]
-    public void NotShown_IsNull(string json) => Assert.Null(Map(json));
+    [InlineData("""{"isOrganizer":false,"responseStatus":{"response":"none"}}""", true)]
+    [InlineData("""{"isOrganizer":false,"responseStatus":{"response":"notResponded"}}""", true)]
+    [InlineData("""{"isOrganizer":false,"responseStatus":{"response":"tentativelyAccepted"}}""", false)]
+    [InlineData("""{"isOrganizer":true,"responseStatus":{"response":"none"}}""", false)]
+    [InlineData("""{"isOrganizer":false,"responseStatus":null}""", false)]
+    public void NeedsResponse_OnlyUnansweredInvitations(string json, bool expected) =>
+        Assert.Equal(expected, GraphEventMapper.NeedsResponse(json));
 }

@@ -202,7 +202,7 @@ public sealed class CalendarSetTests : IDisposable
         {
             c.Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "DROP TABLE removed_collections; DROP TABLE calendar_set_members; DROP TABLE calendar_sets; ALTER TABLE items DROP COLUMN declined; PRAGMA user_version = 14;";
+            cmd.CommandText = "DROP TABLE removed_collections; DROP TABLE calendar_set_members; DROP TABLE calendar_sets; ALTER TABLE items DROP COLUMN declined; ALTER TABLE items DROP COLUMN cancelled; PRAGMA user_version = 14;";
             cmd.ExecuteNonQuery();
         }
 
@@ -371,7 +371,7 @@ public sealed class CalendarSetTests : IDisposable
         {
             c.Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "ALTER TABLE calendar_sets DROP COLUMN ruler_on; ALTER TABLE calendar_sets DROP COLUMN ruler_zone; ALTER TABLE calendar_sets DROP COLUMN clash_check; ALTER TABLE items DROP COLUMN declined; PRAGMA user_version = 16;";
+            cmd.CommandText = "ALTER TABLE calendar_sets DROP COLUMN ruler_on; ALTER TABLE calendar_sets DROP COLUMN ruler_zone; ALTER TABLE calendar_sets DROP COLUMN clash_check; ALTER TABLE items DROP COLUMN declined; ALTER TABLE items DROP COLUMN cancelled; PRAGMA user_version = 16;";
             cmd.ExecuteNonQuery();
         }
 

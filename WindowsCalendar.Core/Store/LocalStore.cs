@@ -57,6 +57,8 @@ public sealed partial class LocalStore : IDisposable
             // After v20: MS365 meetings (attendees-invitations R2).
             Remap(connection, "remap-meeting", "read_only", "raw_payload LIKE '{%'",
                 payload => Graph.GraphEventMapper.IsMeeting(payload) ? "1" : "0");
+            // After v21: cancelled meetings (attendees-invitations R5).
+            Remap(connection, "remap-cancelled", "cancelled", "raw_payload LIKE '%cancel%'", payload => Cancelled.FromPayload(payload) ? "1" : "0");
             BuildSearchIndex(connection);
             Execute(connection, null, "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
             // Entries left in flight by a crash are sent again (R4).
@@ -733,7 +735,8 @@ public sealed partial class LocalStore : IDisposable
                        i.completed_utc IS NOT NULL OR lower(COALESCE(i.status, '')) = 'completed',
                        CASE WHEN i.kind = 'Event' THEN COALESCE(i.status, m.status) END,
                        COALESCE(i.join_url, m.join_url), COALESCE(i.time_zone, m.time_zone),
-                       CASE WHEN i.series_id IS NOT NULL AND i.summary IS NULL THEN COALESCE(m.declined, 0) ELSE i.declined END
+                       CASE WHEN i.series_id IS NOT NULL AND i.summary IS NULL THEN COALESCE(m.declined, 0) ELSE i.declined END,
+                       i.cancelled OR (i.series_id IS NOT NULL AND i.summary IS NULL AND COALESCE(m.cancelled, 0))
                 FROM occurrences o JOIN items i ON i.id = o.item_id
                 LEFT JOIN items m ON i.series_id IS NOT NULL AND m.collection_id = i.collection_id AND m.remote_id = i.series_id AND m.deleted = 0
                 WHERE i.deleted = 0 AND o.start_utc < $to AND o.end_utc >= $from
@@ -748,7 +751,7 @@ public sealed partial class LocalStore : IDisposable
                 list.Add(new OccurrenceView(r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)),
                     NullableString(r, 3), NullableString(r, 4), Time(r, 5), Time(r, 6), r.GetBoolean(7), r.GetBoolean(8),
                     r.IsDBNull(9) ? null : Time(r, 9), r.GetBoolean(10), r.GetBoolean(11), r.GetBoolean(12),
-                    ShowAsValues.FromGraph(NullableString(r, 13)), NullableString(r, 14), NullableString(r, 15), r.GetBoolean(16)));
+                    ShowAsValues.FromGraph(NullableString(r, 13)), NullableString(r, 14), NullableString(r, 15), r.GetBoolean(16), r.GetBoolean(17)));
             }
             return list;
         }
@@ -1546,9 +1549,10 @@ public sealed partial class LocalStore : IDisposable
         """
         INSERT INTO items (id, collection_id, kind, remote_id, raw_payload, summary, start_utc, end_utc, all_day,
             time_zone, location, status, due_utc, completed_utc, is_recurring, etag, last_modified, series_id, read_only, unaccepted, join_url,
-            declined)
+            declined, cancelled)
         VALUES ($id, $collection, $kind, $remote, $raw, $summary, $start, $end, $allDay,
-            $tz, $location, $status, $due, $completed, $recurring, $etag, $modified, $series, $readOnly, $unaccepted, $join, $declined);
+            $tz, $location, $status, $due, $completed, $recurring, $etag, $modified, $series, $readOnly, $unaccepted, $join, $declined,
+            $cancelled);
         """;
 
     private const string UpdateItemSql =
@@ -1557,7 +1561,7 @@ public sealed partial class LocalStore : IDisposable
             summary = $summary, start_utc = $start, end_utc = $end, all_day = $allDay, time_zone = $tz,
             location = $location, status = $status, due_utc = $due, completed_utc = $completed,
             is_recurring = $recurring, etag = $etag, last_modified = $modified, series_id = $series, read_only = $readOnly, unaccepted = $unaccepted,
-            join_url = $join, declined = $declined
+            join_url = $join, declined = $declined, cancelled = $cancelled
         WHERE id = $id;
         """;
 
@@ -1913,7 +1917,10 @@ public sealed partial class LocalStore : IDisposable
         NullableString(r, 10), NullableString(r, 11), NullableTime(r, 12), NullableTime(r, 13), r.GetBoolean(14),
         NullableString(r, 15), NullableTime(r, 16), NullableString(r, 17), r.GetBoolean(18), r.GetBoolean(19), NullableString(r, 20));
 
-    /// <summary>The item's columns; the declined flag is worked out from the payload and the account's address.</summary>
+    /// <summary>
+    /// The item's columns; the declined flag is worked out from the payload and the account's address, the cancelled
+    /// flag from the payload.
+    /// </summary>
     private (string, object?)[] ItemParameters(SqliteTransaction? tx, Item i) =>
     [
         ("$id", i.Id), ("$collection", i.CollectionId), ("$kind", i.Kind.ToString()), ("$remote", i.RemoteId),
@@ -1924,6 +1931,7 @@ public sealed partial class LocalStore : IDisposable
         ("$modified", i.LastModifiedUtc?.ToUnixTimeMilliseconds()), ("$series", i.SeriesId), ("$readOnly", i.ReadOnly), ("$unaccepted", i.Unaccepted),
         ("$join", i.JoinUrl),
         ("$declined", i.Kind == ItemKind.Event && Declined.FromPayload(i.RawPayload, AccountEmail(tx, i.CollectionId))),
+        ("$cancelled", i.Kind == ItemKind.Event && Cancelled.FromPayload(i.RawPayload)),
     ];
 
     private string? AccountEmail(SqliteTransaction? tx, string collectionId)

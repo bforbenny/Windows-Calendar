@@ -7,7 +7,7 @@ namespace WindowsCalendar.Core.Reminders;
 /// <summary>
 /// Collects the reminders of calendars and task lists with "Reminders on" (reminders-notifications R1, R5, R7), shown or
 /// hidden: sync pulls hidden ones too (calendar-sets R7). Events come from the occurrence index, one set per occurrence;
-/// cancelled ones are not in it. Tasks come from the tasks table; completed tasks have none.
+/// declined and cancelled ones are skipped. Tasks come from the tasks table; completed tasks have none.
 /// </summary>
 public static class ReminderSource
 {
@@ -29,7 +29,8 @@ public static class ReminderSource
         var items = new Dictionary<string, Item?>();
         foreach (var o in store.GetOccurrenceViews(from, from + LookAhead, includeHidden: true))
         {
-            if (o.Kind != ItemKind.Event || !collections.TryGetValue(o.CollectionId, out var c) || !c.Collection.RemindersOn)
+            // Declined and cancelled meetings have none (reminders-notifications R7).
+            if (o.Kind != ItemKind.Event || o.Inactive || !collections.TryGetValue(o.CollectionId, out var c) || !c.Collection.RemindersOn)
             {
                 continue;
             }

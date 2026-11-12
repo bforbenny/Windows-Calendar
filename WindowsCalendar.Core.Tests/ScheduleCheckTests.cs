@@ -104,6 +104,12 @@ public sealed class ScheduleCheckTests
         Assert.Null(Check(At(10), At(11), [Event("a", At(10), At(11)) with { Declined = true }]));
     }
 
+    [Fact]
+    public void CancelledMeetings_DoNotCount()
+    {
+        Assert.Null(Check(At(10), At(11), [Event("a", At(10), At(11)) with { Cancelled = true }]));
+    }
+
     // ---- View indicators (R11) ----
 
     private static IReadOnlyList<ScheduleProblem> Problems(int gap, params OccurrenceView[] events) =>
@@ -275,7 +281,7 @@ public sealed class ScheduleSettingsTests : IDisposable
         {
             c.Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "ALTER TABLE items DROP COLUMN declined; PRAGMA user_version = 18;";
+            cmd.CommandText = "ALTER TABLE items DROP COLUMN declined; ALTER TABLE items DROP COLUMN cancelled; PRAGMA user_version = 18;";
             cmd.ExecuteNonQuery();
         }
 
@@ -294,7 +300,7 @@ public sealed class ScheduleSettingsTests : IDisposable
         {
             c.Open();
             using var cmd = c.CreateCommand();
-            cmd.CommandText = "ALTER TABLE calendar_sets DROP COLUMN clash_check; ALTER TABLE items DROP COLUMN declined; PRAGMA user_version = 17;";
+            cmd.CommandText = "ALTER TABLE calendar_sets DROP COLUMN clash_check; ALTER TABLE items DROP COLUMN declined; ALTER TABLE items DROP COLUMN cancelled; PRAGMA user_version = 17;";
             cmd.ExecuteNonQuery();
         }
 

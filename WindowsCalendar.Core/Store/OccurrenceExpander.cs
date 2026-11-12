@@ -75,13 +75,17 @@ internal static class OccurrenceExpander
         return end >= windowStart && start < windowEnd ? [(start, end, start)] : [];
     }
 
-    /// <summary>The live (not cancelled) instances of an iCalendar object that start in [windowStart, windowEnd).</summary>
+    /// <summary>
+    /// The instances of an iCalendar object that start in [windowStart, windowEnd). Cancelled instances of a series
+    /// are left out; a cancelled event that does not repeat is kept, drawn faded (attendees-invitations R5).
+    /// </summary>
     internal static List<(DateTimeOffset Start, DateTimeOffset End, DateTimeOffset Recurrence)> Expand(
         Calendar calendar, DateTimeOffset windowStart, DateTimeOffset windowEnd, TimeZoneInfo zone) =>
         calendar
             .GetOccurrences(ToCal(windowStart))
             .TakeWhileBefore(ToCal(windowEnd))
-            .Where(o => !(o.Source is CalendarEvent e && string.Equals(e.Status, EventStatus.Cancelled, StringComparison.OrdinalIgnoreCase)))
+            .Where(o => !(o.Source is CalendarEvent e && string.Equals(e.Status, EventStatus.Cancelled, StringComparison.OrdinalIgnoreCase)
+                && !Cancelled.IsCancelledSingle(e)))
             .Select(o =>
             {
                 var start = ToUtc(o.Period.StartTime, zone);

@@ -293,6 +293,9 @@ internal sealed partial class EventEditor : UserControl
         var message = collection.SourceUrl is not null ? "This is a subscribed calendar and can't be edited here."
             : collection.ReadOnly ? "This calendar is read-only."
             : _readOnly ? "Editing events in this account comes later."
+            // attendees-invitations R4, R5.
+            : Cancelled.FromPayload(item.RawPayload) ? "This meeting was cancelled."
+            : Declined.FromPayload(item.RawPayload, account?.Email) ? "You declined this meeting."
             : _savedRule is null ? $"{CalDavRecurrence.Describe(item) ?? "Repeats"}. This repeat pattern can't be changed here." : "";
         ShowNotice(message, InfoBarSeverity.Informational);
     }

@@ -18,7 +18,7 @@ Requirements live in [docs/prd/](docs/prd/), one requirement per file. Start a n
 | [recurring-events](docs/prd/recurring-events.md) | Recurrence model and edit scopes incl. "this and following" | in-progress |
 | [calendar-views](docs/prd/calendar-views.md) | Week/Month views with natural scrolling, calendar colours, drag to move/resize | in-progress |
 | [agenda-view](docs/prd/agenda-view.md) | Agenda: day columns of lists, free scrolling | in-progress |
-| [attendees-invitations](docs/prd/attendees-invitations.md) | Read-only attendees, needs-response marker, Open in Outlook, organiser guards | in-progress |
+| [attendees-invitations](docs/prd/attendees-invitations.md) | Meetings view-only with Open in Outlook; declined and cancelled meetings faded; needs-response text | closed |
 | [event-show-as](docs/prd/event-show-as.md) | Busy / Free / Tentative / Out of office | in-progress |
 | [online-meeting-join](docs/prd/online-meeting-join.md) | Join button for Teams/Zoom/Meet/Webex links | in-progress |
 | [quick-add](docs/prd/quick-add.md) | Typed quick add, offline rule-based parser | in-progress |

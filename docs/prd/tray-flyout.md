@@ -18,11 +18,11 @@ Left-clicking the tray icon opens a compact flyout with what is on today, Join b
 - R2a. Positioning: placed with the notification-area rectangle from Windows (`Shell_NotifyIconGetRect`) and the work area of that monitor, in physical pixels. When the icon is in the hidden-icons overflow, the flyout opens at the cursor, kept inside the work area. Windows 11 rounded corners come from DWM, not `AllowsTransparency`. No new package.
 - R3. Content, top to bottom:
   - today's date and the next event countdown ("Next: Standup in 12 min");
-  - all-day events in a header row, then events in progress, then the rest of today, then tomorrow (time, colour, title, location); Join appears by the same rule as the views ([online-meeting-join](online-meeting-join.md) R4); declined events are hidden and cancelled ones struck through ([attendees-invitations](attendees-invitations.md) R4–R5);
+  - all-day events in a header row, then events in progress, then the rest of today, then tomorrow (time, colour, title, location); Join appears by the same rule as the views ([online-meeting-join](online-meeting-join.md) R4); declined and cancelled events are faded and cancelled ones struck through ([attendees-invitations](attendees-invitations.md) R4–R5);
   - tasks due today/overdue with checkboxes;
   - a quick-add box ([quick-add](quick-add.md));
   - footer: sync status ("Syncing…" while a run is going, "Offline" with no network, else "Synced 10:42", the end of the last run since app start, not saved), Sync now, Open calendar. Account errors are shown by [ui-states](ui-states.md).
-  - Interim (until [attendees-invitations](attendees-invitations.md) R4–R5 are built): declined meetings still show; cancelled ones are absent, as the app drops them at sync.
+  - Built 2026-11-12 (package 1.0.33.0): declined and cancelled meetings are faded, cancelled ones struck through.
   - Each event appears once, in the first section it qualifies for; tomorrow lists what starts tomorrow, plus tomorrow's all-day events that did not already show today.
   - The "Next" line names the next timed event today ("Next: Standup in 12 min"); if none is left today, the first one tomorrow ("Next: tomorrow 09:00 Standup"); else "Nothing else today". All-day events never count; Free ones do.
   - Today's holiday name goes on the date line ("Tue 4 Nov · Melbourne Cup"), whatever the shading setting ([calendar-shading](calendar-shading.md)).

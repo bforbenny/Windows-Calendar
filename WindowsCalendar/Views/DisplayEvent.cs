@@ -18,12 +18,18 @@ namespace WindowsCalendar.Views;
 /// A task (tasks R6 interim) is never dragged; <paramref name="Checkable"/> lets its checkbox complete it.
 /// <paramref name="ShowAs"/> sets the card's style (event-show-as R5). <paramref name="Join"/> is its online-meeting link
 /// (online-meeting-join R2). <paramref name="OriginalTime"/> is its time in its own timezone when that differs from
-/// the Windows one (timezone-handling R9).
+/// the Windows one (timezone-handling R9). <paramref name="Declined"/> and <paramref name="Cancelled"/> meetings are drawn
+/// faded, without Join (attendees-invitations R4, R5).
 /// </summary>
 internal sealed record DisplayEvent(string ItemId, string Title, string? Location, DateTime Start, DateTime End, bool AllDay,
     Collection Collection, bool Editable, DateTimeOffset? Recurrence, ShowAs ShowAs = ShowAs.Busy, bool IsTask = false, bool Checkable = false,
-    JoinLink? Join = null, string? OriginalTime = null)
+    JoinLink? Join = null, string? OriginalTime = null, bool Declined = false, bool Cancelled = false)
 {
+    /// <summary>The opacity of a declined or cancelled meeting's card (attendees-invitations R5a).</summary>
+    public const double FadedOpacity = 0.5;
+
+    public bool Faded => Declined || Cancelled;
+
     /// <summary>Join shows on cards from this many minutes before the start until the end (online-meeting-join R4).</summary>
     public const int JoinLeadMinutes = 10;
 
@@ -54,9 +60,11 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
         !o.ReadOnly && !collection.ReadOnly && collection.SourceUrl is null,
         o.RecurrenceUtc,
         o.ShowAs,
-        Join: o.Kind == ItemKind.Event ? JoinLink.Recognise(o.JoinUrl) : null,
+        Join: o.Kind == ItemKind.Event && !o.Inactive ? JoinLink.Recognise(o.JoinUrl) : null,
         OriginalTime: o.Kind == ItemKind.Event && !o.AllDay
-            ? TimeZoneLabels.OriginalTime(o.StartUtc, o.EndUtc, o.TimeZone, null, TimeZoneInfo.Local) : null);
+            ? TimeZoneLabels.OriginalTime(o.StartUtc, o.EndUtc, o.TimeZone, null, TimeZoneInfo.Local) : null,
+        Declined: o.Declined,
+        Cancelled: o.Cancelled);
 
     /// <summary>Times in the Windows region format (ui-style R7).</summary>
     public string TimeText()
@@ -74,7 +82,8 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
 
     /// <summary>Tooltip and screen-reader name (calendar-views R4a, keyboard-navigation R6).</summary>
     public string Description() =>
-        string.Join(", ", new[] { Title, TimeText(), OriginalTime, Location, Collection.Name }.Where(s => !string.IsNullOrWhiteSpace(s)));
+        string.Join(", ", new[] { Cancelled ? "Cancelled" : Declined ? "Declined" : null, Title, TimeText(), OriginalTime, Location, Collection.Name }
+            .Where(s => !string.IsNullOrWhiteSpace(s)));
 }
 
 /// <summary>
@@ -82,7 +91,8 @@ internal sealed record DisplayEvent(string ItemId, string Title, string? Locatio
 /// (event-show-as R5): Busy has the calendar fill; Free is the surface with a 1 epx border; Tentative the surface with
 /// a hatched bar and a dashed border; Out of office the fill with an "away" glyph; Working elsewhere the surface with
 /// a dotted border and a "building" glyph. Hatching stays in the bar, never behind text. An unanswered invitation is
-/// drawn by its show-as like any other event.
+/// drawn by its show-as like any other event. A declined or cancelled meeting is drawn at half opacity, a cancelled one
+/// with its title struck through (attendees-invitations R5a).
 /// </summary>
 internal static class EventCard
 {
@@ -122,6 +132,7 @@ internal static class EventCard
             Padding = new Thickness(4, 1, 4, 1),
             Height = height,
             Margin = new Thickness(1, 0, 1, 0),
+            Opacity = e.Faded ? DisplayEvent.FadedOpacity : 1,
         };
         if (e.Key == SelectedKey)
         {
@@ -151,7 +162,10 @@ internal static class EventCard
             line.Inlines.Add(new Run { Text = glyph, FontFamily = new FontFamily("Segoe Fluent Icons") });
             line.Inlines.Add(new Run { Text = " " });
         }
-        line.Inlines.Add(new Run { Text = e.Title, FontWeight = FontWeights.SemiBold });
+        line.Inlines.Add(new Run
+        {
+            Text = e.Title, FontWeight = FontWeights.SemiBold, TextDecorations = e.Cancelled ? TextDecorations.Strikethrough : null,
+        });
         if (!chip && !twoLines && height >= TimeThreshold)
         {
             line.Inlines.Add(new Run { Text = "  " + e.TimeText() });

@@ -257,6 +257,18 @@ internal static class Migrations
         """
         INSERT INTO meta (key, value) VALUES ('remap-meeting', '1');
         """,
+
+        // v21: cancelled meetings are kept and drawn faded (attendees-invitations R5). Stored Radicale events are read
+        // again once on open (LocalStore Remap); the Graph chunk state is reset so cancelled MS365 events, dropped until
+        // now, are pulled; the occurrence index is rebuilt so cancelled single Radicale events get their occurrence.
+        // Join links are read again, since cancelled events have none (online-meeting-join R6a).
+        """
+        ALTER TABLE items ADD COLUMN cancelled INTEGER NOT NULL DEFAULT 0;
+        INSERT INTO meta (key, value) VALUES ('remap-cancelled', '1');
+        INSERT OR REPLACE INTO meta (key, value) VALUES ('remap-join-url', '1');
+        DELETE FROM sync_state WHERE key = 'graph-chunks';
+        DELETE FROM meta WHERE key = 'occurrences_built';
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

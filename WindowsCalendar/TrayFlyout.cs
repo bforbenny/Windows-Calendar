@@ -392,10 +392,17 @@ public sealed partial class TrayFlyout : Window
         DockPanel.SetDock(marker, Dock.Left);
         row.Children.Add(marker);
         var text = new StackPanel();
-        text.Children.Add(Line(e.Title, "BodyTextBlockStyle", "TextPrimaryBrush"));
+        var title = Line(e.Title, "BodyTextBlockStyle", "TextPrimaryBrush");
+        if (e.Cancelled)
+        {
+            title.TextDecorations = TextDecorations.Strikethrough;
+        }
+        text.Children.Add(title);
         var details = string.IsNullOrWhiteSpace(e.Location) ? e.TimeText() : $"{e.TimeText()} · {e.Location}";
         text.Children.Add(Line(details, "CaptionTextBlockStyle", "TextSecondaryBrush"));
         row.Children.Add(text);
+        // Declined and cancelled meetings are faded (attendees-invitations R5a).
+        row.Opacity = e.Faded ? DisplayEvent.FadedOpacity : 1;
         return ItemButton(row, e.Description(), $"{o.ItemId}|{o.StartUtc:o}",
             () => ((App)Application.Current).OpenItem(o.ItemId, o.StartUtc, o.RecurrenceUtc));
     }

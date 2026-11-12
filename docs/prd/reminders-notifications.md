@@ -40,7 +40,7 @@ Event and task reminders show as Windows toast notifications with Snooze and Dis
 - R6. Missed reminders (machine asleep or off): on resume, show one summary toast for reminders missed within the last 12 hours, rather than a flood. The summary lists only reminders that are not in Windows' toast history (`ToastNotificationManager.History`), so a reminder Windows already showed late on wake is never counted twice.
   - Window: the summary covers the time since the app last watched reminders. That time is saved on every sync run, on suspend and on Quit. The summary runs after resume (once the sync's network work is done) and on app start, which covers a PC that was off. Dismissed, opened and already-listed reminders are left out; a snoozed one counts by its snooze time.
 - R7. No reminders for declined or cancelled events ([attendees-invitations](attendees-invitations.md) R4–R5) or completed tasks.
-  - Interim (until attendees-invitations R4–R5 are built): skip what the app already drops, i.e. Graph `isCancelled` events (dropped at sync) and CalDAV `STATUS:CANCELLED` occurrences (not expanded). Declined meetings still remind until R4 exists.
+  - Built 2026-11-12 (package 1.0.33.0): declined and cancelled meetings are kept and drawn faded, and have no reminders; cancelled occurrences inside a CalDAV series are not expanded.
 - R8. Respect Windows Focus / Do Not Disturb (default OS behaviour; no override).
 
 ## Prerequisite checks

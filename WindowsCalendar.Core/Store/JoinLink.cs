@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Ical.Net;
 using Ical.Net.CalendarComponents;
 
 namespace WindowsCalendar.Core.Store;
@@ -37,11 +38,11 @@ public sealed partial record JoinLink(string Url, string Provider)
 
     /// <summary>
     /// R1 for a Graph event: <c>onlineMeeting.joinUrl</c> when <c>isOnlineMeeting</c>, then <c>onlineMeetingUrl</c>,
-    /// then the location, then the body. None for a meeting you declined (R6a).
+    /// then the location, then the body. None for a meeting you declined or that was cancelled (R6a).
     /// </summary>
     public static JoinLink? FromGraph(JsonElement ev)
     {
-        if (ev.TryGetProperty("responseStatus", out var response) && Text(response, "response") == "declined")
+        if ((ev.TryGetProperty("responseStatus", out var response) && Text(response, "response") == "declined") || Cancelled.FromGraph(ev))
         {
             return null;
         }
@@ -54,9 +55,13 @@ public sealed partial record JoinLink(string Url, string Provider)
             ?? (ev.TryGetProperty("body", out var body) && body.ValueKind == JsonValueKind.Object ? FirstIn(Text(body, "content")) : null);
     }
 
-    /// <summary>R1 for a CalDAV event: URL, X-GOOGLE-CONFERENCE, X-MICROSOFT-SKYPETEAMSMEETINGURL, then location and description.</summary>
+    /// <summary>
+    /// R1 for a CalDAV event: URL, X-GOOGLE-CONFERENCE, X-MICROSOFT-SKYPETEAMSMEETINGURL, then location and description.
+    /// None for a cancelled event (R6a).
+    /// </summary>
     public static JoinLink? FromCalDav(CalendarEvent ev) =>
-        Recognise(ev.Url?.OriginalString)
+        string.Equals(ev.Status, EventStatus.Cancelled, StringComparison.OrdinalIgnoreCase) ? null
+        : Recognise(ev.Url?.OriginalString)
         ?? PropertyNames.Select(n => Recognise(ev.Properties.Get<string>(n))).FirstOrDefault(l => l is not null)
         ?? FirstIn(ev.Location)
         ?? FirstIn(ev.Description);

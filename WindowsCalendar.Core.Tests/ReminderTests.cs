@@ -164,6 +164,18 @@ public sealed class ReminderTests : IDisposable
     }
 
     [Fact]
+    public void CancelledAndDeclinedMeetings_HaveNone()
+    {
+        _store.CreateItem(new Item("c1", "cal", ItemKind.Event, null, Ics("VEVENT",
+            "UID:c1\nDTSTART:20261112T090000Z\nDTEND:20261112T100000Z\nSTATUS:CANCELLED\n" + Alarm(":-PT15M"))));
+        _store.CreateItem(new Item("d1", "work", ItemKind.Event, "AAMkD1",
+            """{"id":"AAMkD1","isOrganizer":false,"responseStatus":{"response":"declined"},"isReminderOn":true,"reminderMinutesBeforeStart":15}""",
+            Summary: "Declined", StartUtc: At(12, 9), EndUtc: At(12, 10)));
+
+        Assert.Empty(Collect());
+    }
+
+    [Fact]
     public void CalDavSeries_OneReminderPerOccurrence_OverrideUsesItsOwnAlarm()
     {
         _store.CreateItem(new Item("s1", "cal", ItemKind.Event, null, Ics("VEVENT",

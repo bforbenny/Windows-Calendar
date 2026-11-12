@@ -156,7 +156,12 @@ public sealed record OccurrenceView(
     ShowAs ShowAs = ShowAs.Busy,
     string? JoinUrl = null,
     string? TimeZone = null,
-    bool Declined = false);
+    bool Declined = false,
+    bool Cancelled = false)
+{
+    /// <summary>Declined or cancelled: drawn faded, no reminder, no Join, not in the clash check (attendees-invitations R4, R5).</summary>
+    public bool Inactive => Declined || Cancelled;
+}
 
 /// <summary>
 /// A search result (search R3, R5, R7): the item and occurrence to open, its date (null for an undated task), and its

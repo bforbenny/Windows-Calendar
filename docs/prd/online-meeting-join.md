@@ -31,7 +31,7 @@ Events that carry an online-meeting link show a Join button that opens the meeti
 
 ## Interim (first slice)
 
-- Built: R1, R2, R3, R5, R6, R6a (declined MS365 meetings; cancelled events are not stored) and R7. R4 is built for the editor and for Day, Week and Agenda cards.
+- Built: R1, R2, R3, R5, R6, R6a (declined MS365 meetings; cancelled MS365 and CalDAV events, 2026-11-12) and R7. R4 is built for the editor and for Day, Week and Agenda cards.
 - R4 for the tray flyout and the reminder toast comes with [tray-flyout](tray-flyout.md) and [reminders-notifications](reminders-notifications.md). Neither exists yet.
 - Editor: a "Join Teams meeting" (or Zoom, Google Meet, Webex) button at the top of the form, also on read-only meetings. A link typed into the location or description shows the button once the field loses focus.
 - Cards: a small "Join" button, filled in the accent colour so it stands out on the tinted card, at the end of the title line, shown from 10 minutes before the start until the end. It is not shown on cards too short for text, on Month chips or in the all-day lane. The provider is named in its tooltip and screen-reader name, because the narrow columns have no room for it. The views redraw just after each clock minute when an event enters or leaves that window.

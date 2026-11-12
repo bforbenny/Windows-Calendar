@@ -48,9 +48,11 @@ internal sealed partial class EventEditor
         ShowZones(item);
         Show("Event", GraphEventMapper.Read(item, master, zone), CalendarChoices(collection, movable), collection.Id);
         _calendar.IsEnabled = movable;
+        // An occurrence without its own fields has its series' (as in the views).
+        var source = item.Summary is null && master is not null ? master : item;
         var message = collection.ReadOnly ? "This calendar is read-only."
             : waiting ? "This repeating event is still syncing; try again shortly."
-            : _readOnly ? "Meetings can't be changed from this app yet, except your reminder."
+            : _readOnly ? MeetingNotice(source.RawPayload)
             : _savedRule is null ? "Repeats. This repeat pattern can't be changed here." : "";
         ShowNotice(message, InfoBarSeverity.Informational);
         // A meeting links to Outlook, where it can be changed (attendees-invitations R6 interim).
@@ -59,6 +61,13 @@ internal sealed partial class EventEditor
             : null;
         _outlook.Visibility = _outlookLink is null ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
     }
+
+    /// <summary>A view-only meeting's notice (attendees-invitations R3-R5); the Open in Outlook link goes under it.</summary>
+    private static string MeetingNotice(string payload) =>
+        Cancelled.FromPayload(payload) ? "This meeting was cancelled."
+        : Declined.FromPayload(payload, null) ? "You declined this meeting."
+        : GraphEventMapper.NeedsResponse(payload) ? "You have not responded."
+        : "Meetings can't be changed from this app yet, except your reminder.";
 
     /// <summary>Opens the event in Outlook with the Windows default handler. The link is not logged.</summary>
     private async void OpenInOutlook()
