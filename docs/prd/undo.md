@@ -30,6 +30,7 @@ The user can undo recent changes with Ctrl+Z or from the "Undo" banner that appe
 - The banner (R3) floats per [floating-banners](floating-banners.md).
 - R4 and R6 apply: undo writes the previous version of the event back (coalescing with an unsent change, otherwise queuing an update), and is refused if the item changed on the server since the action.
 - Duplicate ([duplicate-event](duplicate-event.md)) is undoable the same way: "Event duplicated · Undo" deletes the copy.
+- Task complete / reopen by its checkbox (Tasks view, calendar, tray) is undoable the same way: "Task completed · Undo" / "Task reopened · Undo" ([tasks](tasks.md) second slice). Task edits in the editor and task deletes are not undoable yet.
 - The 20-step stack (R2) and the other actions in R1 come later.
 
 ## Out of scope

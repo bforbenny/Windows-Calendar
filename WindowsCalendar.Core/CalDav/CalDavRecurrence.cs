@@ -532,7 +532,7 @@ public static partial class CalDavRecurrence
             : Shift(start, length);
 
     /// <summary>A date-time moved by a wall-clock amount in its own form (TZID, floating, UTC); a date by whole days.</summary>
-    private static CalDateTime Shift(CalDateTime t, TimeSpan delta) =>
+    internal static CalDateTime Shift(CalDateTime t, TimeSpan delta) =>
         t.HasTime
             ? new CalDateTime(t.Value + delta, t.TzId)
             : new CalDateTime(DateOnly.FromDateTime(t.Value).AddDays((int)Math.Round(delta.TotalDays)));

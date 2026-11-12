@@ -338,6 +338,22 @@ public sealed partial class LocalStore : IDisposable
         get { lock (_gate) { return GetMeta(null, "default_tasklist"); } }
     }
 
+    private const string NewTaskListKey = "setting:new-task-list";
+
+    /// <summary>The list the Tasks view's "New task" box was last set to (tasks R12); null until chosen.</summary>
+    public string? NewTaskListId
+    {
+        get { lock (_gate) { return GetMeta(null, NewTaskListKey); } }
+    }
+
+    public void SetNewTaskListId(string collectionId)
+    {
+        lock (_gate)
+        {
+            SetMeta(null, NewTaskListKey, collectionId);
+        }
+    }
+
     /// <summary>
     /// Deletes an account and everything cached for it, including unsent changes (account-management R8).
     /// The caller confirms first and removes the account's credentials. A default that pointed into the account

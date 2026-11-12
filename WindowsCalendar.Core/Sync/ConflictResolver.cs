@@ -20,7 +20,8 @@ public static class ConflictResolver
     /// The differences in title, start, end, all-day, location, show-as and reminder, in that order. A Microsoft 365
     /// event compares only the fields its local edit changed; a CalDAV event compares them all. Times are in
     /// <paramref name="zone"/>: "17:30" on the day the server version starts, else "Wed 12 Nov 17:30"; all-day times are
-    /// dates (End is the exclusive date). A local delete (null payload) has none; a Microsoft 365 task compares its title.
+    /// dates (End is the exclusive date). A local delete (null payload) has none; a Microsoft 365 task compares title, completed, due date,
+    /// importance, notes, repeat and reminder, again only the fields the local edit changed; a Radicale task compares all of them and its due time.
     /// </summary>
     public static IReadOnlyList<FieldDifference> Differences(string? localPayload, Item current, bool graph, TimeZoneInfo zone)
     {
@@ -30,9 +31,7 @@ public static class ConflictResolver
         }
         if (current.Kind == ItemKind.Task)
         {
-            var yours = LocalStore.PayloadTitle(localPayload) ?? "";
-            var server = current.Summary ?? "";
-            return yours == server ? [] : [new FieldDifference("Title", yours, server)];
+            return TaskDifferences(localPayload, current, graph, zone);
         }
         if (graph)
         {
@@ -77,6 +76,71 @@ public static class ConflictResolver
         var mapped = CalDavItemMapper.Map(current.RemoteId ?? "", current.Etag ?? "", localPayload, zone)
             ?? throw new InvalidOperationException("The saved local version cannot be read.");
         return mapped with { Id = current.Id, CollectionId = current.CollectionId, RemoteId = current.RemoteId, Etag = current.Etag };
+    }
+
+    private static List<FieldDifference> TaskDifferences(string localPayload, Item current, bool graph, TimeZoneInfo zone)
+    {
+        HashSet<string>? changed = null;
+        Graph.TaskFields mine, theirs;
+        if (graph)
+        {
+            changed = GraphEvents.Changed(GraphEvents.Parse(localPayload));
+            mine = GraphTaskMapper.Read(GraphTaskMapper.Rebuild(current, localPayload, zone), zone);
+            theirs = GraphTaskMapper.Read(current, zone);
+        }
+        else
+        {
+            if (CalDavItemMapper.Map(current.RemoteId ?? "", current.Etag ?? "", localPayload, zone) is not { Kind: ItemKind.Task } local)
+            {
+                return [];
+            }
+            mine = CalDavTasks.Read(local, zone);
+            theirs = CalDavTasks.Read(current, zone);
+        }
+        var list = new List<FieldDifference>();
+        void Add(string[] names, string field, string yours, string server)
+        {
+            if ((changed is null || names.Any(changed.Contains)) && yours != server)
+            {
+                list.Add(new FieldDifference(field, yours, server));
+            }
+        }
+        Add(["title"], "Title", Text(mine.Title), Text(theirs.Title));
+        Add(["status"], "Completed", mine.Completed ? "Yes" : "No", theirs.Completed ? "Yes" : "No");
+        Add(["dueDateTime"], "Due", TaskDate(mine.Due, mine.DueTime), TaskDate(theirs.Due, theirs.DueTime));
+        Add(["importance"], "Importance", mine.Importance, theirs.Importance);
+        Add(["body"], "Notes", Text(mine.Notes), Text(theirs.Notes));
+        Add(["recurrence"], "Repeat", RepeatText(mine.Repeat), RepeatText(theirs.Repeat));
+        Add(["isReminderOn", "reminderDateTime"], "Reminder", TaskReminder(mine.Reminder), TaskReminder(theirs.Reminder));
+        return list;
+    }
+
+    private static string TaskDate(DateOnly? day, TimeOnly? time) =>
+        day is { } d ? d.ToString("d", CultureInfo.CurrentCulture) + (time is { } t ? " " + t.ToString("t", CultureInfo.CurrentCulture) : "") : "(none)";
+
+    private static string TaskReminder(DateTime? at) =>
+        at is { } t ? t.ToString("g", CultureInfo.CurrentCulture) : "None";
+
+    private static string RepeatText(RepeatRule? rule)
+    {
+        if (rule is null or { Frequency: RepeatFrequency.None })
+        {
+            return "Doesn't repeat";
+        }
+        var unit = rule.Frequency switch
+        {
+            RepeatFrequency.Daily => "day",
+            RepeatFrequency.Weekly => "week",
+            RepeatFrequency.Monthly => "month",
+            _ => "year",
+        };
+        var text = rule.Interval > 1 ? $"Every {rule.Interval} {unit}s" : $"Every {unit}";
+        if (rule.Weekdays.Count > 0)
+        {
+            var names = CultureInfo.CurrentCulture.DateTimeFormat;
+            text += " on " + string.Join(", ", rule.Weekdays.Select(d => names.GetAbbreviatedDayName(d)));
+        }
+        return text;
     }
 
     private static List<FieldDifference> Compare(EventFields mine, EventFields theirs, string myReminder, string theirReminder,

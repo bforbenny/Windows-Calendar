@@ -68,7 +68,7 @@ public sealed partial class MainWindow
     {
         if (NewTaskList() is not { } list)
         {
-            Log.Information("New task not opened: no Microsoft To Do list to add it to");
+            Log.Information("New task not opened: no task list to add it to");
             return;
         }
         if (_editor.IsOpen)

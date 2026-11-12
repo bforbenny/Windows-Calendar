@@ -40,7 +40,7 @@ Each Radicale account syncs all its calendar collections (VEVENT and/or VTODO) t
 - Each account sync first sends its due outbox entries (R6), then pulls. A new item's href (`<collection>/<uid>.ics`, R7) is set when it is created locally, so a send that succeeded before a crash is never duplicated.
 - After a successful write the item takes the etag from the response; later queued entries for the same item are rebased onto it, so they do not raise a false 412. If the server sends no etag, the next pull fetches the item again.
 - Responses: 412 → [conflict-resolution](conflict-resolution.md); 404 on DELETE → done; 401 → R11; network errors and 5xx → backoff ([local-store-offline](local-store-offline.md) R7); other 4xx (incl. 409) → permanent failure. A network error stops sending for that account until the next sync.
-- Only events are edited in the app so far; tasks come with [tasks](tasks.md).
+- Only events are edited in the app so far; task (VTODO) writes come with [tasks](tasks.md) slice 3, through the same PUT / DELETE path.
 - Each sync starts with re-discovery ([account-management](account-management.md) R11), so new calendars and subscriptions appear without re-adding the account; Sync now is the manual refresh.
 
 ## Out of scope

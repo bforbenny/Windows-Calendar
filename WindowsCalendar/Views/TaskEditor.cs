@@ -22,11 +22,11 @@ namespace WindowsCalendar.Views;
 /// The task editor side panel (tasks interim), in the event editor's place, with the same auto-save: text when it
 /// loses focus (or Enter in the title), the checkbox and pickers at once. Fields: title, completed, due date (date
 /// only), importance, repeat (the event editor's Repeat panel, saved at once; tasks R7b), reminder (date and time;
-/// reminders-notifications R5a), notes. Only To Do tasks in
-/// writable lists can be changed; one whose repeat pattern the panel can't show can only be completed or reopened.
-/// Radicale tasks and Flagged emails are view-only.
+/// reminders-notifications R5a), notes, list (every writable task list, to move the task: tasks R11); Radicale tasks add an optional due time and show Repeat disabled (tasks third
+/// slice). Only tasks in writable lists can be changed; a To Do task whose repeat pattern the panel can't show can
+/// only be completed or reopened. Flagged emails are view-only.
 /// </summary>
-internal sealed class TaskEditor : UserControl
+internal sealed partial class TaskEditor : UserControl
 {
     private readonly TextBlock _heading = new() { Text = "Task", Style = Theme.Style("SubtitleTextBlockStyle"), VerticalAlignment = VerticalAlignment.Center };
     private readonly Button _delete = ViewParts.IconButton("", "Delete");
@@ -41,7 +41,19 @@ internal sealed class TaskEditor : UserControl
     private readonly Button _clearReminder = new() { Content = "Clear", VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(8, 0, 0, 0) };
     private readonly StackPanel _reminderField;
     private readonly RepeatPanel _repeat = new();
-    private readonly TextBlock _list = new() { Foreground = Theme.Brush("TextSecondaryBrush") };
+    private readonly TimeBox _dueTimeBox = new() { VerticalAlignment = VerticalAlignment.Bottom };
+    private readonly Button _addTime = new() { Content = "Add time" };
+    private readonly Button _clearTime = new() { Content = "Clear", VerticalAlignment = VerticalAlignment.Bottom, Margin = new Thickness(8, 0, 0, 0) };
+    private readonly StackPanel _timeField;
+    private readonly TextBlock _dueTime = new() { Foreground = Theme.Brush("TextSecondaryBrush"), Visibility = Visibility.Collapsed };
+    private readonly TextBlock _repeatNote = new()
+    {
+        Text = "This task repeats in a way that can't be shown here.",
+        Foreground = Theme.Brush("TextSecondaryBrush"),
+        TextWrapping = TextWrapping.Wrap,
+        Visibility = Visibility.Collapsed,
+    };
+    private readonly ComboBox _listBox = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBox _notes = new() { AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 120 };
 
     private static readonly string[] Importances = ["low", "normal", "high"];
@@ -50,8 +62,15 @@ internal sealed class TaskEditor : UserControl
     // A new task not yet created: the list it goes to (created once it has a title).
     private Collection? _newList;
     private bool _writable;
+    // The open task is in a Radicale list (else To Do), and the list it is in.
+    private bool _calDav;
+    private Collection? _collection;
     private bool _completeOnly;
     private bool _loading;
+    // The task repeats but the Repeat panel can't show its pattern.
+    private bool _unshownRepeat;
+    // The stored item repeats (a Radicale task's repeat is shown disabled, not edited).
+    private bool _recurring;
 
     private readonly Button _switch;
 
@@ -99,15 +118,25 @@ internal sealed class TaskEditor : UserControl
         reminderRow.Children.Add(_clearReminder);
         _reminderField = ViewParts.Field("Reminder", reminderRow);
 
+        // Due time (Radicale only): optional; no time keeps the due date a plain date.
+        var timeRow = new StackPanel { Orientation = Orientation.Horizontal };
+        timeRow.Children.Add(_addTime);
+        timeRow.Children.Add(_dueTimeBox);
+        timeRow.Children.Add(_clearTime);
+        _timeField = ViewParts.Field("Due time", timeRow);
+
         var form = new SpacedStack { Spacing = 12, Margin = new Thickness(16, 0, 16, 16) };
         form.Children.Add(_notice);
         form.Children.Add(ViewParts.Field("Title", _title));
         form.Children.Add(_completed);
         form.Children.Add(ViewParts.Field("Due", dueRow));
+        form.Children.Add(_dueTime);
+        form.Children.Add(_timeField);
         form.Children.Add(ViewParts.Field("Importance", _importance));
         form.Children.Add(_repeat);
+        form.Children.Add(_repeatNote);
         form.Children.Add(_reminderField);
-        form.Children.Add(_list);
+        form.Children.Add(ViewParts.Field("List", _listBox));
         form.Children.Add(ViewParts.Field("Notes", _notes));
 
         var root = new Grid();
@@ -136,12 +165,40 @@ internal sealed class TaskEditor : UserControl
             if (!_loading)
             {
                 _repeat.SetStart(DueOrToday());
+                if (_due.SelectedDate is null)
+                {
+                    ShowDueTime(null);
+                }
+                else
+                {
+                    UpdateTimeButtons();
+                }
             }
             Save();
         };
-        _repeat.RuleChanged += Save;
+        _addTime.Click += (_, _) =>
+        {
+            ShowDueTime(new TimeOnly(9, 0));
+            Save();
+        };
+        _clearTime.Click += (_, _) =>
+        {
+            ShowDueTime(null);
+            Save();
+        };
+        _dueTimeBox.TimeChanged += Save;
+        _repeat.RuleChanged += () =>
+        {
+            UpdateClearDue();
+            Save();
+        };
+        ToolTipService.SetShowOnDisabled(_clearDue, true);
         _clearDue.Click += (_, _) => _due.SelectedDate = null;
         _importance.SelectionChanged += (_, _) => Save();
+        _listBox.SelectionChanged += (_, _) => ListSelectionChanged();
+        _listBox.DropDownOpened += (_, _) => _listCancelled = false;
+        _listBox.DropDownClosed += (_, _) => ListDropDownClosed();
+        _listBox.PreviewKeyDown += (_, e) => _listCancelled |= e.Key == Key.Escape && _listBox.IsDropDownOpen;
         _reminderDate.SelectedDateChanged += (_, _) => Save();
         _reminderTime.TimeChanged += Save;
         _clearReminder.Click += (_, _) => _reminderDate.SelectedDate = null;
@@ -184,16 +241,20 @@ internal sealed class TaskEditor : UserControl
         {
             return;
         }
+        _all = collections;
         _heading.Text = "Task";
         ShowSwitch(false);
         _newList = null;
         _itemId = itemId;
         _writable = writable;
-        _completeOnly = writable && item.IsRecurring && GraphTaskMapper.Read(item).Repeat is null;
+        _collection = list;
+        _calDav = IsCalDav(list);
+        _completeOnly = writable && !_calDav && item.IsRecurring && GraphTaskMapper.Read(item).Repeat is null;
         Show(item, list);
         var message = list.ReadOnly ? "This task list is read-only."
-            : !writable ? "Editing tasks in this account comes later."
+            : !writable ? "This task can't be changed here."
             : _completeOnly ? "This task repeats in a way that can't be shown here. It can be completed, but not changed." : "";
+        _notice.Severity = InfoBarSeverity.Informational;
         _notice.Message = message;
         _notice.IsOpen = message.Length > 0;
         if (!IsOpen)
@@ -215,11 +276,16 @@ internal sealed class TaskEditor : UserControl
         _itemId = null;
         _newList = list;
         _writable = true;
+        _collection = list;
+        _calDav = IsCalDav(list);
         _completeOnly = false;
+        _unshownRepeat = _recurring = false;
         _reminderField.Visibility = Visibility.Visible;
+        _dueTime.Visibility = Visibility.Collapsed;
         Show(new TaskFields(title, false, due, "normal", null, repeat), list);
         _delete.Visibility = Visibility.Collapsed;
         _notice.IsOpen = false;
+        _notice.Severity = InfoBarSeverity.Informational;
         if (!IsOpen)
         {
             Visibility = Visibility.Visible;
@@ -228,12 +294,16 @@ internal sealed class TaskEditor : UserControl
         Dispatcher.BeginInvoke(DispatcherPriority.Input, () => _title.Focus());
     }
 
-    /// <summary>After a change made outside the panel (a tick in the list or calendar, a sync): shows the stored task.</summary>
+    /// <summary>
+    /// After a change made outside the panel (a tick in the list or calendar, a sync, an undo): shows the stored task,
+    /// leaving the title or notes alone while either has the keyboard focus (calendar-views R6d).
+    /// </summary>
     public void Reload(string itemId, IReadOnlyDictionary<string, Collection> collections)
     {
         if (IsOpen && _itemId == itemId && Store?.GetItem(itemId) is { } item && collections.TryGetValue(item.CollectionId, out var list))
         {
-            Show(item, list);
+            _all = collections;
+            Show(item, list, keepText: _title.IsKeyboardFocused || _notes.IsKeyboardFocused);
         }
     }
 
@@ -263,39 +333,90 @@ internal sealed class TaskEditor : UserControl
         }
     }
 
-    private void Show(Item item, Collection list)
+    private void Show(Item item, Collection list, bool keepText = false)
     {
-        // Only To Do tasks show their reminder; Radicale tasks stay view-only.
-        _reminderField.Visibility = item.RawPayload.TrimStart().StartsWith('{') ? Visibility.Visible : Visibility.Collapsed;
-        Show(TaskQuery.Fields(item, TimeZoneInfo.Local), list);
+        // The backend is the account's type, not the shape of the stored data.
+        var type = Store?.GetAccounts().FirstOrDefault(a => a.Id == list.AccountId)?.Type ?? AccountType.MS365;
+        var fields = TaskQuery.Fields(item, TimeZoneInfo.Local, type);
+        _reminderField.Visibility = Visibility.Visible;
+        _recurring = item.IsRecurring;
+        _unshownRepeat = item.IsRecurring && fields.Repeat is null;
+        // A due time in a list that can't be written is shown for reading only; a writable one has the Due time field.
+        var dueTime = type == AccountType.CalDAV && !_writable ? TaskQuery.DueTime(item, TimeZoneInfo.Local) : null;
+        _dueTime.Text = dueTime is { } t ? $"Due at {t.ToString("t", System.Globalization.CultureInfo.CurrentCulture)}" : "";
+        _dueTime.Visibility = dueTime is null ? Visibility.Collapsed : Visibility.Visible;
+        Show(fields, list, keepText);
     }
 
-    private void Show(TaskFields fields, Collection list)
+    private void Show(TaskFields fields, Collection list, bool keepText = false)
     {
         _loading = true;
-        _title.Text = fields.Title;
+        if (!keepText)
+        {
+            _title.Text = fields.Title;
+            _notes.Text = (fields.Notes ?? "").Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
+        }
         _completed.IsChecked = fields.Completed;
         _due.SelectedDate = fields.Due?.ToDateTime(TimeOnly.MinValue);
+        _timeField.Visibility = _calDav && _writable ? Visibility.Visible : Visibility.Collapsed;
+        ShowDueTime(fields.DueTime);
         _importance.SelectedIndex = Array.IndexOf(Importances, fields.Importance);
         _reminderDate.SelectedDate = fields.Reminder?.Date;
         _reminderTime.Time = fields.Reminder?.TimeOfDay ?? TimeSpan.FromHours(9);
-        _notes.Text = (fields.Notes ?? "").Replace("\r\n", "\n").Replace("\n", Environment.NewLine);
-        // With its source (calendar-views interim); the whole line is already muted.
-        _list.Text = Store?.GetAccounts().FirstOrDefault(a => a.Id == list.AccountId) is { } account
-            ? $"List: {list.Name}  {CollectionSource.For(account)}"
-            : $"List: {list.Name}";
+        ShowLists(list);
 
         var editable = _writable && !_completeOnly;
         _title.IsReadOnly = _notes.IsReadOnly = !editable;
-        _due.IsEnabled = _clearDue.IsEnabled = _importance.IsEnabled = editable;
+        _due.IsEnabled = _importance.IsEnabled = _listBox.IsEnabled = editable;
         _reminderDate.IsEnabled = _reminderTime.IsEnabled = _clearReminder.IsEnabled = editable;
-        _repeat.Visibility = editable ? Visibility.Visible : Visibility.Collapsed;
+        // View-only and complete-only tasks show their repeat, disabled; a pattern the panel can't show gets a note.
+        _repeat.Visibility = _unshownRepeat ? Visibility.Collapsed : Visibility.Visible;
+        _repeatNote.Visibility = _unshownRepeat ? Visibility.Visible : Visibility.Collapsed;
         _repeat.Show(fields.Repeat ?? RepeatRule.None, fields.Due ?? Today);
-        _repeat.SetEnabled(editable);
+        _repeat.SetEnabled(editable && !_calDav);
+        UpdateClearDue();
         _completed.IsEnabled = _writable;
         _delete.Visibility = _writable ? Visibility.Visible : Visibility.Collapsed;
         _loading = false;
     }
+
+    /// <summary>Clearing the due date is not offered while a repeat is set; it would restart the repeat from today.</summary>
+    private void UpdateClearDue()
+    {
+        var editable = _writable && !_completeOnly;
+        var repeating = _unshownRepeat || _calDav && _recurring || _repeat.Read() is { Frequency: not RepeatFrequency.None };
+        _clearDue.IsEnabled = editable && !repeating;
+        _clearDue.ToolTip = editable && repeating ? _calDav ? "A repeating task needs a due date" : "Set Doesn't repeat first" : null;
+    }
+
+    /// <summary>Shows the due time (null: none, with an Add time button) without saving.</summary>
+    private void ShowDueTime(TimeOnly? time)
+    {
+        var was = _loading;
+        _loading = true;
+        if (time is { } t)
+        {
+            _dueTimeBox.Time = t.ToTimeSpan();
+        }
+        _dueTimeBox.Visibility = _clearTime.Visibility = time is null ? Visibility.Collapsed : Visibility.Visible;
+        _addTime.Visibility = time is null ? Visibility.Visible : Visibility.Collapsed;
+        _loading = was;
+        UpdateTimeButtons();
+    }
+
+    private void UpdateTimeButtons()
+    {
+        var editable = _writable && !_completeOnly;
+        _addTime.IsEnabled = editable && _due.SelectedDate is not null;
+        _dueTimeBox.IsEnabled = _clearTime.IsEnabled = editable;
+    }
+
+    private bool IsCalDav(Collection list) =>
+        Store?.GetAccounts().FirstOrDefault(a => a.Id == list.AccountId)?.Type == AccountType.CalDAV;
+
+    /// <summary>The task's editor fields for its backend.</summary>
+    private TaskFields Read(Item item) =>
+        _calDav ? CalDavTasks.Read(item, TimeZoneInfo.Local) : GraphTaskMapper.Read(item);
 
     private TaskFields ReadFields(TaskFields old)
     {
@@ -307,7 +428,8 @@ internal sealed class TaskEditor : UserControl
             _importance.SelectedIndex >= 0 ? Importances[_importance.SelectedIndex] : old.Importance,
             _notes.Text.Replace("\r\n", "\n").Replace("\r", "\n"),
             _repeat.Read(),
-            _reminderDate.SelectedDate is { } reminder ? reminder.Date + _reminderTime.Time : null);
+            _reminderDate.SelectedDate is { } reminder ? reminder.Date + _reminderTime.Time : null,
+            _calDav && _due.SelectedDate is not null && _dueTimeBox.Visibility == Visibility.Visible ? TimeOnly.FromTimeSpan(_dueTimeBox.Time) : null);
     }
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.Today);
@@ -320,7 +442,7 @@ internal sealed class TaskEditor : UserControl
     /// </summary>
     private void ShowSavedDue(TaskFields sent, Item saved)
     {
-        var fields = GraphTaskMapper.Read(saved);
+        var fields = Read(saved);
         if (fields.Due != sent.Due)
         {
             _loading = true;
@@ -337,25 +459,66 @@ internal sealed class TaskEditor : UserControl
             Create(newList);
             return;
         }
-        if (_loading || !_writable || !IsOpen || _itemId is not { } id || Store is not { } store || store.GetItem(id) is not { } item)
+        if (_loading || !_writable || !IsOpen || _itemId is not { } id || Store is not { } store)
         {
+            return;
+        }
+        if (store.GetItem(id) is not { } item)
+        {
+            // Deleted meanwhile (e.g. by a sync).
+            Hide();
             return;
         }
         try
         {
-            var old = GraphTaskMapper.Read(item);
+            var old = Read(item);
             var fields = _completeOnly ? old with { Completed = _completed.IsChecked == true } : ReadFields(old);
-            if (GraphTasks.Edit(item, fields, TimeZoneInfo.Local) is { } edited)
+            var edited = _calDav ? CalDavTasks.Edit(item, fields, TimeZoneInfo.Local, DateTimeOffset.UtcNow)
+                : GraphTasks.Edit(item, fields, TimeZoneInfo.Local);
+            if (edited is not null)
             {
                 store.UpdateItem(edited);
-                ShowSavedDue(fields, edited);
+                if (_calDav && _collection is { } list)
+                {
+                    // Completing a repeating task advances it (tasks R7), and a due move shifts a relative reminder: show what was saved.
+                    Show(edited, list, keepText: true);
+                }
+                else
+                {
+                    ShowSavedDue(fields, edited);
+                }
                 Log.Information("Task {ItemId} saved", id);
                 Changed?.Invoke();
             }
+            // An empty title keeps the stored one; the box shows it again.
+            if (_title.Text.Trim().Length == 0 && fields.Title.Length > 0)
+            {
+                _loading = true;
+                _title.Text = fields.Title;
+                _loading = false;
+            }
+            ClearSaveWarning();
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Saving task {ItemId} failed", id);
+            ShowSaveWarning();
+        }
+    }
+
+    private void ShowSaveWarning()
+    {
+        _notice.Severity = InfoBarSeverity.Warning;
+        _notice.Message = "Something went wrong; the task was not saved.";
+        _notice.IsOpen = true;
+    }
+
+    private void ClearSaveWarning()
+    {
+        if (_notice.Severity == InfoBarSeverity.Warning)
+        {
+            _notice.IsOpen = false;
+            _notice.Severity = InfoBarSeverity.Informational;
         }
     }
 
@@ -369,7 +532,8 @@ internal sealed class TaskEditor : UserControl
         try
         {
             var fields = ReadFields(new TaskFields("", false, null, "normal", null));
-            var task = GraphTasks.Create(list, fields, TimeZoneInfo.Local);
+            var task = _calDav ? CalDavTasks.Create(list, fields, TimeZoneInfo.Local, DateTimeOffset.UtcNow)
+                : GraphTasks.Create(list, fields, TimeZoneInfo.Local);
             store.CreateItem(task);
             ShowSavedDue(fields, task);
             Log.Information("Task {ItemId} created", task.Id);
@@ -383,6 +547,7 @@ internal sealed class TaskEditor : UserControl
         catch (Exception ex)
         {
             Log.Error(ex, "Creating a task failed");
+            ShowSaveWarning();
         }
     }
 

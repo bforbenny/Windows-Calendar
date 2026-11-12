@@ -56,9 +56,9 @@ Each MS365 account syncs its calendars and To Do task lists through Microsoft Gr
 - R9 pull: each visible list is pulled with `GET /me/todo/lists/{id}/tasks/delta`, its deltaLink kept in the list's sync state, with the loop guard of R3 (200 pages, a repeated page, HTTP 410 / `syncStateNotFound` → one restart from a fresh delta). `@removed` removes the task; a fresh round removes the list's tasks it did not return.
 - To Do reads do not send `Prefer: outlook.timezone="UTC"`, so `dueDateTime` keeps the zone it was written in. The due date is the date part of `dueDateTime`, stored as a date-only due date in the Windows timezone ([tasks](tasks.md) R2a). To Do has no due time.
 - The task JSON is stored as-is with its `@odata.etag` (R12). Status, completed time and recurrence come from the payload.
-- R9 writes: queued task changes are sent in the same pass and order as event changes. Create is `POST /me/todo/lists/{id}/tasks`; update is `PATCH /me/todo/lists/{list}/tasks/{id}` and delete `DELETE` of the same path, both with `If-Match`. The PATCH sends only the changed fields among `title`, `body` (text), `dueDateTime` (midnight in the Windows timezone, or null to clear), `importance` and `status` (`completed` / `notStarted`). Responses are handled as in R7 (412 / 404 → conflict, server wins).
-- Recurring tasks can only be completed or reopened (recurring-events R8); Flagged emails tasks are view-only.
-- Reminders (`reminderDateTime`), checklist items and moving a task to another list come later.
+- R9 writes: queued task changes are sent in the same pass and order as event changes. Create is `POST /me/todo/lists/{id}/tasks`; update is `PATCH /me/todo/lists/{list}/tasks/{id}` and delete `DELETE` of the same path, both with `If-Match`. The PATCH sends only the changed fields among `title`, `body` (text), `dueDateTime` (midnight in the Windows timezone, or null to clear), `importance`, `status` (`completed` / `notStarted`), `recurrence` ([tasks](tasks.md) R7b) and `isReminderOn` / `reminderDateTime` ([reminders-notifications](reminders-notifications.md) R5a). Responses are handled as in R7 (412 / 404 → conflict, server wins).
+- Repeating tasks whose pattern the Repeat panel can't show can only be completed or reopened (recurring-events R8); Flagged emails tasks are view-only.
+- Checklist items and moving a task to another list come later.
 
 ## Out of scope
 

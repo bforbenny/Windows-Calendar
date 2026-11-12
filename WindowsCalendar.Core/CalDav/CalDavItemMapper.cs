@@ -48,7 +48,8 @@ internal static class CalDavItemMapper
             return new Item("", "", ItemKind.Task, href, data,
                 Summary: todo.Summary, StartUtc: Utc(todo.DtStart, zone), AllDay: todo.Due is { HasTime: false },
                 TimeZone: todo.Due?.TzId ?? todo.DtStart?.TzId, Location: todo.Location, Status: todo.Status,
-                DueUtc: Utc(todo.Due, zone), CompletedUtc: Utc(todo.Completed, zone),
+                DueUtc: Utc(todo.Due, zone), CompletedUtc: Utc(todo.Completed, zone) ?? (string.Equals(todo.Status, "COMPLETED", StringComparison.OrdinalIgnoreCase)
+                    ? Utc(todo.LastModified ?? todo.DtStamp, zone) : null),
                 IsRecurring: IsRecurring(todo), Etag: etag, LastModifiedUtc: Utc(todo.LastModified, zone));
         }
 

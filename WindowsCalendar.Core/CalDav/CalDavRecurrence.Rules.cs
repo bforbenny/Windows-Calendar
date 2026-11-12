@@ -91,7 +91,10 @@ public static partial class CalDavRecurrence
             null, Kept(calendar, preferred, zone), lostAll);
     }
 
-    private static RepeatRule? ReadRule(CalendarEvent master, TimeZoneInfo zone)
+    private static RepeatRule? ReadRule(CalendarEvent master, TimeZoneInfo zone) => ReadRule(master, master.DtStart!, zone);
+
+    /// <summary>The rule of a master component (an event, or a task whose start is its DTSTART or DUE) as the editor shows it.</summary>
+    internal static RepeatRule? ReadRule(RecurringComponent master, CalDateTime dtStart, TimeZoneInfo zone)
     {
         var hasDates = master.RecurrenceDates.GetAllDates().Any();
         if (master.RecurrenceRule is not { } rule)
@@ -108,7 +111,7 @@ public static partial class CalDavRecurrence
             return null;
         }
         // The rule's days are in the start's own form (its TZID, UTC or floating).
-        var start = DateOnly.FromDateTime(master.DtStart!.Value);
+        var start = DateOnly.FromDateTime(dtStart.Value);
         IReadOnlyList<DayOfWeek> days = [];
         int? week = null;
         RepeatFrequency frequency;
@@ -146,18 +149,18 @@ public static partial class CalDavRecurrence
                 return null;
         }
         return new RepeatRule(frequency, Math.Max(1, rule.Interval), days, week, rule.Count,
-            rule.Until is { } until ? UntilDate(master, until, zone) : null);
+            rule.Until is { } until ? UntilDate(dtStart, until, zone) : null);
     }
 
     /// <summary>The last day an occurrence can start on before UNTIL, as the editor shows it.</summary>
-    private static DateOnly UntilDate(CalendarEvent master, CalDateTime until, TimeZoneInfo zone)
+    private static DateOnly UntilDate(CalDateTime dtStart, CalDateTime until, TimeZoneInfo zone)
     {
-        if (!until.HasTime || !master.DtStart!.HasTime)
+        if (!until.HasTime || !dtStart.HasTime)
         {
             return DateOnly.FromDateTime(until.Value);
         }
-        var wall = master.DtStart.IsFloating ? until.Value : CalDavEvents.Wall(until, zone);
-        var startTime = master.DtStart.IsFloating ? master.DtStart.Value.TimeOfDay : CalDavEvents.Wall(master.DtStart, zone).TimeOfDay;
+        var wall = dtStart.IsFloating ? until.Value : CalDavEvents.Wall(until, zone);
+        var startTime = dtStart.IsFloating ? dtStart.Value.TimeOfDay : CalDavEvents.Wall(dtStart, zone).TimeOfDay;
         var day = DateOnly.FromDateTime(wall);
         return wall.TimeOfDay < startTime ? day.AddDays(-1) : day;
     }
@@ -234,7 +237,7 @@ public static partial class CalDavRecurrence
         return (kept, overrides - (first is null ? 0 : 1));
     }
 
-    private static RecurrenceRule ToRecurrenceRule(RepeatRule rule, CalDateTime dtStart, DateOnly start, RecurrenceRule? old, TimeZoneInfo zone)
+    internal static RecurrenceRule ToRecurrenceRule(RepeatRule rule, CalDateTime dtStart, DateOnly start, RecurrenceRule? old, TimeZoneInfo zone)
     {
         var result = new RecurrenceRule
         {

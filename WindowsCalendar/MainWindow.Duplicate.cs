@@ -78,6 +78,10 @@ public sealed partial class MainWindow
             {
                 _editor.Hide();
             }
+            if (_taskEditor.ItemId == copyId)
+            {
+                _taskEditor.Hide();
+            }
             if (store.GetItem(copyId) is not null)
             {
                 store.DeleteItem(copyId);

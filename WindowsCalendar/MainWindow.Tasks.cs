@@ -1,15 +1,21 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Serilog;
+using WindowsCalendar.Core.CalDav;
 using WindowsCalendar.Core.Graph;
+using WindowsCalendar.Core.QuickAdd;
 using WindowsCalendar.Core.Store;
 using WindowsCalendar.Views;
+using ContentDialog = Wpf.Ui.Controls.ContentDialog;
+using ContentDialogButton = Wpf.Ui.Controls.ContentDialogButton;
+using ContentDialogResult = Wpf.Ui.Controls.ContentDialogResult;
 
 namespace WindowsCalendar;
 
 /// <summary>
-/// The Tasks view, the task editor and due tasks on the calendar (tasks interim). Only To Do tasks in writable lists
-/// can be changed; the event and task editors share the editor host, one at a time.
+/// The Tasks view, the task editor and due tasks on the calendar (tasks interim). Only tasks in writable To Do or
+/// Radicale lists can be changed; the event and task editors share the editor host, one at a time.
 /// </summary>
 public sealed partial class MainWindow
 {
@@ -21,14 +27,20 @@ public sealed partial class MainWindow
         _tasks.TaskOpened += OpenTask;
         _tasks.TaskToggled += SetTaskCompleted;
         _tasks.TaskAdded += AddTask;
+        _tasks.ListChosen += id => Store?.SetNewTaskListId(id);
+        _taskEditor.ListChoices = WritableTaskLists;
+        _tasks.DeleteOldCompleted += async items => await DeleteOldCompletedAsync(items);
         EventCard.TaskChecked += e => SetTaskCompleted(e.ItemId, true);
         _taskEditor.Changed += RenderView;
         _taskEditor.OpenChanged += PlaceEditor;
         SetupNewSwitch();
     }
 
-    /// <summary>A To Do list the app may write to (sync-ms365 third slice); Radicale task writes come later.</summary>
-    internal bool IsWritableTaskList(Collection list) => IsGraph(list) && !list.ReadOnly;
+    /// <summary>
+    /// A To Do list or a Radicale task list the app may write to (sync-ms365 third slice, tasks third slice); a
+    /// subscribed feed is never writable.
+    /// </summary>
+    internal bool IsWritableTaskList(Collection list) => !list.ReadOnly && (IsGraph(list) || list.SourceUrl is null);
 
     /// <summary>Opens the event editor in the host, closing the task editor first.</summary>
     private void ShowEventEditor()
@@ -62,6 +74,8 @@ public sealed partial class MainWindow
             .Where(x => x.Account is not null)
             .Select(x => new TaskGroup(x.Account!, x.Collection, byList[x.Collection.Id].ToList(), IsWritableTaskList(x.Collection)))
             .ToList();
+        _tasks.CanAdd = NewTaskList() is not null;
+        _tasks.SetLists(WritableTaskLists().Select(c => (c, accounts.First(a => a.Id == c.AccountId))).ToList(), ChosenTaskList()?.Id);
         _tasks.SetData(groups, _today);
         if (ViewHost.Children.Count != 1 || ViewHost.Children[0] != _tasks)
         {
@@ -95,10 +109,30 @@ public sealed partial class MainWindow
         string? error = null;
         try
         {
-            if (GraphTasks.Edit(item, GraphTaskMapper.Read(item) with { Completed = completed }, TimeZoneInfo.Local) is { } edited)
+            var zone = TimeZoneInfo.Local;
+            Item? edited;
+            DateOnly? advancedTo = null;
+            if (IsGraph(list))
+            {
+                edited = GraphTasks.Edit(item, GraphTaskMapper.Read(item) with { Completed = completed }, zone);
+            }
+            else if (completed)
+            {
+                var result = CalDavTasks.Complete(item, zone, DateTimeOffset.UtcNow);
+                edited = result.Item.RawPayload == item.RawPayload ? null : result.Item;
+                advancedTo = result.AdvancedTo;
+            }
+            else
+            {
+                edited = CalDavTasks.Reopen(item, zone, DateTimeOffset.UtcNow) is { } reopened && reopened.RawPayload != item.RawPayload ? reopened : null;
+            }
+            if (edited is not null)
             {
                 store.UpdateItem(edited);
-                Log.Information("Task {ItemId} {State}", itemId, completed ? "completed" : "reopened");
+                Log.Information("Task {ItemId} {State}", itemId, advancedTo is not null ? "advanced" : completed ? "completed" : "reopened");
+                _lastChange = (itemId, item.RawPayload, edited.RawPayload, null);
+                ShowUndo(advancedTo is { } next ? $"Task advanced to {next.ToString("d", System.Globalization.CultureInfo.CurrentCulture)}"
+                    : completed ? "Task completed" : "Task reopened", canUndo: true);
             }
         }
         catch (Exception ex)
@@ -111,33 +145,85 @@ public sealed partial class MainWindow
         return error;
     }
 
-    /// <summary>Where new tasks go: the default task list if it is a writable To Do list, else the first one.</summary>
+    /// <summary>
+    /// Destructive: asks first (count per task list, account in brackets), then deletes the old completed tasks through
+    /// the store, so each queues a server delete (tasks R10). No undo; only counts are logged.
+    /// </summary>
+    private async System.Threading.Tasks.Task DeleteOldCompletedAsync(IReadOnlyList<Item> items)
+    {
+        if (Store is not { } store || items.Count == 0)
+        {
+            return;
+        }
+        var accounts = store.GetAccounts();
+        var lines = items.GroupBy(i => i.CollectionId)
+            .Where(g => _collections.ContainsKey(g.Key))
+            .Select(g =>
+            {
+                var list = _collections[g.Key];
+                var account = accounts.FirstOrDefault(a => a.Id == list.AccountId)?.DisplayName;
+                return $"{list.Name} ({account}): {g.Count()}";
+            })
+            .OrderBy(l => l, StringComparer.CurrentCultureIgnoreCase);
+        var dialog = Destructive.Apply(new ContentDialog(DialogHost)
+        {
+            Title = "Delete old completed tasks?",
+            Content = $"{items.Count} completed {(items.Count == 1 ? "task" : "tasks")} older than 1 year will be deleted, also on the server. This can't be undone.\n\n"
+                + string.Join("\n", lines),
+            PrimaryButtonText = "Delete",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+        });
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+        var deleted = 0;
+        foreach (var item in items)
+        {
+            // A sync while the dialog was open may have reopened or changed the task; only a still-eligible one goes.
+            if (store.GetItem(item.Id) is not { } current
+                || Core.Views.TaskQuery.OldCompleted([current], DateTimeOffset.Now, new HashSet<string> { item.CollectionId }).Count == 0)
+            {
+                continue;
+            }
+            try
+            {
+                if (_taskEditor.ItemId == item.Id)
+                {
+                    _taskEditor.Hide();
+                }
+                store.DeleteItem(item.Id);
+                deleted++;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Deleting an old completed task failed");
+            }
+        }
+        Log.Information("Deleted {Deleted} of {Count} old completed tasks", deleted, items.Count);
+        RenderView();
+    }
+
+    /// <summary>Where new tasks go: the default task list if it is writable, else the first writable one.</summary>
     private Collection? NewTaskList() =>
         Store?.DefaultTaskListId is { } id && _collections.TryGetValue(id, out var d) && IsWritableTaskList(d) ? d
         : _collections.Values.FirstOrDefault(c => c.Kind == CollectionKind.TaskList && IsWritableTaskList(c));
 
-    /// <summary>The "New task" box: a task with that title in the default task list, if it is a To Do list.</summary>
-    private void AddTask(string title)
-    {
-        if (Store is not { } store)
-        {
-            return;
-        }
-        if (NewTaskList() is not { } list)
-        {
-            Log.Information("New task not added: no Microsoft To Do list to add it to");
-            return;
-        }
-        try
-        {
-            var task = GraphTasks.Create(list, new TaskFields(title, false, null, "normal", null), TimeZoneInfo.Local);
-            store.CreateItem(task);
-            Log.Information("Task {ItemId} created", task.Id);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Creating a task failed");
-        }
-        RenderView();
-    }
+    /// <summary>Every writable task list, by account then sidebar order (tasks R11, R12).</summary>
+    private List<Collection> WritableTaskLists() =>
+        (Store?.GetAccounts() ?? []).SelectMany(a => _collections.Values
+            .Where(c => c.AccountId == a.Id && c.Kind == CollectionKind.TaskList && IsWritableTaskList(c))).ToList();
+
+    /// <summary>The list the "New task" box adds to: the remembered one, else the default task list (tasks R12).</summary>
+    private Collection? ChosenTaskList() =>
+        Core.Views.TaskQuery.PickNewTaskList(Store?.NewTaskListId, Store?.DefaultTaskListId, WritableTaskLists().Select(c => c.Id).ToList()) is { } id
+            ? _collections[id] : null;
+
+    /// <summary>
+    /// The "New task" box: the text goes through the quick-add parser as a task and the quick-add create path, so it
+    /// gets "Task added", Undo and the same date and list words. True when created.
+    /// </summary>
+    private bool AddTask(string text) =>
+        QuickCreate(QuickAddParser.Parse(text, DateTime.Now, QuickOptions(null, false, ChosenTaskList()?.Id) with { TaskByDefault = true })) is null;
 }

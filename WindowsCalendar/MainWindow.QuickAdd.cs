@@ -88,17 +88,18 @@ public sealed partial class MainWindow
     }
 
     /// <summary>
-    /// The parser's inputs: writable calendars, then writable To Do lists, each in sidebar order; the Windows short-date
-    /// order; the slot (popup) or the Tasks view's task default (toolbar).
+    /// The parser's inputs: writable calendars, then writable task lists, each in sidebar order; the Windows short-date
+    /// order; the slot (popup) or the Tasks view's task default (toolbar). <paramref name="taskListId"/> is the task list
+    /// a task goes to unless the text names one (tasks R12).
     /// </summary>
-    internal QuickAddOptions QuickOptions(DateTime? slot, bool slotAllDay)
+    internal QuickAddOptions QuickOptions(DateTime? slot, bool slotAllDay, string? taskListId = null)
     {
         var accounts = Store?.GetAccounts() ?? [];
         var hidden = Store?.GetHiddenCollectionIds() ?? new HashSet<string>();
         var targets = new List<QuickAddTarget>();
         foreach (var kind in new[] { CollectionKind.Calendar, CollectionKind.TaskList })
         {
-            var defaultId = kind == CollectionKind.Calendar ? Store?.DefaultCalendarId : Store?.DefaultTaskListId;
+            var defaultId = kind == CollectionKind.Calendar ? Store?.DefaultCalendarId : taskListId ?? Store?.DefaultTaskListId;
             foreach (var account in accounts)
             {
                 foreach (var c in _collections.Values.Where(c => c.AccountId == account.Id && c.Kind == kind
@@ -140,7 +141,9 @@ public sealed partial class MainWindow
             Item created;
             if (result.Kind == QuickAddKind.Task)
             {
-                created = GraphTasks.Create(target, new TaskFields(result.Title, false, DateOnly.FromDateTime(result.Start), "normal", null, result.Repeat), zone);
+                var taskFields = new TaskFields(result.Title, false, DateOnly.FromDateTime(result.Start), "normal", null, result.Repeat);
+                created = IsGraph(target) ? GraphTasks.Create(target, taskFields, zone)
+                    : CalDavTasks.Create(target, taskFields, zone, DateTimeOffset.UtcNow);
             }
             else
             {
@@ -222,7 +225,7 @@ public sealed partial class MainWindow
             var list = result.Target is { } t && _collections.TryGetValue(t.Id, out var chosen) ? chosen : NewTaskList();
             if (list is null)
             {
-                ShowUndo("Can't add this", canUndo: false, "There is no To Do list to add it to.");
+                ShowUndo("Can't add this", canUndo: false, "There is no task list to add it to.");
                 return false;
             }
             if (_editor.IsOpen)

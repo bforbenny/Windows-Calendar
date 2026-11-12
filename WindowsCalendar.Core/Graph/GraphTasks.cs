@@ -42,6 +42,28 @@ public static class GraphTasks
         return GraphTaskMapper.Rebuild(new Item(Guid.NewGuid().ToString("N"), list.Id, ItemKind.Task, null, "{}"), task.ToJsonString(), zone);
     }
 
+    /// <summary>Fields a create may copy from a stored task (a move to another list).</summary>
+    private static readonly string[] Writable =
+    [
+        "title", "body", "importance", "status", "dueDateTime", "recurrence", "isReminderOn", "reminderDateTime", "categories",
+        "startDateTime", "completedDateTime",
+    ];
+
+    /// <summary>A copy for another To Do list (a create there; the caller deletes the original), with a new id (tasks R11).</summary>
+    public static Item MoveTo(Item item, Collection target, TimeZoneInfo zone)
+    {
+        var task = GraphEvents.Parse(item.RawPayload);
+        var copy = new JsonObject();
+        foreach (var name in Writable)
+        {
+            if (task[name] is { } value)
+            {
+                copy[name] = value.DeepClone();
+            }
+        }
+        return GraphTaskMapper.Rebuild(new Item(Guid.NewGuid().ToString("N"), target.Id, ItemKind.Task, null, "{}"), copy.ToJsonString(), zone);
+    }
+
     /// <summary>The task with <paramref name="fields"/>, or null when nothing changed.</summary>
     public static Item? Edit(Item item, TaskFields fields, TimeZoneInfo zone)
     {
@@ -105,6 +127,24 @@ public static class GraphTasks
         if (!any)
         {
             return null;
+        }
+        task[GraphEvents.ChangedKey] = new JsonArray(changed.Order().Select(n => (JsonNode)JsonValue.Create(n)!).ToArray());
+        return GraphTaskMapper.Rebuild(item, task.ToJsonString(), zone);
+    }
+
+    /// <summary>
+    /// Undo (undo R4): the fields the change wrote are set back from <paramref name="payloadBefore"/> and listed as
+    /// changed, together with any unsent ones, so the next PATCH sends them again (coalescing with an unsent change).
+    /// </summary>
+    public static Item Restore(Item item, string payloadBefore, TimeZoneInfo zone)
+    {
+        var task = GraphEvents.Parse(item.RawPayload);
+        var before = GraphEvents.Parse(payloadBefore);
+        var changed = GraphEvents.Changed(task);
+        changed.UnionWith(GraphEvents.Changed(before));
+        foreach (var name in changed)
+        {
+            task[name] = before[name]?.DeepClone();
         }
         task[GraphEvents.ChangedKey] = new JsonArray(changed.Order().Select(n => (JsonNode)JsonValue.Create(n)!).ToArray());
         return GraphTaskMapper.Rebuild(item, task.ToJsonString(), zone);

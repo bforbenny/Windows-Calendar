@@ -65,6 +65,79 @@ public sealed class TaskQueryTests
         {
             payload = $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:t\r\nBEGIN:VTODO\r\nUID:1\r\n{payload}\r\nEND:VTODO\r\nEND:VCALENDAR\r\n";
         }
-        Assert.Equal(high, TaskQuery.IsHighImportance(Task("x") with { RawPayload = payload }));
+        var type = payload.StartsWith('{') ? AccountType.MS365 : AccountType.CalDAV;
+        Assert.Equal(high, TaskQuery.IsHighImportance(Task("x") with { RawPayload = payload }, type));
     }
+
+    private static string Vtodo(string lines) =>
+        $"BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:t\r\nBEGIN:VTODO\r\nUID:1\r\nSUMMARY:Pay rent\r\n{lines}END:VTODO\r\nEND:VCALENDAR\r\n";
+
+    [Theory]
+    [InlineData("PRIORITY:1\r\n", "high")]
+    [InlineData("PRIORITY:4\r\n", "high")]
+    [InlineData("PRIORITY:5\r\n", "normal")]
+    [InlineData("PRIORITY:0\r\n", "normal")]
+    [InlineData("", "normal")]
+    [InlineData("PRIORITY:6\r\n", "low")]
+    [InlineData("PRIORITY:9\r\n", "low")]
+    public void Vtodo_PriorityMapsToImportance(string line, string importance)
+    {
+        var task = Task("x") with { RawPayload = Vtodo(line) };
+
+        Assert.Equal(importance, TaskQuery.Fields(task, TimeZoneInfo.Utc, AccountType.CalDAV).Importance);
+        Assert.Equal(importance == "high", TaskQuery.IsHighImportance(task, AccountType.CalDAV));
+    }
+
+    [Fact]
+    public void Vtodo_Fields_TitleNotesDueAndReminder()
+    {
+        var payload = Vtodo("DUE:20261110T150000Z\r\nDESCRIPTION:Bank details\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nDESCRIPTION:r\r\nTRIGGER:-PT30M\r\nEND:VALARM\r\n");
+        var due = new DateTimeOffset(2026, 11, 10, 15, 0, 0, TimeSpan.Zero);
+        var task = Task("x") with { Summary = "Pay rent", RawPayload = payload, DueUtc = due, AllDay = false };
+
+        var fields = TaskQuery.Fields(task, TimeZoneInfo.Utc, AccountType.CalDAV);
+
+        Assert.Equal(("Pay rent", false, new DateOnly(2026, 11, 10), "Bank details"), (fields.Title, fields.Completed, fields.Due, fields.Notes));
+        Assert.Equal(new DateTime(2026, 11, 10, 14, 30, 0), fields.Reminder);
+        Assert.Equal(new TimeOnly(15, 0), TaskQuery.DueTime(task, TimeZoneInfo.Utc));
+        Assert.Null(TaskQuery.DueTime(task with { AllDay = true }, TimeZoneInfo.Utc));
+    }
+
+    [Fact]
+    public void HighImportance_IsReadAgainWhenThePayloadChanges()
+    {
+        var task = Task("cache") with { RawPayload = """{"importance":"normal"}""" };
+
+        Assert.False(TaskQuery.IsHighImportance(task, AccountType.MS365));
+        Assert.True(TaskQuery.IsHighImportance(task with { RawPayload = """{"importance":"high"}""" }, AccountType.MS365));
+    }
+
+    private static readonly DateTimeOffset Now = new(2026, 11, 12, 0, 0, 0, TimeSpan.Zero);
+    private static readonly HashSet<string> Lists = ["c1"];
+
+    private static Item Done(string id, DateTimeOffset? completed, string list = "c1", bool recurring = false, bool open = false) =>
+        new(id, list, ItemKind.Task, null, "{}", Summary: id, CompletedUtc: open ? null : completed, IsRecurring: recurring);
+
+    private static string[] Old(params Item[] tasks) =>
+        TaskQuery.OldCompleted(tasks, Now, Lists).Select(t => t.Id).ToArray();
+
+    [Fact]
+    public void OldCompleted_OlderThan365Days_Included() =>
+        Assert.Equal(["old"], Old(Done("old", Now.AddDays(-365).AddSeconds(-1))));
+
+    [Fact]
+    public void OldCompleted_ExactlyAtOrNewer_Excluded() =>
+        Assert.Empty(Old(Done("at", Now.AddDays(-365)), Done("new", Now.AddDays(-10))));
+
+    [Fact]
+    public void OldCompleted_OpenTask_Excluded() =>
+        Assert.Empty(Old(Done("open", Now.AddDays(-800), open: true)));
+
+    [Fact]
+    public void OldCompleted_Recurring_Excluded() =>
+        Assert.Empty(Old(Done("rec", Now.AddDays(-800), recurring: true)));
+
+    [Fact]
+    public void OldCompleted_NonEligibleList_Excluded() =>
+        Assert.Empty(Old(Done("other", Now.AddDays(-800), list: "flagged")));
 }

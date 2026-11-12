@@ -78,4 +78,19 @@ public sealed class CalDavItemMapperTests
     [InlineData("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:x\r\nBEGIN:VJOURNAL\r\nUID:j\r\nDTSTAMP:20260101T000000Z\r\nEND:VJOURNAL\r\nEND:VCALENDAR\r\n")]
     public void UnreadableOrOtherComponent_IsNull(string data) =>
         Assert.Null(CalDavItemMapper.Map("h", "e", data, London));
+
+    [Fact]
+    public void Todo_CompletedWithoutCompletedFallsBackToLastModifiedThenDtstamp()
+    {
+        var modified = CalDavItemMapper.Map("h", "e", Ics(
+            "BEGIN:VTODO\nUID:t\nDTSTAMP:20260101T000000Z\nLAST-MODIFIED:20261109T080000Z\nSTATUS:COMPLETED\nSUMMARY:Pay\nEND:VTODO\n"), London)!;
+        var stamped = CalDavItemMapper.Map("h", "e", Ics(
+            "BEGIN:VTODO\nUID:t\nDTSTAMP:20260101T000000Z\nSTATUS:COMPLETED\nSUMMARY:Pay\nEND:VTODO\n"), London)!;
+        var open = CalDavItemMapper.Map("h", "e", Ics(
+            "BEGIN:VTODO\nUID:t\nDTSTAMP:20260101T000000Z\nLAST-MODIFIED:20261109T080000Z\nSTATUS:NEEDS-ACTION\nSUMMARY:Pay\nEND:VTODO\n"), London)!;
+
+        Assert.Equal(new DateTimeOffset(2026, 11, 9, 8, 0, 0, TimeSpan.Zero), modified.CompletedUtc);
+        Assert.Equal(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero), stamped.CompletedUtc);
+        Assert.Null(open.CompletedUtc);
+    }
 }

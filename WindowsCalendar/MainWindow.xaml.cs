@@ -435,7 +435,11 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 ShowUndo("This item changed on the server; can't undo", canUndo: false);
                 return;
             }
-            var restored = _collections.TryGetValue(item.CollectionId, out var collection) && IsGraph(collection)
+            var restored = item.Kind == ItemKind.Task
+                ? _collections.TryGetValue(item.CollectionId, out var taskList) && !IsGraph(taskList)
+                    ? Core.CalDav.CalDavTasks.Restore(item, change.PayloadBefore, TimeZoneInfo.Local)
+                    : Core.Graph.GraphTasks.Restore(item, change.PayloadBefore, TimeZoneInfo.Local)
+                : _collections.TryGetValue(item.CollectionId, out var collection) && IsGraph(collection)
                 ? Core.Graph.GraphEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local)
                 : CalDavEvents.Restore(item, change.PayloadBefore, TimeZoneInfo.Local);
             if (change.Following is { } following)
@@ -448,7 +452,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 store.UpdateItem(restored);
             }
             BannerFade.SetOpen(UndoBar, false);
-            Log.Information("Change to event {ItemId} undone", change.ItemId);
+            Log.Information("Change to {Kind} {ItemId} undone", item.Kind, change.ItemId);
         }
         catch (Exception ex)
         {
@@ -456,6 +460,7 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         }
         RenderView();
         _editor.Reload(change.ItemId);
+        _taskEditor.Reload(change.ItemId, _collections);
     }
 
     private void OnUndo(object sender, RoutedEventArgs e) => Undo();

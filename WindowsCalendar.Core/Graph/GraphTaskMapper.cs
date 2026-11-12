@@ -11,9 +11,12 @@ namespace WindowsCalendar.Core.Graph;
 /// Repeat (tasks R7b) is null or <see cref="RepeatRule.None"/> when the task does not repeat; as read, null also covers
 /// a pattern the panel can't show.
 /// </summary>
-/// <summary>A task's editor fields. Reminder is a wall time in the Windows timezone, null for none (reminders-notifications R5a).</summary>
+/// <summary>
+/// A task's editor fields. Reminder is a wall time in the Windows timezone, null for none (reminders-notifications R5a).
+/// DueTime is a Radicale task's optional due time (a wall time in the Windows timezone, with Due); To Do ignores it.
+/// </summary>
 public sealed record TaskFields(string Title, bool Completed, DateOnly? Due, string Importance, string? Notes, RepeatRule? Repeat = null,
-    DateTime? Reminder = null);
+    DateTime? Reminder = null, TimeOnly? DueTime = null);
 
 /// <summary>
 /// Microsoft To Do tasks to store items (sync-ms365 third slice, tasks R2a, R3). The JSON is kept as-is; the columns
