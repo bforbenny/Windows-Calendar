@@ -24,7 +24,7 @@ A search box finds events and tasks across all accounts using a local SQLite FTS
 
 ## Interim (first slice)
 
-- Built: R1, R2, R3, R5, R6, R7 and R8. R4 (filters) is delivered by [nl-search](nl-search.md); its default chip comes with [calendar-sets](calendar-sets.md).
+- Built: R1, R2, R3, R5, R6, R7 and R8. R4 (filters) is delivered by [search-filters](search-filters.md); its default chip comes with [calendar-sets](calendar-sets.md).
 - The index is an FTS5 table keyed by the item's SQLite rowid, filled once from existing items when the store is first opened after the upgrade. The app never runs `VACUUM` (it can renumber rowids). If it ever does, the index must be rebuilt.
 - MS365 HTML descriptions are indexed as plain text.
 - Results drop down under the title-bar search box. Esc closes them. Up to 50 results are shown.
@@ -35,7 +35,7 @@ A search box finds events and tasks across all accounts using a local SQLite FTS
 
 - Server-side search (Graph `$search`, CalDAV text-match).
 - Saved searches, advanced query syntax.
-- Searching attendee names: see [nl-search](nl-search.md).
+- Searching attendee names: see [search-attendees](search-attendees.md).
 
 ## Acceptance criteria
 

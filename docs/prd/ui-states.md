@@ -50,7 +50,7 @@ Views render instantly from the local store, so the UI has no loading spinners f
 
 Each slice is built, tested and checked in the app before the next starts; [display-scaling](display-scaling.md) and [ui-style](ui-style.md) follow as slices 2 and 3 of the same piece of work.
 
-1. All of this PRD: R1 toolbar status, R1a, R2 bars and toast, R3 with the pending changes list (local-store-offline R9a, Retry and Discard). R4's "Clear filters" comes with the search filters themselves ([nl-search](nl-search.md), search R4); until then "No results" stands alone.
+1. All of this PRD: R1 toolbar status, R1a, R2 bars and toast, R3 with the pending changes list (local-store-offline R9a, Retry and Discard). R4's "Clear filters" comes with the search filters themselves ([search-filters](search-filters.md), search R4); until then "No results" stands alone.
 
 ## Decisions
 

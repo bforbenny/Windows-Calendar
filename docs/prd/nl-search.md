@@ -2,11 +2,13 @@
 description: Rule-based date chips and search filters turn common search phrases into filters, with attendee names indexed
 when-to-use: Before working on search date chips, search filters (search R4), or attendee indexing
 tags: [search, filters, fts]
-status: pending
+status: parked
 ---
 
 # Search filters and date chips
 
+> Parked on 2026-11-12: split into [search-attendees](search-attendees.md), [search-filters](search-filters.md) and [search-date-chips](search-date-chips.md). Not revisited; read those instead.
+>
 > Rescoped on 2026-11-11: the on-device model part was dropped after the NPU spike was NO-GO ([on-device-model](on-device-model.md), parked). The rule-based chips, filters and attendee indexing remain.
 
 ## Summary
