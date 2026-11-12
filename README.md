@@ -18,6 +18,7 @@ New build (on the build PC only, which holds the signing key):
 
 1. Quit the app from the tray.
 2. Run `powershell -ExecutionPolicy Bypass -File tools\package\Publish-Msix.ps1` (or the VS Code task "publish msix").
+   The script also commits and pushes the version bump and publishes a GitHub release with the `.msix`, the `.cer` and a GitHub `.appinstaller` (needs `gh auth login`).
 3. Double-click `WindowsCalendar.appinstaller` to update now, or start the app from Start: it checks at most every 24 hours and offers the update.
 
 Uninstalling deletes local data, including unsynced changes and conflict copies (Settings > About). Saved Radicale passwords may stay in Credential Manager > Web Credentials after an uninstall; remove them there by hand.

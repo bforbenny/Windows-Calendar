@@ -13,6 +13,14 @@ if (Get-Process WindowsCalendar -ErrorAction SilentlyContinue) {
     exit 1
 }
 
+# The GitHub release step needs the GitHub CLI signed in; checked before anything changes.
+# Windows PowerShell turns redirected native stderr into an error under 'Stop', so relax it here.
+& { $ErrorActionPreference = 'Continue'; gh auth status *> $null }
+if ($LASTEXITCODE -ne 0) {
+    Write-Host 'GitHub CLI is not signed in. Run "gh auth login" first.'
+    exit 1
+}
+
 $manifestPath = Join-Path $root 'WindowsCalendar\Package.appxmanifest'
 $original = [IO.File]::ReadAllText($manifestPath, [Text.Encoding]::UTF8)
 $identity = ([xml]$original).Package.Identity
@@ -44,6 +52,20 @@ Write-Host "Certificate thumbprint: $($cert.Thumbprint)"
 $cerOut = Join-Path $ReleaseDir 'WindowsCalendar.cer'
 Export-Certificate -Cert $cert -FilePath $cerOut -Type CERT -Force | Out-Null
 
+function Write-AppInstaller([string]$path, [string]$selfUri, [string]$msixUri) {
+    $esc = { param($s) [Security.SecurityElement]::Escape($s) }
+    $xml = @"
+<?xml version="1.0" encoding="utf-8"?>
+<AppInstaller xmlns="http://schemas.microsoft.com/appx/appinstaller/2018" Version="$(& $esc $newVersion)" Uri="$(& $esc $selfUri)">
+  <MainPackage Name="$(& $esc $name)" Publisher="$(& $esc $publisher)" Version="$(& $esc $newVersion)" ProcessorArchitecture="x64" Uri="$(& $esc $msixUri)" />
+  <UpdateSettings>
+    <OnLaunch HoursBetweenUpdateChecks="24" ShowPrompt="true" UpdateBlocksActivation="false" />
+  </UpdateSettings>
+</AppInstaller>
+"@
+    [IO.File]::WriteAllText($path, $xml, (New-Object Text.UTF8Encoding $false))
+}
+
 $utf8Bom = New-Object Text.UTF8Encoding $true
 [IO.File]::WriteAllText($manifestPath, $bumped, $utf8Bom)
 $pkgDir = Join-Path $env:TEMP "WindowsCalendar-msix-$newVersion"
@@ -58,17 +80,7 @@ try {
     Write-Host "Signature status: $((Get-AuthenticodeSignature $msixOut).Status)"
 
     $appInstaller = Join-Path $ReleaseDir 'WindowsCalendar.appinstaller'
-    $esc = { param($s) [Security.SecurityElement]::Escape($s) }
-    $xml = @"
-<?xml version="1.0" encoding="utf-8"?>
-<AppInstaller xmlns="http://schemas.microsoft.com/appx/appinstaller/2018" Version="$(& $esc $newVersion)" Uri="$(& $esc ([Uri]$appInstaller).AbsoluteUri)">
-  <MainPackage Name="$(& $esc $name)" Publisher="$(& $esc $publisher)" Version="$(& $esc $newVersion)" ProcessorArchitecture="x64" Uri="$(& $esc ([Uri]$msixOut).AbsoluteUri)" />
-  <UpdateSettings>
-    <OnLaunch HoursBetweenUpdateChecks="24" ShowPrompt="true" UpdateBlocksActivation="false" />
-  </UpdateSettings>
-</AppInstaller>
-"@
-    [IO.File]::WriteAllText($appInstaller, $xml, (New-Object Text.UTF8Encoding $false))
+    Write-AppInstaller $appInstaller ([Uri]$appInstaller).AbsoluteUri ([Uri]$msixOut).AbsoluteUri
 
     Remove-Item $pkgDir -Recurse -Force
 }
@@ -83,3 +95,27 @@ Write-Host "  $msixOut"
 Write-Host "  $appInstaller"
 Write-Host "  $cerOut"
 Write-Host 'Double-click WindowsCalendar.appinstaller to install or update.'
+
+# GitHub release: commit and push the version bump, then release v<version> with the .msix, the .cer and an
+# .appinstaller that points at GitHub. Installs from it check the latest release for updates.
+$repo = gh repo view --json nameWithOwner -q .nameWithOwner
+$base = "https://github.com/$repo/releases"
+$ghDir = Join-Path $env:TEMP "WindowsCalendar-github-$newVersion"
+New-Item -ItemType Directory -Force $ghDir | Out-Null
+$ghAppInstaller = Join-Path $ghDir 'WindowsCalendar.appinstaller'
+Write-AppInstaller $ghAppInstaller "$base/latest/download/WindowsCalendar.appinstaller" "$base/download/v$newVersion/WindowsCalendar_${newVersion}_x64.msix"
+$notes = Join-Path $ghDir 'notes.md'
+[IO.File]::WriteAllText($notes, ([IO.File]::ReadAllText((Join-Path $PSScriptRoot 'release-notes.md')) -replace '\{VERSION\}', $newVersion), (New-Object Text.UTF8Encoding $false))
+
+git -C $root commit -m "Package $newVersion" -- WindowsCalendar/Package.appxmanifest
+if ($LASTEXITCODE -eq 0) { git -C $root push }
+if ($LASTEXITCODE -eq 0) {
+    gh release create "v$newVersion" --repo $repo --target (git -C $root rev-parse HEAD) --title "WindowsCalendar $newVersion" --notes-file $notes $msixOut $cerOut $ghAppInstaller
+}
+$ghResult = $LASTEXITCODE
+Remove-Item $ghDir -Recurse -Force
+if ($ghResult -ne 0) {
+    Write-Host 'GitHub release failed. The local release above is complete; commit, push and release by hand.'
+    exit 1
+}
+Write-Host "GitHub release: $base/tag/v$newVersion"
