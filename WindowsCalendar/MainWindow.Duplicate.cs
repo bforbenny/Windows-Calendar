@@ -54,7 +54,8 @@ public sealed partial class MainWindow
 
         // Undo deletes the copy (duplicate-event R2, undo R4).
         _lastChange = (copy.Id, null, copy.RawPayload, null);
-        ShowUndo("Event duplicated", canUndo: true);
+        ShowUndo("Event duplicated", canUndo: true, note: copy.StartUtc is { } start && copy.EndUtc is { } end
+            ? ScheduleWarning.For(store, copy.Id, start, end, copy.AllDay, e.ShowAs) : null);
         _selectedKey = EventCard.SelectedKey = $"{copy.Id}|";
         _selectedDay = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(copy.StartUtc ?? DateTimeOffset.Now, zone).DateTime);
         RenderView();

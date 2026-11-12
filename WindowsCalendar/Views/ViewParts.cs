@@ -137,7 +137,8 @@ internal static class ViewParts
     /// A day header: weekday, then the date (in a chip for today), and an optional label such as "Tomorrow" or a
     /// holiday name (trimmed, full text in a tooltip).
     /// </summary>
-    public static StackPanel DayHeader(DateOnly date, bool isToday, string? label = null, string dateFormat = "%d")
+    /// <remarks><paramref name="mark"/> sits beside the date (schedule-gap-warning R11).</remarks>
+    public static StackPanel DayHeader(DateOnly date, bool isToday, string? label = null, string dateFormat = "%d", FrameworkElement? mark = null)
     {
         var number = new TextBlock
         {
@@ -155,7 +156,7 @@ internal static class ViewParts
             HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 0, 0, 2),
         });
-        stack.Children.Add(isToday
+        FrameworkElement day = isToday
             ? new Border
             {
                 Background = Theme.Brush("TodayChipBrush"),
@@ -165,7 +166,15 @@ internal static class ViewParts
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Child = number,
             }
-            : number);
+            : number;
+        if (mark is not null)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Center };
+            row.Children.Add(day);
+            row.Children.Add(mark);
+            day = row;
+        }
+        stack.Children.Add(day);
         if (label is not null)
         {
             var text = Caption(label);

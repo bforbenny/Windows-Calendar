@@ -179,7 +179,7 @@ internal sealed class AgendaView : UserControl, IScrollingView, IDragHost
             label = label is null ? week : $"{week} · {label}";
         }
         header.Width = _columnWidth;
-        header.Child = ViewParts.DayHeader(date, date == today, label, "d MMM");
+        header.Child = ViewParts.DayHeader(date, date == today, label, "d MMM", ProblemMarks.DayIcon(date));
     }
 
     // ---- Drag (R8, calendar-views R7): to another day column, keeping the time and length. ----
@@ -246,6 +246,9 @@ internal sealed class AgendaView : UserControl, IScrollingView, IDragHost
         return list;
     }
 
+    /// <summary>Shown on empty days in place of "Nothing scheduled", e.g. during an account's first sync (ui-states R1a).</summary>
+    public string? EmptyText { get; set; }
+
     /// <summary>One day: its events as cards that fit their content, or "Nothing scheduled". At least as tall as the viewport.</summary>
     private void BindList(StackPanel list, int index)
     {
@@ -265,6 +268,7 @@ internal sealed class AgendaView : UserControl, IScrollingView, IDragHost
             var details = total > 1 ? $"Day {date.DayNumber - e.FirstDay.DayNumber + 1} of {total}" : null;
             var card = EventCard.Create(e, Theme.Calendar(e.Collection.Colour), double.NaN, details: details);
             card.Margin = new Thickness(1, 0, 1, 4);
+            ProblemMarks.Decorate(card, e.Key);
             EventDrag.Attach(card, e, this);
             body.Children.Add(card);
         }
@@ -272,7 +276,7 @@ internal sealed class AgendaView : UserControl, IScrollingView, IDragHost
         {
             body.Children.Add(new TextBlock
             {
-                Text = "Nothing scheduled",
+                Text = EmptyText ?? "Nothing scheduled",
                 Style = Theme.Style("CaptionTextBlockStyle"),
                 Foreground = Theme.Brush("TextSecondaryBrush"),
                 Margin = new Thickness(4, 4, 0, 0),

@@ -37,7 +37,7 @@ When a local pending change and a server change hit the same item, **the server 
   - **Keep server** removes the conflict copy; **Use mine** applies the local version to the item as it is now and queues it as a normal edit against the current etag/changeKey, then removes the copy; for "Your delete was not applied" it queues the delete again. Both are one undo step where the outbox allows it ([undo](undo.md));
   - for a row whose item is no longer on the calendar, only **Keep server** (discard) is offered; restoring it as a new item (R3) comes later;
   - the banner count updates at once, and the banner closes when no conflicts are left.
-  - The "Use my version" confirmation for CalDAV series that lists overwritten server changes (R6) comes later; until then Use mine on a CalDAV series asks a plain "Overwrite the server version?" first.- R6 (Conflicts view) and R9 (discarded outbox entries) come later.
+  - The "Use my version" confirmation for CalDAV series that lists overwritten server changes (R6) comes later; until then Use mine on a CalDAV series asks a plain "Overwrite the server version?" first.- R6 (Conflicts view) comes later. R9 for discarded outbox entries is built with [ui-states](ui-states.md) slice 1 ([local-store-offline](local-store-offline.md) R7); R9 for collections deleted on the server comes later.
 - A conflict on an entry in a linked outbox group cancels the group's later entries: a create is not sent (its local copy goes to Conflicts and it leaves the calendar), a delete is not sent (the item comes back). So a failed series truncate does not create the new series ([recurring-events](recurring-events.md) R6), and a failed calendar move does not delete the original ([calendar-views](calendar-views.md) R8).
 
 ## Out of scope

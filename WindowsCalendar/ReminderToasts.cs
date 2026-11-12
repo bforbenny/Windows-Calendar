@@ -231,6 +231,10 @@ internal static class ReminderToasts
             case "missed":
                 app?.OpenAgendaToday();
                 break;
+            case "signin":
+                // The Sign in bar is in the window (ui-states R2); the prompt opens only from its button.
+                app?.ShowMainWindow();
+                break;
         }
     }
 
@@ -301,6 +305,33 @@ internal static class ReminderToasts
         var doc = new XmlDocument();
         doc.LoadXml(xml);
         return doc;
+    }
+
+    /// <summary>
+    /// "Sign in to Work to resume syncing" while the window is hidden (ui-states R2, sync-ms365 R11); a click opens the
+    /// window, where the Sign in bar is.
+    /// </summary>
+    internal static void ShowSignIn(string accountName)
+    {
+        var xml = $"""
+            <toast launch="action=signin">
+              <visual><binding template="ToastGeneric">
+                <text>{Escape($"Sign in to {accountName}")}</text>
+                <text>Syncing is paused until you sign in again.</text>
+              </binding></visual>
+            </toast>
+            """;
+        try
+        {
+            var doc = new XmlDocument();
+            doc.LoadXml(xml);
+            ToastNotificationManager.CreateToastNotifier().Show(new ToastNotification(doc));
+            Log.Information("Sign-in toast shown");
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Sign-in toast failed: {Type}: {Message}", ex.GetType().Name, ex.Message);
+        }
     }
 
     private static string Escape(string text) => SecurityElement.Escape(text) ?? "";

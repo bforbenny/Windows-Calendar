@@ -24,6 +24,32 @@ public sealed partial class MainWindow
 {
     private DispatcherTimer? _searchTimer;
 
+    /// <summary>
+    /// The title bar puts its centre content straight after the title, so a left margin moves the search box to the
+    /// middle of the window (search R2), after every resize. The box stays in the title bar's content slot, where it
+    /// takes clicks while the rest of the bar drags the window.
+    /// </summary>
+    private void SetupTitleSearch()
+    {
+        SizeChanged += (_, _) => Dispatcher.BeginInvoke(CentreSearch, DispatcherPriority.Loaded);
+        TitleSearch.IsVisibleChanged += (_, _) => Dispatcher.BeginInvoke(CentreSearch, DispatcherPriority.Loaded);
+        Loaded += (_, _) => CentreSearch();
+    }
+
+    private void CentreSearch()
+    {
+        if (!TitleSearch.IsVisible)
+        {
+            return;
+        }
+        var slot = TitleSearch.TranslatePoint(new Point(0, 0), this).X - TitleSearch.Margin.Left;
+        var margin = Math.Max(0, (ActualWidth - TitleSearch.ActualWidth) / 2 - slot);
+        if (Math.Abs(margin - TitleSearch.Margin.Left) > 0.5)
+        {
+            TitleSearch.Margin = new Thickness(margin, 0, 0, 0);
+        }
+    }
+
     private void FocusSearch()
     {
         SearchBox.Focus();

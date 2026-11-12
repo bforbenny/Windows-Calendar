@@ -76,7 +76,8 @@ public sealed partial class MainWindow
                 EditScope.Series => "Series moved",
                 EditScope.Following => "Following events moved",
                 _ => "Event moved",
-            }, canUndo: true);
+            }, canUndo: true, note: ScheduleWarning.For(store, following?.Id ?? item.Id, target.Start, target.End,
+                zone, zone, target.AllDay, e.ShowAs));
             Log.Information("Event {ItemId} moved by drag ({Scope})", changedId, scope?.ToString() ?? "single");
         }
         catch (EditRefusedException ex)

@@ -2,7 +2,7 @@
 description: Full keyboard operation of the app, including moving/resizing events without the mouse, and a shortcut cheat sheet
 when-to-use: Before adding any UI, shortcut, or focus behaviour
 tags: [ui, keyboard, accessibility, shortcuts]
-status: in-progress
+status: closed
 ---
 
 # Keyboard navigation
@@ -25,7 +25,7 @@ Every action in the app can be done from the keyboard, including the drag operat
   | Arrows | Move selection between events (Up/Down within a day, Left/Right across days) |
   | Enter | Open selected item in the editor panel |
   | Esc | Close editor panel / popup / clear selection |
-  | Ctrl+N | Quick add ([quick-add](quick-add.md)) |
+  | Ctrl+N | New event, or New task in the Tasks view |
   | Ctrl+D | Duplicate selected ([duplicate-event](duplicate-event.md)) |
   | Del | Delete selected (undo banner, see [undo](undo.md)) |
   | Ctrl+Z | Undo |
@@ -46,12 +46,12 @@ Every action in the app can be done from the keyboard, including the drag operat
 
 ## Interim (current build)
 
-- Built: F1-F4, T, PgUp / PgDn, Ctrl+G, Arrows, Enter, Esc, Del, Ctrl+D, Ctrl+J / Ctrl+Shift+J (branch `online-meeting-join`), Ctrl+F / Ctrl+E (branch `search`), Ctrl+Z, F5, Ctrl+, , Ctrl+B, ? and R3. Ctrl+N focuses the toolbar quick-add box ([quick-add](quick-add.md)); the New button has no shortcut. Ctrl+1-9 comes with its feature.
+- Built: F1-F4, T, PgUp / PgDn, Ctrl+G, Arrows, Enter, Esc, Del, Ctrl+D, Ctrl+J / Ctrl+Shift+J (branch `online-meeting-join`), Ctrl+F / Ctrl+E (branch `search`), Ctrl+Z, F5, Ctrl+, , Ctrl+B, ? and R3. Ctrl+N presses New: New task in the Tasks view, else New event (the toolbar quick-add box was removed 2026-11-12, [quick-add](quick-add.md)). Ctrl+1-9 comes with its feature.
 - Selection (Week, Month, Agenda): the first arrow press selects the first item on today, else the first one from the day in view. Up/Down move within the day (all-day items first, then by start); Left/Right move to the item nearest in time on the previous / next day that has one. The selected card has an accent outline and is scrolled into view. Clicking a card selects it as well as opening it. Esc clears the selection when no panel is open. Enter opens the selected event or task.
 - Del deletes the selected event through the editor's Delete (its confirmation and repeating-event prompt; undo for deletes comes with [undo](undo.md)). Tasks are not deleted from the calendar.
 - R3 goes through the drag path: the same recurring scope prompt, Undo banner and rules; read-only events, invitations and tasks do not move. All-day events move only by day; resize needs a timed event and keeps at least 15 minutes.
 - R4: T, ?, arrows, Enter and Del are ignored while focus is in a text field, drop-down, the editor panel or Settings. Arrows select events even when focus is on the view tabs (F1-F4 switch views).
-- Holding Ctrl for about half a second shows a small badge with the key under each control that has one: F1-F4 on the view tabs, T on Today, Ctrl+G on the period title, Ctrl+N on the quick-add box, F5 on Sync, Ctrl+, on Settings, Ctrl+B on the sidebar button, and Ctrl+Z on Undo while the undo banner shows. The badges hide when Ctrl is released, another key is pressed or the window loses focus.
+- Holding Ctrl for about half a second shows a small badge with the key under each control that has one: F1-F4 on the view tabs, T on Today, Ctrl+G on the period title, Ctrl+N on New, F5 on Sync, Ctrl+, on Settings, Ctrl+B on the sidebar button, and Ctrl+Z on Undo while the undo banner shows. The badges hide when Ctrl is released, another key is pressed or the window loses focus.
 - ? shows the cheat sheet: a dialog listing the built shortcuts.
 
 ## Out of scope

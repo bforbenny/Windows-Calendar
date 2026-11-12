@@ -64,6 +64,32 @@ public partial class App : Application
     /// <summary>MS365 accounts skipped until this time after a 429/503 (sync-ms365 R10). Guarded by _accountGate.</summary>
     private readonly Dictionary<string, DateTimeOffset> _backoffUntil = [];
 
+    /// <summary>Each account's latest sync outcome, for the status and bars (ui-states R2). Guarded by _accountGate.</summary>
+    private readonly Dictionary<string, AccountHealth> _health = [];
+    private DateTime? _lastOk;
+
+    /// <summary>Accounts whose sign-in toast was shown this session (ui-states R2); UI thread only.</summary>
+    private readonly HashSet<string> _signInToasted = [];
+
+    /// <summary>When a server last answered a sync (ui-states R1, R2 "Last synced"); set at the end of a run.</summary>
+    internal DateTime? LastOk { get; private set; }
+
+    /// <summary>The latest outcome of every account still in the store.</summary>
+    internal IReadOnlyList<AccountHealth> Health
+    {
+        get
+        {
+            var ids = Store?.GetAccounts().Select(a => a.Id).ToHashSet() ?? [];
+            lock (_accountGate)
+            {
+                return [.. _health.Values.Where(h => ids.Contains(h.AccountId))];
+            }
+        }
+    }
+
+    /// <summary>No network at all, or no server answered the last attempts (ui-states R2).</summary>
+    internal bool Offline => SyncHealth.IsOffline(System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable(), Health);
+
     /// <summary>Kept alive for ColorValuesChanged (tray icon theme swap).</summary>
     private readonly Windows.UI.ViewManagement.UISettings _uiSettings = new();
 
@@ -185,6 +211,11 @@ public partial class App : Application
             {
                 _scheduler.Request("network back");
             }
+            else if (!online && _online)
+            {
+                // The run's results tell whether the servers still answer, so Offline shows within seconds (ui-states R2).
+                _scheduler.Request("network lost");
+            }
             if (online != _online)
             {
                 Dispatcher.BeginInvoke(() => SyncStateChanged?.Invoke(false));
@@ -303,6 +334,10 @@ public partial class App : Application
             {
                 SyncRunning = false;
                 LastSynced = DateTime.Now;
+                lock (_accountGate)
+                {
+                    LastOk = _lastOk;
+                }
                 SyncStateChanged?.Invoke(true);
             });
         }
@@ -375,13 +410,56 @@ public partial class App : Application
         }
     }
 
-    private void Pause(string accountId)
+    private void Pause(Account account)
     {
         lock (_accountGate)
         {
-            _pausedAccounts.Add(accountId);
+            _pausedAccounts.Add(account.Id);
+        }
+        Record(account, SyncOutcome.SignInNeeded);
+    }
+
+    /// <summary>
+    /// Records an account's sync outcome (ui-states R2). A successful run marks it synced once (R1a). The first time an
+    /// account needs sign-in while the window is hidden, one toast says so (sync-ms365 R11, sync-radicale R11).
+    /// </summary>
+    private void Record(Account account, SyncOutcome outcome, string? reason = null)
+    {
+        lock (_accountGate)
+        {
+            _health[account.Id] = new AccountHealth(account.Id, account.DisplayName, outcome, reason);
+            if (outcome == SyncOutcome.Ok)
+            {
+                _lastOk = DateTime.Now;
+            }
+        }
+        if (outcome == SyncOutcome.Ok)
+        {
+            Store?.MarkSyncedOnce(account.Id);
+        }
+        else if (outcome == SyncOutcome.SignInNeeded)
+        {
+            _ = Dispatcher.BeginInvoke(() =>
+            {
+                if (_window?.IsVisible != true && _signInToasted.Add(account.Id))
+                {
+                    ReminderToasts.ShowSignIn(account.DisplayName);
+                }
+            });
         }
     }
+
+    private const string UnexpectedReason = "unexpected error, see the log";
+
+    /// <summary>The short reason in the Sync error bar: the error kind or HTTP status, never server text (ui-states R2).</summary>
+    private static string Reason(CalDavException ex) => ex.Status is { } status ? $"HTTP {(int)status}" : ex.Error switch
+    {
+        CalDavError.CertificateNotTrusted => "the server certificate is not trusted",
+        CalDavError.NotHttps => "the server does not use HTTPS",
+        CalDavError.NotCalDav => "the server did not answer as a CalDAV server",
+        CalDavError.NoCalendars => "no calendars were found",
+        _ => ex.Error.ToString(),
+    };
 
     /// <summary>Syncs one Radicale account. Returns whether the views may have changed.</summary>
     private async Task<bool> SyncRadicaleAsync(LocalStore store, Account account, string reason, CancellationToken cancellationToken)
@@ -395,8 +473,8 @@ public partial class App : Application
         var password = CredentialVault.RetrievePassword(account.Id);
         if (password is null)
         {
-            Log.Warning("Account {AccountId} has no saved password; paused until restart", account.Id);
-            Pause(account.Id);
+            Log.Warning("Account {AccountId} has no saved password; paused until signed in", account.Id);
+            Pause(account);
             return false;
         }
         var radicale = new RadicaleSync(store, CalDavHttp);
@@ -406,6 +484,7 @@ public partial class App : Application
             // Sync now also refetches subscribed feeds at once (sync-radicale R1a).
             var summary = await radicale.SyncAccountAsync(account, password, forceFeeds: reason == "sync now", cancellationToken: cancellationToken);
             Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
+            Record(account, SyncOutcome.Ok);
             return summary.AnyChange;
         }
         catch (AccountRemovedException)
@@ -414,13 +493,20 @@ public partial class App : Application
         }
         catch (CalDavException ex) when (ex.Error == CalDavError.WrongCredentials)
         {
-            // sync-radicale R11 interim: no retry loop; the Sign in bar comes with ui-states.
-            Log.Warning("Account {AccountId} rejected the saved password (401); paused until restart", account.Id);
-            Pause(account.Id);
+            // sync-radicale R11: no retry loop; the Sign in bar asks for the password (ui-states R2).
+            Log.Warning("Account {AccountId} rejected the saved password (401); paused until signed in", account.Id);
+            Pause(account);
         }
         catch (CalDavException ex)
         {
             Log.Warning("Account {AccountId} sync failed: {Error} {Status}", account.Id, ex.Error, (int?)ex.Status);
+            Record(account, ex.Error == CalDavError.Unreachable ? SyncOutcome.Network : SyncOutcome.Failed, Reason(ex));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // No failure is silent (ui-states R2): the bar points to the log.
+            Log.Error(ex, "Account {AccountId} sync failed unexpectedly", account.Id);
+            Record(account, SyncOutcome.Failed, UnexpectedReason);
         }
         finally
         {
@@ -459,6 +545,7 @@ public partial class App : Application
             token = await auth.GetTokenAsync(account.Username ?? "", cancellationToken);
             var summary = await graph.SyncAccountAsync(account, token, cancellationToken: cancellationToken);
             Log.Information("Account {AccountId} synced: {@Summary}", account.Id, summary);
+            Record(account, SyncOutcome.Ok);
             return summary.AnyChange;
         }
         catch (AccountRemovedException)
@@ -467,13 +554,13 @@ public partial class App : Application
         }
         catch (MsalUiRequiredException ex)
         {
-            Log.Warning("Account {AccountId} needs to sign in again ({Code}); paused until restart", account.Id, ex.ErrorCode);
-            Pause(account.Id);
+            Log.Warning("Account {AccountId} needs to sign in again ({Code}); paused until signed in", account.Id, ex.ErrorCode);
+            Pause(account);
         }
         catch (GraphException ex) when (ex.Error == GraphError.Unauthorized)
         {
-            Log.Warning("Account {AccountId} was refused by Graph (401); paused until restart", account.Id);
-            Pause(account.Id);
+            Log.Warning("Account {AccountId} was refused by Graph (401); paused until signed in", account.Id);
+            Pause(account);
         }
         catch (GraphException ex) when (ex.Error == GraphError.Throttled)
         {
@@ -487,10 +574,19 @@ public partial class App : Application
         catch (GraphException ex)
         {
             Log.Warning("Account {AccountId} sync failed: {Error} {Status}", account.Id, ex.Error, (int?)ex.Status);
+            Record(account, ex.Error == GraphError.Network ? SyncOutcome.Network : SyncOutcome.Failed,
+                ex.Status is { } status ? $"HTTP {(int)status}" : ex.Error.ToString());
         }
         catch (MsalException ex)
         {
             Log.Warning("Account {AccountId} token request failed: {Code}", account.Id, ex.ErrorCode);
+            // With no internet a token refresh fails before Graph is asked: that is Offline, not a sync error.
+            Record(account, IsOnline() ? SyncOutcome.Failed : SyncOutcome.Network, "the sign-in token could not be obtained");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            Log.Error(ex, "Account {AccountId} sync failed unexpectedly", account.Id);
+            Record(account, SyncOutcome.Failed, UnexpectedReason);
         }
         finally
         {
@@ -505,7 +601,11 @@ public partial class App : Application
         lock (_accountGate)
         {
             _pausedAccounts.Remove(accountId);
+            // The Sign in bar clears at once; the sync records the new outcome.
+            _health.Remove(accountId);
         }
+        _signInToasted.Remove(accountId);
+        SyncStateChanged?.Invoke(false);
         _scheduler?.Request("signed in again");
     }
 

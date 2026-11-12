@@ -353,6 +353,23 @@ public sealed class GraphSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task DiscardedEdit_IsReplacedByServerVersionAtNextSync()
+    {
+        _graph.Put("e1", Nov10, Nov10.AddHours(1));
+        await SyncAsync();
+        var local = _store.FindItemByRemoteId(CalendarId, "e1")!;
+        _store.UpdateItem(local with { RawPayload = local.RawPayload.Replace("\"Meeting\"", "\"Mine\""), Summary = "Mine" });
+
+        Assert.True(_store.DiscardOutboxEntry(_store.GetOutbox()[0].Id));
+        await SyncAsync();
+
+        // Local-store-offline R7: the server's version is fetched again even though the server did not change.
+        Assert.Equal("Meeting", _store.GetItem(local.Id)!.Summary);
+        Assert.Empty(_store.GetOutbox());
+        Assert.Equal(1, _store.GetConflictCount());
+    }
+
+    [Fact]
     public async Task EventInTwoChunks_StaysUntilNoChunkHoldsIt()
     {
         // Find a chunk boundary and put an event across it.

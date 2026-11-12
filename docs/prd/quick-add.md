@@ -2,7 +2,7 @@
 description: Typed quick add that parses English phrases like "Lunch with Sam fri 1pm at Cafe Rio" into an event or task, offline and rule-based
 when-to-use: Before working on the quick-add box, its parser, or quick-create flows
 tags: [ui, quick-add, parsing, events, tasks]
-status: in-progress
+status: closed
 ---
 
 # Quick add
@@ -13,10 +13,10 @@ A single text box turns a typed phrase into an event (or a task) with date, time
 
 ## Requirements
 
-- R1. Available in: the quick-create popup ([calendar-views](calendar-views.md) R5), the toolbar (Ctrl+N focuses it), and the [tray-flyout](tray-flyout.md).
+- R1. Available in: the quick-create popup ([calendar-views](calendar-views.md) R5) and the [tray-flyout](tray-flyout.md).
   - Quick-create popup: clicking or dragging an empty slot in Week, Month or Agenda opens a small popup anchored to the slot, with the quick-add box pre-set to that slot and the calendar shown. A Month day, the all-day lane or an Agenda day pre-sets an all-day date; a typed time makes it a timed event. Esc or clicking outside closes it without saving. This replaces opening the full editor on a slot click.
   - Tray flyout: comes with [tray-flyout](tray-flyout.md); not built with this requirement.
-  - Toolbar: the box sits in the toolbar next to New. Ctrl+N focuses it instead of pressing New; the New button and its drop-down stay, and the key hints and shortcut cheat sheet are updated ([keyboard-navigation](keyboard-navigation.md)).
+  - Toolbar: removed 2026-11-12 (user's choice: a slot click is enough). Ctrl+N presses New again: New task in the Tasks view, else New event ([keyboard-navigation](keyboard-navigation.md)).
 - R2. Recognised tokens (English, case-insensitive):
   - Dates: `today`, `tomorrow`, weekday names (next occurrence), `next <weekday>`, `in <n> days/weeks`, `5 Dec` / `Dec 5`, numeric dates in the Windows short-date order (e.g. `5/12` = 5 December for en-AU).
   - Times: `1pm`, `1:30pm`, `13:00`, `noon`, `midnight`; ranges `1-2pm`, `1pm to 3pm`, `9:00-10:30`.
@@ -57,7 +57,7 @@ A single text box turns a typed phrase into an event (or a task) with date, time
 - [x] Works with the network off.
 - [x] "look at budget tomorrow" creates an event titled "look at budget" with no location.
 - [x] Clicking an empty Week slot opens the quick-create popup on that slot; Ctrl+Enter there opens the full editor pre-filled.
-- [x] Ctrl+N focuses the toolbar quick-add box.
+- [ ] Ctrl+N opens New event (New task in the Tasks view); the toolbar has no quick-add box.
 - [x] Typing `#wo` lists the Work calendar; Tab inserts it. Typing `tom` offers "tomorrow".
 - [ ] "task x every Fri" creates a task "x" due on the next Friday that repeats weekly on Friday in Microsoft To Do.
 

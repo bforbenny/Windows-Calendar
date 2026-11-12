@@ -108,6 +108,7 @@ internal sealed partial class EventEditor : UserControl
         form.Children.Add(ViewParts.Field("End", DateTimeRow(_endDate, _endTime)));
         BuildZones(form);
         form.Children.Add(_zoneNote);
+        form.Children.Add(_scheduleNote);
         form.Children.Add(_repeat);
         form.Children.Add(ViewParts.Field("Location", _location));
         form.Children.Add(ViewParts.Field("Show as", _showAs));
@@ -397,6 +398,7 @@ internal sealed partial class EventEditor : UserControl
         ShowZones(ZoneItem(item));
         ShowTimes(fields);
         ShowTimePickers();
+        ResetScheduleNote(fields);
         _loading = false;
         RefreshRule();
     }
@@ -422,6 +424,7 @@ internal sealed partial class EventEditor : UserControl
         _heading.Text = heading;
         ShowSwitch(_itemId is null);
         ShowFields(fields);
+        ResetScheduleNote(fields);
 
         _calendar.Items.Clear();
         var accounts = Store?.GetAccounts() ?? [];
@@ -585,6 +588,7 @@ internal sealed partial class EventEditor : UserControl
         var fields = ReadFields();
         _shownStart = FormStart();
         ShowZoneNote();
+        UpdateScheduleNote(fields);
         var now = DateTimeOffset.UtcNow;
         var zone = TimeZoneInfo.Local;
         try

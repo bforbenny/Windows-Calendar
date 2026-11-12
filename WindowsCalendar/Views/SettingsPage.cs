@@ -151,6 +151,10 @@ internal sealed class SettingsPage : UserControl
             "\"All\" is built in and always first. To change a set's calendars, select it in the sidebar, tick the "
             + "calendars, then choose ⋯ > Update.");
         var sets = Store?.GetCalendarSets() ?? [];
+        var all = new TextBlock { Text = "All", Style = Theme.Style("BodyStrongTextBlockStyle") };
+        all.SetResourceReference(TextBlock.ForegroundProperty, "TextPrimaryBrush");
+        panel.Children.Add(all);
+        panel.Children.Add(ClashToggle(null, "All"));
         if (sets.Count == 0)
         {
             panel.Children.Add(new TextBlock
@@ -163,8 +167,28 @@ internal sealed class SettingsPage : UserControl
         for (var i = 0; i < sets.Count; i++)
         {
             panel.Children.Add(CalendarSetRow(sets[i], i > 0, i < sets.Count - 1, focus));
+            panel.Children.Add(ClashToggle(sets[i].Id, sets[i].Name));
         }
         return panel;
+    }
+
+    /// <summary>A set's "Warn about clashes and short gaps" switch, saved at once (calendar-sets R12, schedule-gap-warning R10).</summary>
+    private Wpf.Ui.Controls.ToggleSwitch ClashToggle(string? setId, string name)
+    {
+        var toggle = new Wpf.Ui.Controls.ToggleSwitch
+        {
+            Content = "Warn about clashes and short gaps",
+            IsChecked = Store?.GetClashCheck(setId) ?? false,
+            Margin = new Thickness(0, -4, 0, 8),
+        };
+        System.Windows.Automation.AutomationProperties.SetName(toggle, $"Warn about clashes and short gaps in {name}");
+        toggle.Click += (_, _) =>
+        {
+            Store?.SetClashCheck(setId, toggle.IsChecked == true);
+            Log.Information("Clash and gap warnings {State} for set {SetId}", toggle.IsChecked == true ? "on" : "off", setId ?? "All");
+            Changed?.Invoke();
+        };
+        return toggle;
     }
 
     private Grid CalendarSetRow(CalendarSet set, bool canMoveUp, bool canMoveDown, (string SetId, int Delta)? focus)
@@ -269,6 +293,7 @@ internal sealed class SettingsPage : UserControl
         {
             return panel;
         }
+        panel.Children.Add(MinimumGapField(store));
         foreach (var account in store.GetAccounts())
         {
             var collections = store.GetCollections(account.Id);
@@ -285,6 +310,32 @@ internal sealed class SettingsPage : UserControl
             }
         }
         return panel;
+    }
+
+    /// <summary>
+    /// "Minimum gap between events" (schedule-gap-warning R5): Off turns the short-gap note off; overlaps still warn
+    /// where a set's switch is on.
+    /// </summary>
+    private StackPanel MinimumGapField(LocalStore store)
+    {
+        var gaps = new ComboBox { HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 160 };
+        System.Windows.Automation.AutomationProperties.SetName(gaps, "Minimum gap between events");
+        var current = store.GetMinimumGap();
+        foreach (var minutes in LocalStore.MinimumGapChoices)
+        {
+            gaps.Items.Add(new ComboBoxItem { Content = minutes == 0 ? "Off" : $"{minutes} minutes", Tag = minutes });
+        }
+        gaps.SelectedIndex = LocalStore.MinimumGapChoices.ToList().IndexOf(current);
+        gaps.SelectionChanged += (_, _) =>
+        {
+            if ((gaps.SelectedItem as ComboBoxItem)?.Tag is int minutes)
+            {
+                store.SetMinimumGap(minutes);
+                Log.Information("Minimum gap between events: {Minutes}", minutes);
+                Changed?.Invoke();
+            }
+        };
+        return ViewParts.Field("Minimum gap between events", gaps);
     }
 
     private Grid CalendarRow(LocalStore store, Collection collection)

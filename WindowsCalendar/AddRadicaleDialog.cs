@@ -144,7 +144,7 @@ public sealed class AddRadicaleDialog : ContentDialog
     }
 
     /// <summary>The SecureString as a string, zeroing the unmanaged copy straight away.</summary>
-    private static string Plain(SecureString secure)
+    internal static string Plain(SecureString secure)
     {
         var pointer = Marshal.SecureStringToGlobalAllocUnicode(secure);
         try
@@ -158,7 +158,7 @@ public sealed class AddRadicaleDialog : ContentDialog
     }
 
     /// <summary>One message per failure (account-management R4a).</summary>
-    private static string Message(CalDavError error) => error switch
+    internal static string Message(CalDavError error) => error switch
     {
         CalDavError.NotHttps => "The server address must start with https://.",
         CalDavError.Unreachable => "The server could not be reached. Check the address and your connection.",

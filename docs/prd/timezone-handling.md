@@ -2,7 +2,7 @@
 description: Correct timezone and DST handling across Graph and CalDAV, per-event timezone selection, and a secondary timezone column
 when-to-use: Before working on date/time storage, display, conversion, or any timezone UI
 tags: [timezone, dst, datetime, ui]
-status: in-progress
+status: closed
 ---
 
 # Timezone handling

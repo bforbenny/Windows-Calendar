@@ -112,6 +112,16 @@ public sealed record OutboxEntry(
     bool Permanent);
 
 /// <summary>
+/// A row of the pending changes list (local-store-offline R9a): the entry, its item's title, and its state. Failed
+/// means a send failed (<paramref name="LastError"/> is set); <paramref name="Permanent"/> ones wait for Retry.
+/// </summary>
+public sealed record PendingChange(long EntryId, string ItemId, string Title, OutboxOperation Operation, string? LastError,
+    bool Permanent, bool InFlight, ItemKind Kind = ItemKind.Event)
+{
+    public bool Failed => LastError is not null;
+}
+
+/// <summary>
 /// A calendar or task list found on the server, before it gets a local id, colour and shape (account-management R4, R9).
 /// IsDefault marks the server's main calendar (Graph isDefaultCalendar); CalDAV has none. ServerColour is the server's
 /// colour as #RRGGBB(AA), when it has one (ui-colour-theme R9).
@@ -145,7 +155,8 @@ public sealed record OccurrenceView(
     bool Completed = false,
     ShowAs ShowAs = ShowAs.Busy,
     string? JoinUrl = null,
-    string? TimeZone = null);
+    string? TimeZone = null,
+    bool Declined = false);
 
 /// <summary>
 /// A search result (search R3, R5, R7): the item and occurrence to open, its date (null for an undated task), and its

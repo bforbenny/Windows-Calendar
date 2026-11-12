@@ -2,7 +2,7 @@
 description: Local SQLite store, offline read/write and the outbox that pushes local changes when online
 when-to-use: Before working on the data model, persistence, offline behaviour, or the change queue
 tags: [storage, sqlite, offline, outbox, data-model]
-status: updated
+status: in-progress
 ---
 
 # Local store and offline
@@ -32,11 +32,12 @@ All synced data is held in a local SQLite database, so the app is fully usable o
   - Interim (until the sync engines exist): Windows reporting the network back requests a sync; "online once the server answers" comes with [sync-ms365](sync-ms365.md) and [sync-radicale](sync-radicale.md).
 - R7. Failed outbox entries back off exponentially, capped at 15 minutes; Sync now resets the backoff. Permanent failures (4xx other than 401/412 and the consent-revoked 403 of [sync-ms365](sync-ms365.md) R11; 409 counts as permanent) are shown to the user with options to retry or discard; a discarded entry is moved to Conflicts ([conflict-resolution](conflict-resolution.md) R9). Entries for an account in "auth required" are held until sign-in succeeds.
   - First retry after 30 s, doubling each time, capped at 15 minutes. A permanent failure is not retried until the user retries it.
-  - Interim: Discard (move to Conflicts) and the auth-required hold come with [conflict-resolution](conflict-resolution.md) and [account-management](account-management.md).
+  - Discard (built with [ui-states](ui-states.md) slice 1, after a confirmation): every queued entry for the item is dropped and its local version goes to Conflicts. A create that never reached the server leaves the calendar. For an item the server has, it stays on the calendar as it is locally until the next sync, which fetches the server's version again: the item's etag is cleared and its collection is marked for a full re-read, so the engine drops its sync token or delta link for that collection once. An entry in a linked group cancels the group's later entries, as for a conflict.
+  - Interim: the auth-required hold comes with [account-management](account-management.md).
 - R8. Sync state per collection: Graph deltaLink(s) per window chunk; CalDAV sync-token and CTag.
 - R9. Items pending upload are visibly marked (e.g. a small sync glyph).
 - R9a. Pending changes list: clicking the "n changes waiting" status ([ui-states](ui-states.md) R3) opens a list of outbox entries showing the item, the operation, and its state (waiting, or failed with the reason), with Retry and Discard on failed entries.
-  - R9 and R9a are built with [calendar-views](calendar-views.md) and [ui-states](ui-states.md); the store side (GetOutbox, RetryOutboxEntry) is in place.
+  - R9a is built with [ui-states](ui-states.md) slice 1: a popup from the toolbar status, like the conflicts list, one row per entry (title, Create / Edit / Delete, "Waiting" or "Failed: reason"); Retry and Discard on failed rows. R9 (the glyph on cards) comes later with [calendar-views](calendar-views.md).
 - R10. Sync scheduling: every 5 minutes; immediately after a local change; on app focus; on network reconnect; plus a manual "Sync now" button (UI toolbar and tray).
   - One sync runs at a time; a request during a run causes exactly one more run afterwards.
   - Within a run, all accounts sync in parallel. Within an account, queued changes are sent first, in outbox order; then its collections (and subscribed feeds) are pulled in parallel, at most 4 at a time per account (Graph allows 4 concurrent requests per mailbox). A failure that stops an account (sign-in, throttling, unreachable) stops only that account.

@@ -32,6 +32,8 @@ A calendar set is a named group of calendars and task lists, which can span acco
   - The ruler is changed in Settings > Appearance ([settings-page](settings-page.md) R2) or from "Secondary timezone…" in the selector's ⋯ menu; both change the same setting.
   - Storage: two nullable columns on `calendar_sets` (ruler on, zone id) added by a schema migration; the default and the current ruler in `meta`, like the ticks (R8).
 
+- R12. Each set also holds a "Warn about clashes and short gaps" switch ([schedule-gap-warning](schedule-gap-warning.md) R10), set in Settings > Calendar sets next to each set and saved at once. It never marks a set "(modified)". "All" starts on; new user-defined sets start off. Storage: a nullable column on `calendar_sets` (null = the default) and the "All" value in `meta`, added by a schema migration.
+
 ## Build slices
 
 Each slice is built, tested and checked in the app before the next starts.

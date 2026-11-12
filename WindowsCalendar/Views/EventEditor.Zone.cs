@@ -99,9 +99,15 @@ internal sealed partial class EventEditor
     /// <summary>After a save: the zones as stored (an event made all-day is back in the Windows timezone).</summary>
     private void RefreshZones()
     {
+        // An end still in the start's zone is not stored apart, so the toggle stays on until the user turns it off.
+        var separate = _separateEnd.IsChecked == true && _allDay.IsChecked != true;
         if (_itemId is not null && Store?.GetItem(_itemId) is { } item)
         {
             ShowZones(ZoneItem(item));
+        }
+        if (separate && _separateEnd.IsChecked != true && ZoneTag(_startZone) is string)
+        {
+            _separateEnd.IsChecked = true;
         }
         UpdateZoneControls();
     }

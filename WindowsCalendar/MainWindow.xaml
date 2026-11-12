@@ -4,7 +4,6 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-    xmlns:views="clr-namespace:WindowsCalendar.Views"
     Title="WindowsCalendar"
     Width="1400" Height="900" MinWidth="1000" MinHeight="640"
     ExtendsContentIntoTitleBar="True"
@@ -51,7 +50,31 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar x:Name="AppTitleBar" Title="WindowsCalendar" />
+        <ui:TitleBar x:Name="AppTitleBar" Title="WindowsCalendar" Height="48">
+            <ui:TitleBar.CenterContent>
+                <!-- Search (search R2): centred in the title bar, hidden while Settings is open; results drop down as you
+                     type; also Ctrl+F / Ctrl+E. -->
+                <Grid x:Name="TitleSearch" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <ui:TextBox x:Name="SearchBox" Width="360" VerticalAlignment="Center"
+                                PlaceholderText="Search" AutomationProperties.Name="Search events and tasks"
+                                TextChanged="OnSearchTextChanged" PreviewKeyDown="OnSearchKeyDown">
+                        <ui:TextBox.Icon>
+                            <ui:SymbolIcon Symbol="Search24" />
+                        </ui:TextBox.Icon>
+                    </ui:TextBox>
+                    <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom"
+                           StaysOpen="False" AllowsTransparency="True">
+                        <Border Background="{DynamicResource SurfaceBaseBrush}" BorderBrush="{DynamicResource DividerBrush}"
+                                BorderThickness="1" CornerRadius="8" Padding="4" Margin="0,4,0,0">
+                            <ListBox x:Name="SearchResults" MaxHeight="480" Width="440" BorderThickness="0" Background="Transparent"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ItemContainerStyle="{StaticResource PopupListItem}"
+                                     PreviewMouseLeftButtonUp="OnSearchResultClicked" PreviewKeyDown="OnSearchResultsKeyDown" />
+                        </Border>
+                    </Popup>
+                </Grid>
+            </ui:TitleBar.CenterContent>
+        </ui:TitleBar>
 
         <Grid Grid.Row="1">
 
@@ -80,7 +103,7 @@
                         <TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE700;" FontSize="16" />
                     </ui:Button>
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
-                        <!-- New event, or New task in the Tasks view; the drop-down offers both (calendar-views interim). -->
+                        <!-- New event, or New task in the Tasks view; the drop-down offers both (calendar-views interim). Also Ctrl+N. -->
                         <ui:SplitButton x:Name="NewButton" Click="OnNew" VerticalAlignment="Center" Margin="0,0,8,0">
                             <TextBlock x:Name="NewButtonText" Text="New event" />
                             <ui:SplitButton.Flyout>
@@ -94,8 +117,6 @@
                                 </ContextMenu>
                             </ui:SplitButton.Flyout>
                         </ui:SplitButton>
-                        <!-- Quick add (quick-add R1): a typed phrase becomes an event or task; Ctrl+N focuses it. -->
-                        <views:QuickAddBox x:Name="QuickBox" Width="320" VerticalAlignment="Center" Margin="0,0,8,0" />
                         <ui:Button x:Name="TodayButton" Content="Today" Click="OnToday" VerticalAlignment="Center"
                                    ToolTip="Go to today (T)" />
                     </StackPanel>
@@ -109,28 +130,45 @@
                         <ToggleButton Content="Tasks" Tag="Tasks" Click="OnViewClicked" />
                     </StackPanel>
                     <StackPanel Grid.Column="4" Orientation="Horizontal">
-                        <!-- Search (search R2): results drop down as you type; also Ctrl+F / Ctrl+E. -->
-                        <ui:TextBox x:Name="SearchBox" Width="240" Margin="0,0,8,0" VerticalAlignment="Center"
-                                    PlaceholderText="Search" AutomationProperties.Name="Search events and tasks"
-                                    TextChanged="OnSearchTextChanged" PreviewKeyDown="OnSearchKeyDown">
-                            <ui:TextBox.Icon>
-                                <ui:SymbolIcon Symbol="Search24" />
-                            </ui:TextBox.Icon>
-                        </ui:TextBox>
-                        <Popup x:Name="SearchPopup" PlacementTarget="{Binding ElementName=SearchBox}" Placement="Bottom"
+                        <!-- Sync now, with the sync status in its tooltip ("Sync now (F5) · Synced 10:42", ui-states R1) and a
+                             count badge while changes wait, which opens the pending changes list (R3, local-store-offline
+                             R9a). The status text itself is a hidden live region for screen readers. -->
+                        <Grid VerticalAlignment="Center" Margin="0,0,4,0">
+                            <ui:Button x:Name="SyncButton" Click="OnSyncNow" ToolTip="Sync now (F5)" AutomationProperties.Name="Sync now">
+                                <TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE895;" FontSize="16" />
+                            </ui:Button>
+                            <Button x:Name="PendingBadge" Click="OnSyncStatusClicked" Visibility="Collapsed" Cursor="Hand"
+                                    HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-6,0"
+                                    ToolTip="Show changes waiting to sync">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Pill" Background="{DynamicResource TodayChipBrush}" CornerRadius="8"
+                                                MinWidth="16" Height="16" Padding="4,0" BorderThickness="1"
+                                                BorderBrush="{DynamicResource SurfaceBaseBrush}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                              TextElement.FontSize="10" TextElement.FontWeight="SemiBold"
+                                                              TextElement.Foreground="{DynamicResource TodayChipTextBrush}" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                                <Setter TargetName="Pill" Property="BorderBrush" Value="{DynamicResource TextPrimaryBrush}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+                            <TextBlock x:Name="SyncStatusText" Width="1" Height="1" Opacity="0" IsHitTestVisible="False"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top" AutomationProperties.LiveSetting="Polite" />
+                        </Grid>
+                        <Popup x:Name="PendingPopup" PlacementTarget="{Binding ElementName=SyncButton}" Placement="Bottom"
                                StaysOpen="False" AllowsTransparency="True">
                             <Border Background="{DynamicResource SurfaceBaseBrush}" BorderBrush="{DynamicResource DividerBrush}"
-                                    BorderThickness="1" CornerRadius="8" Padding="4" Margin="0,4,0,0">
-                                <ListBox x:Name="SearchResults" MaxHeight="480" Width="440" BorderThickness="0" Background="Transparent"
-                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                                         ItemContainerStyle="{StaticResource PopupListItem}"
-                                         PreviewMouseLeftButtonUp="OnSearchResultClicked" PreviewKeyDown="OnSearchResultsKeyDown" />
+                                    BorderThickness="1" CornerRadius="8" Padding="8" Margin="0,4,0,0">
+                                <ScrollViewer MaxHeight="400" Width="440" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="PendingList" AutomationProperties.Name="Pending changes" />
+                                </ScrollViewer>
                             </Border>
                         </Popup>
-                        <ui:Button x:Name="SyncButton" Click="OnSyncNow" VerticalAlignment="Center" Margin="0,0,4,0"
-                                   ToolTip="Sync now (F5)" AutomationProperties.Name="Sync now">
-                            <TextBlock FontFamily="Segoe Fluent Icons" Text="&#xE895;" FontSize="16" />
-                        </ui:Button>
                         <!-- Settings page (settings-page R1 interim), also Ctrl+,. -->
                         <ui:Button x:Name="SettingsButton" Click="OnOpenSettings" VerticalAlignment="Center"
                                    ToolTip="Settings (Ctrl+,)" AutomationProperties.Name="Settings">
@@ -188,8 +226,30 @@
                          Lasting conditions above, passing ones (undo) below. Only the cards take clicks. -->
                     <StackPanel x:Name="BannerStack" HorizontalAlignment="Center" VerticalAlignment="Bottom"
                                 Margin="24" MinWidth="320" MaxWidth="520">
-                        <!-- Conflicts (conflict-resolution R5, interim: banner only). -->
-                        <ui:InfoBar x:Name="ConflictBar" Severity="Warning" IsClosable="True" Margin="0,0,0,8"
+                        <!-- Offline, Sign-in needed and Sync error (ui-states R2): one bar per condition, cleared when it
+                             ends; the error bars cannot be closed. -->
+                        <ui:InfoBar x:Name="OfflineBar" Severity="Warning" IsClosable="False" Margin="0,0,0,8" AutomationProperties.LiveSetting="Polite"
+                                    Background="{DynamicResource SurfaceBaseBrush}">
+                            <ui:InfoBar.Effect>
+                                <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.25" />
+                            </ui:InfoBar.Effect>
+                        </ui:InfoBar>
+                        <ui:InfoBar x:Name="SignInBar" Severity="Error" IsClosable="False" Margin="0,0,0,8" AutomationProperties.LiveSetting="Assertive"
+                                    Background="{DynamicResource SurfaceBaseBrush}">
+                            <ui:InfoBar.Effect>
+                                <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.25" />
+                            </ui:InfoBar.Effect>
+                            <ui:Button x:Name="SignInButton" Content="Sign in" Click="OnSignIn" />
+                        </ui:InfoBar>
+                        <ui:InfoBar x:Name="SyncErrorBar" Severity="Error" IsClosable="False" Margin="0,0,0,8" AutomationProperties.LiveSetting="Assertive"
+                                    Background="{DynamicResource SurfaceBaseBrush}">
+                            <ui:InfoBar.Effect>
+                                <DropShadowEffect BlurRadius="16" ShadowDepth="2" Opacity="0.25" />
+                            </ui:InfoBar.Effect>
+                            <ui:Button Content="Retry" Click="OnSyncNow" />
+                        </ui:InfoBar>
+                        <!-- Conflicts (conflict-resolution R5, interim: banner only; Error severity, ui-states R2). -->
+                        <ui:InfoBar x:Name="ConflictBar" Severity="Error" IsClosable="True" Margin="0,0,0,8"
                                     Background="{DynamicResource SurfaceBaseBrush}" Cursor="Hand"
                                     MouseLeftButtonUp="OnConflictBarClicked">
                             <ui:InfoBar.Effect>

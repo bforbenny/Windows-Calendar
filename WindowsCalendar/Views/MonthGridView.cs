@@ -301,6 +301,7 @@ internal sealed class MonthGridView : UserControl, IScrollingView, IDragHost
         private readonly Border _chip;
         private readonly Grid _top = new() { VerticalAlignment = VerticalAlignment.Top };
         private TextBlock? _holiday;
+        private FrameworkElement? _mark;
         private DateOnly _date;
 
         public DayCell(MonthGridView view, int column)
@@ -314,6 +315,7 @@ internal sealed class MonthGridView : UserControl, IScrollingView, IDragHost
                 VerticalAlignment = VerticalAlignment.Top,
                 Child = _number,
             };
+            _top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             _top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             _top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             _top.Children.Add(_chip);
@@ -343,12 +345,25 @@ internal sealed class MonthGridView : UserControl, IScrollingView, IDragHost
                 _top.Children.Remove(_holiday);
                 _holiday = null;
             }
+            // The clash and short-gap icon beside the date (schedule-gap-warning R11).
+            if (_mark is not null)
+            {
+                _top.Children.Remove(_mark);
+            }
+            _mark = ProblemMarks.DayIcon(date);
+            if (_mark is not null)
+            {
+                _mark.Margin = new Thickness(4, 6, 0, 0);
+                _mark.VerticalAlignment = VerticalAlignment.Top;
+                Grid.SetColumn(_mark, 1);
+                _top.Children.Add(_mark);
+            }
             if (holiday is not null)
             {
                 // The holiday name sits beside the date (calendar-shading R4), trimmed to the cell.
                 _holiday = ViewParts.Caption(holiday);
                 _holiday.Margin = new Thickness(0, 6, 0, 0);
-                Grid.SetColumn(_holiday, 1);
+                Grid.SetColumn(_holiday, 2);
                 _top.Children.Add(_holiday);
             }
             AutomationProperties.SetName(Root, holiday is null ? date.ToString("D") : $"{holiday}, {date:D}");
@@ -402,6 +417,7 @@ internal sealed class MonthGridView : UserControl, IScrollingView, IDragHost
             var card = EventCard.Create(e, Theme.Calendar(e.Collection.Colour), ChipHeight, chip: true,
                 prefix: e.InAllDayLane ? null : e.Start.ToString("t"));
             card.VerticalAlignment = VerticalAlignment.Top;
+            ProblemMarks.Decorate(card, e.Key);
             EventDrag.Attach(card, e, this);
             Grid.SetRow(card, lanes[i]);
             Grid.SetColumn(card, spans[i].Item1);

@@ -2,7 +2,7 @@
 description: Typography, spacing, corner radius, hit targets, motion and locale formats for the whole UI
 when-to-use: Before styling any screen, control, text, animation, or date/time display
 tags: [ui, typography, spacing, motion, locale]
-status: pending
+status: in-progress
 ---
 
 # UI style
@@ -21,8 +21,8 @@ The app follows Windows 11 Fluent conventions so it looks native and stays sharp
   | Caption | 12 / 16 | short-event labels, secondary metadata, week numbers |
   | Body | 14 / 20 | default text |
   | Body Strong | 14 / 20 semibold | event titles, day headers |
-  | Subtitle | 20 / 28 | section headings, dialog titles |
-  | Title | 28 / 36 | current period title (e.g. "November 2026") |
+  | Subtitle | 20 / 28 | section headings, dialog titles, the current period title (e.g. "November 2026") |
+  | Title | 28 / 36 | not used in the main window; the toolbar has no room for it at 1000–1500 epx (decided 2026-11-12) |
 
   No text smaller than 12 epx.
 - R3. Spacing on a 4 epx grid; standard steps 4, 8, 12, 16, 24 epx.
@@ -30,6 +30,16 @@ The app follows Windows 11 Fluent conventions so it looks native and stays sharp
 - R5. Interactive targets are at least 32×32 epx (mouse and trackpad use).
 - R6. Motion: short built-in or WPF-UI transitions for view switches, flyouts, dialogs and the undo banner. Drag-move and resize follow the pointer directly with no easing. When Windows "Animation effects" is off (`UISettings.AnimationsEnabled` false), all non-essential animation is disabled.
 - R7. Time and date formats come from the Windows region settings (12/24-hour clock, short and long date patterns, first day of week default). There is no separate format setting in the app.
+
+## Build details
+
+- R5: dense controls (sidebar checkboxes and chevrons, Month's "+n more", card checkboxes, the Join pill) keep their look; their clickable area is enlarged to 32×32 epx with padding or a transparent margin.
+- R7: fixed date patterns (e.g. "MMM d", "ddd d MMM") are built from the culture's own month-day pattern, so the day and month order follows the region. A Windows region change is applied live: the cached culture data is cleared and the views redraw.
+
+## Decisions
+
+- 2026-11-12: the period title uses Subtitle, not Title (user's choice).
+- 2026-11-12: small controls get a larger hit area rather than a larger look (user's choice).
 
 ## Out of scope
 

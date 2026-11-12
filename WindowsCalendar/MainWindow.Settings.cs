@@ -32,7 +32,14 @@ public sealed partial class MainWindow
         }
         _settings.Open(section);
         SettingsHost.Visibility = Visibility.Visible;
+        // Search applies to the calendar, so the title-bar box hides while Settings is open (search R2).
+        SearchPopup.IsOpen = false;
+        TitleSearch.Visibility = Visibility.Collapsed;
     }
 
-    private void CloseSettings() => SettingsHost.Visibility = Visibility.Collapsed;
+    private void CloseSettings()
+    {
+        SettingsHost.Visibility = Visibility.Collapsed;
+        TitleSearch.Visibility = Visibility.Visible;
+    }
 }

@@ -349,6 +349,23 @@ public sealed class RadicaleSyncTests : IDisposable
     }
 
     [Fact]
+    public async Task DiscardedEdit_IsReplacedByServerVersionAtNextSync()
+    {
+        _server.Put("e1.ics", Event("e1", "20261110T090000Z"));
+        await Sync();
+        var local = _store.GetItem(Assert.Single(AllOccurrences()).ItemId)!;
+        _store.UpdateItem(local with { RawPayload = Event("e1", "20261110T090000Z", "Mine"), Summary = "Mine" });
+
+        Assert.True(_store.DiscardOutboxEntry(_store.GetOutbox()[0].Id));
+        var summary = await Sync();
+
+        // Local-store-offline R7: the server's version is fetched again even though the server did not change.
+        Assert.Equal((1, 0), (summary.FullResyncs, summary.Sent));
+        Assert.Equal("Meeting", _store.GetItem(local.Id)!.Summary);
+        Assert.Equal(1, _store.GetConflictCount());
+    }
+
+    [Fact]
     public async Task LocalCreateUpdateAndDelete_ReachTheServer()
     {
         _server.Put("e1.ics", Event("e1", "20261110T090000Z"));

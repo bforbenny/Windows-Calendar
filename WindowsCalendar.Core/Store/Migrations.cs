@@ -239,6 +239,18 @@ internal static class Migrations
         ALTER TABLE calendar_sets ADD COLUMN ruler_on INTEGER NULL;
         ALTER TABLE calendar_sets ADD COLUMN ruler_zone TEXT NULL;
         """,
+
+        // v18: each set's "Warn about clashes and short gaps" switch (calendar-sets R12); null is the default (off).
+        """
+        ALTER TABLE calendar_sets ADD COLUMN clash_check INTEGER NULL;
+        """,
+
+        // v19: declined invitations (attendees-invitations interim, schedule-gap-warning R2); existing events are read
+        // again once on open (LocalStore.RemapDeclined).
+        """
+        ALTER TABLE items ADD COLUMN declined INTEGER NOT NULL DEFAULT 0;
+        INSERT INTO meta (key, value) VALUES ('remap-declined', '1');
+        """,
     ];
 
     public static int LatestVersion => Steps.Length;

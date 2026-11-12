@@ -226,6 +226,64 @@ public sealed partial class LocalStore
         }
     }
 
+    private const string ClashAllKey = "clash_check_all";
+
+    /// <summary>
+    /// The active set's members (schedule-gap-warning R2): the collections the clash and gap check compares, whether
+    /// ticked or not; null for "All", which compares every collection.
+    /// </summary>
+    public IReadOnlySet<string>? GetActiveSetMembers()
+    {
+        lock (_gate)
+        {
+            if (ActiveSet(null) is not { } setId)
+            {
+                return null;
+            }
+            using var cmd = Command(_connection, null, "SELECT collection_id FROM calendar_set_members WHERE set_id = $set;", ("$set", setId));
+            using var r = cmd.ExecuteReader();
+            var ids = new HashSet<string>();
+            while (r.Read())
+            {
+                ids.Add(r.GetString(0));
+            }
+            return ids;
+        }
+    }
+
+    /// <summary>
+    /// A set's "Warn about clashes and short gaps" switch (R12, schedule-gap-warning R10); <paramref name="setId"/> null
+    /// is "All", which starts on; a user-defined set starts off.
+    /// </summary>
+    public bool GetClashCheck(string? setId)
+    {
+        lock (_gate)
+        {
+            if (setId is null)
+            {
+                return GetMeta(null, ClashAllKey) != "0";
+            }
+            using var cmd = Command(_connection, null, "SELECT clash_check FROM calendar_sets WHERE id = $id;", ("$id", setId));
+            return cmd.ExecuteScalar() is long on && on == 1;
+        }
+    }
+
+    /// <summary>Saves a set's switch at once; it never marks the set "(modified)" (R12).</summary>
+    public void SetClashCheck(string? setId, bool on)
+    {
+        lock (_gate)
+        {
+            if (setId is null)
+            {
+                SetMeta(null, ClashAllKey, on ? "1" : "0");
+            }
+            else
+            {
+                Execute(_connection, null, "UPDATE calendar_sets SET clash_check = $on WHERE id = $id;", ("$id", setId), ("$on", on));
+            }
+        }
+    }
+
     /// <summary>The active set's id, if it still exists.</summary>
     private string? ActiveSet(SqliteTransaction? tx)
     {

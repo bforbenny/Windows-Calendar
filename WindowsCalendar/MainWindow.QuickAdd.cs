@@ -5,7 +5,6 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Input;
 using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Serilog;
@@ -20,8 +19,7 @@ using WindowsCalendar.Views;
 namespace WindowsCalendar;
 
 /// <summary>
-/// Quick add (quick-add R1, R4, R5): the toolbar box (Ctrl+N) and the quick-create popup that an empty slot in Week, Month
-/// or Agenda opens. Enter creates the event or task through the same Core calls as the editors; Ctrl+Enter or "More
+/// Quick add (quick-add R1, R4, R5): the quick-create popup that an empty slot in Week, Month or Agenda opens. Enter creates the event or task through the same Core calls as the editors; Ctrl+Enter or "More
 /// details" opens the full editor pre-filled. A creation can be undone like a duplicate (undo R4).
 /// </summary>
 public sealed partial class MainWindow
@@ -40,30 +38,11 @@ public sealed partial class MainWindow
 
     private void SetupQuickAdd()
     {
-        QuickBox.Options = () => QuickOptions(null, false);
-        QuickBox.CollectionOf = id => _collections.GetValueOrDefault(id);
-        QuickBox.Submitted += result =>
-        {
-            if (QuickCreate(result) is null)
-            {
-                QuickBox.Clear();
-            }
-        };
-        QuickBox.MoreDetails += result =>
-        {
-            if (QuickMoreDetails(result))
-            {
-                QuickBox.Clear();
-            }
-        };
-        // Esc with no suggestions open leaves the box.
-        QuickBox.CloseRequested += () => Keyboard.ClearFocus();
-
         _quickCreateBox.Options = () => QuickOptions(_slot?.Start, _slot?.AllDay ?? false);
         _quickCreateBox.CollectionOf = id => _collections.GetValueOrDefault(id);
         _quickCreateBox.Submitted += result =>
         {
-            if (QuickCreate(result) is null)
+            if (QuickCreate(result, check: true) is null)
             {
                 _quickCreate.IsOpen = false;
             }
@@ -96,17 +75,6 @@ public sealed partial class MainWindow
             _quickCreateBox.Clear();
         };
         Body.Children.Add(_quickCreate);
-    }
-
-    /// <summary>Ctrl+N: focuses the toolbar box with its text selected.</summary>
-    private void FocusQuickAdd()
-    {
-        if (SettingsHost.Visibility == Visibility.Visible)
-        {
-            return;
-        }
-        _quickCreate.IsOpen = false;
-        QuickBox.FocusBox();
     }
 
     /// <summary>An empty slot was clicked: the quick-create popup opens at the pointer, set to that slot (quick-add R1).</summary>
@@ -151,7 +119,7 @@ public sealed partial class MainWindow
     /// like EventEditor.Save, tasks like TaskEditor.Create; then the Undo banner (undo deletes the new item). Returns
     /// null when created, else why not, so the tray flyout can show it (tray-flyout prerequisite).
     /// </summary>
-    internal string? QuickCreate(QuickAddResult result)
+    internal string? QuickCreate(QuickAddResult result, bool check = false)
     {
         if (Store is not { } store)
         {
@@ -202,7 +170,11 @@ public sealed partial class MainWindow
             store.CreateItem(created);
             Log.Information("{Kind} {ItemId} created by quick add", result.Kind, created.Id);
             _lastChange = (created.Id, null, created.RawPayload, null);
-            ShowUndo(result.Kind == QuickAddKind.Task ? "Task added" : "Event added", canUndo: true);
+            // The clash and short-gap check runs for the main window's quick add only (schedule-gap-warning R1).
+            ShowUndo(result.Kind == QuickAddKind.Task ? "Task added" : "Event added", canUndo: true,
+                note: check && result.Kind != QuickAddKind.Task
+                    ? ScheduleWarning.For(store, created.Id, result.Start, result.End, zone, zone, result.AllDay, result.AllDay ? ShowAs.Free : ShowAs.Busy)
+                    : null);
         }
         catch (EditRefusedException ex)
         {

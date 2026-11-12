@@ -93,6 +93,9 @@ internal sealed class TasksView : UserControl
         Build();
     }
 
+    /// <summary>Shown in place of "No tasks", e.g. during an account's first sync (ui-states R1a).</summary>
+    public string? EmptyText { get; set; }
+
     private void Build()
     {
         _list.Children.Clear();
@@ -107,7 +110,7 @@ internal sealed class TasksView : UserControl
         {
             _list.Children.Add(new TextBlock
             {
-                Text = Filter == TaskFilter.Completed ? "No completed tasks" : "No tasks",
+                Text = Filter == TaskFilter.Completed ? "No completed tasks" : EmptyText ?? "No tasks",
                 Foreground = Theme.Brush("TextSecondaryBrush"),
                 Margin = new Thickness(0, 24, 0, 0),
                 HorizontalAlignment = HorizontalAlignment.Center,

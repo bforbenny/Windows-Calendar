@@ -125,9 +125,13 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
             }
             else if (key == Key.N && Keyboard.Modifiers == ModifierKeys.Control)
             {
-                // Ctrl+N focuses the toolbar quick-add box (quick-add R1).
+                // Ctrl+N presses New: New task in the Tasks view, else New event (keyboard-navigation R1).
                 e.Handled = true;
-                FocusQuickAdd();
+                if (SettingsHost.Visibility != Visibility.Visible)
+                {
+                    _quickCreate.IsOpen = false;
+                    NewDefault();
+                }
             }
             else if (HandleShortcut(key))
             {
@@ -183,6 +187,8 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         SetupTasks();
         SetupQuickAdd();
         SetupKeyHints();
+        SetupStatus();
+        SetupTitleSearch();
 
         // Redraw in the new theme when Windows switches light/dark or high contrast (app-platform R2a).
         Microsoft.Win32.SystemEvents.UserPreferenceChanged += (_, e) =>
@@ -370,7 +376,8 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
                 EditScope.Series => "Series moved",
                 EditScope.Following => "Following events moved",
                 _ => "Event moved",
-            }, canUndo: true);
+            }, canUndo: true, note: ScheduleWarning.For(Store, following?.Id ?? item.Id, target.Start, target.End,
+                TimeZoneInfo.Local, TimeZoneInfo.Local, target.AllDay, e.ShowAs));
             Log.Information("Event {ItemId} moved by drag ({Scope})", item.Id, scope?.ToString() ?? "single");
         }
         catch (EditRefusedException ex)
@@ -434,11 +441,15 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnUndo(object sender, RoutedEventArgs e) => Undo();
 
-    private void ShowUndo(string title, bool canUndo, string message = "")
+    /// <summary>
+    /// The undo banner; a clash or short-gap <paramref name="note"/> is its message, warning style for an overlap
+    /// (schedule-gap-warning R8).
+    /// </summary>
+    private void ShowUndo(string title, bool canUndo, string message = "", ScheduleNote? note = null)
     {
         UndoBar.Title = title;
-        UndoBar.Message = message;
-        UndoBar.Severity = canUndo ? Wpf.Ui.Controls.InfoBarSeverity.Informational : Wpf.Ui.Controls.InfoBarSeverity.Warning;
+        UndoBar.Message = note?.Text ?? message;
+        UndoBar.Severity = canUndo && note?.Overlap != true ? Wpf.Ui.Controls.InfoBarSeverity.Informational : Wpf.Ui.Controls.InfoBarSeverity.Warning;
         UndoButton.Visibility = canUndo ? Visibility.Visible : Visibility.Collapsed;
         BannerFade.SetOpen(UndoBar, true);
         _undoTimer.Stop();
@@ -471,8 +482,14 @@ public sealed partial class MainWindow : Wpf.Ui.Controls.FluentWindow
         var watch = Stopwatch.StartNew();
         var start = first.ToDateTime(TimeOnly.MinValue);
         var from = new DateTimeOffset(start, TimeZoneInfo.Local.GetUtcOffset(start));
-        var events = (Store?.GetOccurrenceViews(from, from.AddDays(days + 1)) ?? [])
+        var occurrences = (Store?.GetOccurrenceViews(from, from.AddDays(days + 1)) ?? [])
             .Where(o => (o.Kind == ItemKind.Event || !o.Completed) && _collections.ContainsKey(o.CollectionId))
+            .ToList();
+        // Clash and short-gap marks among the shown events, when the active set's switch is on (schedule-gap-warning R11).
+        ProblemMarks.All = Store is { } store && store.GetClashCheck(store.ActiveSetId)
+            ? ScheduleCheck.Problems(occurrences, store.GetMinimumGap(), TimeZoneInfo.Local, CultureInfo.CurrentCulture)
+            : [];
+        var events = occurrences
             .Select(o => o.Kind == ItemKind.Task ? TaskItem(o, _collections[o.CollectionId]) : DisplayEvent.From(o, _collections[o.CollectionId]))
             .ToList();
 

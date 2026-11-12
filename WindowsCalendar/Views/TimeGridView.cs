@@ -396,8 +396,15 @@ internal sealed class TimeGridView : UserControl, IScrollingView, IDragHost
             EventDrag.Attach(card, events[i], this);
             DayColumnPanel.Place(card, s, en, columns[i].Column, columns[i].Columns);
             panel.Children.Add(card);
+            // A card in a clash or short gap gets an outline over it (schedule-gap-warning R11).
+            if (ProblemMarks.Outline(events[i].Key) is { } outline)
+            {
+                DayColumnPanel.Place(outline, s, en, columns[i].Column, columns[i].Columns);
+                panel.Children.Add(outline);
+            }
         }
         column.Children.Add(panel);
+        ProblemMarks.AddIcons(column, date);
 
         if (isToday)
         {

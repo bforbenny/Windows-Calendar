@@ -40,7 +40,7 @@ public sealed partial class MainWindow
         ("Alt+Left / Alt+Right", "Move the selected event one day"),
         ("Alt+Shift+Up / Down", "Shorten / lengthen the selected event by 15 minutes"),
         ("Esc", "Close the panel or Settings, or clear the selection"),
-        ("Ctrl+N", "Quick add"),
+        ("Ctrl+N", "New event, or New task in Tasks"),
         ("Ctrl+Z", "Undo the last move, duplicate or quick add"),
         ("F5", "Sync now"),
         ("Ctrl+,", "Settings"),

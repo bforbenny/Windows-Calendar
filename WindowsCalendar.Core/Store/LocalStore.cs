@@ -53,6 +53,7 @@ public sealed partial class LocalStore : IDisposable
             Remap(connection, "remap-show-as", "status", "raw_payload NOT LIKE '{%'",
                 payload => ShowAsValues.ToGraph(CalDav.CalDavEvents.ReadShowAs(CalDav.CalDavEvents.Master(Ical.Net.Calendar.Load(payload)!))));
             Remap(connection, "remap-join-url", "join_url", "1 = 1", payload => JoinLink.FromPayload(payload)?.Url);
+            RemapDeclined(connection);
             BuildSearchIndex(connection);
             Execute(connection, null, "PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
             // Entries left in flight by a crash are sent again (R4).
@@ -105,6 +106,42 @@ public sealed partial class LocalStore : IDisposable
             Execute(connection, tx, $"UPDATE items SET {column} = $value WHERE id = $id;", ("$value", value), ("$id", id));
         }
         Execute(connection, tx, "DELETE FROM meta WHERE key = $key;", ("$key", key));
+        tx.Commit();
+    }
+
+    /// <summary>After v19: sets the declined flag of stored events once from their payload and account address.</summary>
+    private static void RemapDeclined(SqliteConnection connection)
+    {
+        using (var check = Command(connection, null, "SELECT 1 FROM meta WHERE key = 'remap-declined';"))
+        {
+            if (check.ExecuteScalar() is null)
+            {
+                return;
+            }
+        }
+        using var tx = connection.BeginTransaction();
+        var rows = new List<(string Id, string Payload, string? Email)>();
+        using (var cmd = Command(connection, tx,
+            """
+            SELECT i.id, i.raw_payload, a.email FROM items i
+            JOIN collections c ON c.id = i.collection_id JOIN accounts a ON a.id = c.account_id
+            WHERE i.kind = 'Event' AND i.raw_payload LIKE '%declined%';
+            """))
+        using (var r = cmd.ExecuteReader())
+        {
+            while (r.Read())
+            {
+                rows.Add((r.GetString(0), r.GetString(1), NullableString(r, 2)));
+            }
+        }
+        foreach (var (id, payload, email) in rows)
+        {
+            if (Declined.FromPayload(payload, email))
+            {
+                Execute(connection, tx, "UPDATE items SET declined = 1 WHERE id = $id;", ("$id", id));
+            }
+        }
+        Execute(connection, tx, "DELETE FROM meta WHERE key = 'remap-declined';");
         tx.Commit();
     }
 
@@ -449,7 +486,7 @@ public sealed partial class LocalStore : IDisposable
         lock (_gate)
         {
             using var tx = _connection.BeginTransaction();
-            Execute(_connection, tx, InsertItemSql, ItemParameters(item));
+            Execute(_connection, tx, InsertItemSql, ItemParameters(tx, item));
             RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
             IndexItem(_connection, tx, item.Id);
             Enqueue(tx, item.Id, OutboxOperation.Create, item.RawPayload, null, groupId);
@@ -464,7 +501,7 @@ public sealed partial class LocalStore : IDisposable
         {
             using var tx = _connection.BeginTransaction();
             var baseEtag = GetLiveEtag(tx, item.Id);
-            Execute(_connection, tx, UpdateItemSql, ItemParameters(item));
+            Execute(_connection, tx, UpdateItemSql, ItemParameters(tx, item));
             RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
             IndexItem(_connection, tx, item.Id);
             Enqueue(tx, item.Id, OutboxOperation.Update, item.RawPayload, baseEtag, groupId);
@@ -515,7 +552,7 @@ public sealed partial class LocalStore : IDisposable
             if (entries is [{ Op: OutboxOperation.Create, InFlight: false } create])
             {
                 id = itemId;
-                Execute(_connection, tx, UpdateItemSql, ItemParameters(moved with { Id = id }));
+                Execute(_connection, tx, UpdateItemSql, ItemParameters(tx, moved with { Id = id }));
                 Execute(_connection, tx, "UPDATE outbox SET payload = $p WHERE id = $id;", ("$p", moved.RawPayload), ("$id", create.Id));
             }
             else
@@ -523,7 +560,7 @@ public sealed partial class LocalStore : IDisposable
                 id = moved.Id;
                 var group = Guid.NewGuid().ToString("N");
                 var baseEtag = GetLiveEtag(tx, itemId);
-                Execute(_connection, tx, InsertItemSql, ItemParameters(moved));
+                Execute(_connection, tx, InsertItemSql, ItemParameters(tx, moved));
                 Enqueue(tx, id, OutboxOperation.Create, moved.RawPayload, null, group);
                 Execute(_connection, tx,
                     "UPDATE items SET deleted = 1 WHERE id = $id; DELETE FROM occurrences WHERE item_id = $id;", ("$id", itemId));
@@ -549,11 +586,11 @@ public sealed partial class LocalStore : IDisposable
             var group = Guid.NewGuid().ToString("N");
             var window = OccurrenceWindow();
             var baseEtag = GetLiveEtag(tx, original.Id);
-            Execute(_connection, tx, UpdateItemSql, ItemParameters(original));
+            Execute(_connection, tx, UpdateItemSql, ItemParameters(tx, original));
             RebuildItemOccurrences(tx, original.Id, window);
             IndexItem(_connection, tx, original.Id);
             Enqueue(tx, original.Id, OutboxOperation.Update, original.RawPayload, baseEtag, group);
-            Execute(_connection, tx, InsertItemSql, ItemParameters(following));
+            Execute(_connection, tx, InsertItemSql, ItemParameters(tx, following));
             RebuildItemOccurrences(tx, following.Id, window);
             IndexItem(_connection, tx, following.Id);
             Enqueue(tx, following.Id, OutboxOperation.Create, following.RawPayload, null, group);
@@ -570,7 +607,7 @@ public sealed partial class LocalStore : IDisposable
             using var tx = _connection.BeginTransaction();
             var group = Guid.NewGuid().ToString("N");
             var baseEtag = GetLiveEtag(tx, restored.Id);
-            Execute(_connection, tx, UpdateItemSql, ItemParameters(restored));
+            Execute(_connection, tx, UpdateItemSql, ItemParameters(tx, restored));
             RebuildItemOccurrences(tx, restored.Id, OccurrenceWindow());
             IndexItem(_connection, tx, restored.Id);
             Enqueue(tx, restored.Id, OutboxOperation.Update, restored.RawPayload, baseEtag, group);
@@ -692,7 +729,8 @@ public sealed partial class LocalStore : IDisposable
                        CASE WHEN i.series_id IS NOT NULL AND i.summary IS NULL THEN COALESCE(m.unaccepted, 0) ELSE i.unaccepted END,
                        i.completed_utc IS NOT NULL OR lower(COALESCE(i.status, '')) = 'completed',
                        CASE WHEN i.kind = 'Event' THEN COALESCE(i.status, m.status) END,
-                       COALESCE(i.join_url, m.join_url), COALESCE(i.time_zone, m.time_zone)
+                       COALESCE(i.join_url, m.join_url), COALESCE(i.time_zone, m.time_zone),
+                       CASE WHEN i.series_id IS NOT NULL AND i.summary IS NULL THEN COALESCE(m.declined, 0) ELSE i.declined END
                 FROM occurrences o JOIN items i ON i.id = o.item_id
                 LEFT JOIN items m ON i.series_id IS NOT NULL AND m.collection_id = i.collection_id AND m.remote_id = i.series_id AND m.deleted = 0
                 WHERE i.deleted = 0 AND o.start_utc < $to AND o.end_utc >= $from
@@ -707,7 +745,7 @@ public sealed partial class LocalStore : IDisposable
                 list.Add(new OccurrenceView(r.GetString(0), r.GetString(1), Enum.Parse<ItemKind>(r.GetString(2)),
                     NullableString(r, 3), NullableString(r, 4), Time(r, 5), Time(r, 6), r.GetBoolean(7), r.GetBoolean(8),
                     r.IsDBNull(9) ? null : Time(r, 9), r.GetBoolean(10), r.GetBoolean(11), r.GetBoolean(12),
-                    ShowAsValues.FromGraph(NullableString(r, 13)), NullableString(r, 14), NullableString(r, 15)));
+                    ShowAsValues.FromGraph(NullableString(r, 13)), NullableString(r, 14), NullableString(r, 15), r.GetBoolean(16)));
             }
             return list;
         }
@@ -883,6 +921,34 @@ public sealed partial class LocalStore : IDisposable
         lock (_gate)
         {
             SetMeta(null, WorkingHoursKey, hours.Serialize());
+        }
+    }
+
+    // ---- Minimum gap between events (schedule-gap-warning R5): local only ----
+
+    private const string MinimumGapKey = "setting:minimum-gap";
+
+    /// <summary>The choices for "Minimum gap between events", in minutes; 0 is Off.</summary>
+    public static readonly IReadOnlyList<int> MinimumGapChoices = [0, 5, 10, 15, 30];
+
+    /// <summary>The minimum gap in minutes (0: Off); 10 unless set.</summary>
+    public int GetMinimumGap()
+    {
+        lock (_gate)
+        {
+            return int.TryParse(GetMeta(null, MinimumGapKey), out var minutes) && MinimumGapChoices.Contains(minutes) ? minutes : 10;
+        }
+    }
+
+    public void SetMinimumGap(int minutes)
+    {
+        if (!MinimumGapChoices.Contains(minutes))
+        {
+            throw new ArgumentOutOfRangeException(nameof(minutes), "Not one of the minimum gap choices.");
+        }
+        lock (_gate)
+        {
+            SetMeta(null, MinimumGapKey, minutes.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
     }
 
@@ -1407,12 +1473,12 @@ public sealed partial class LocalStore : IDisposable
             }
             if (existingId is null)
             {
-                Execute(_connection, tx, InsertItemSql, ItemParameters(item));
+                Execute(_connection, tx, InsertItemSql, ItemParameters(tx, item));
             }
             else
             {
                 item = item with { Id = existingId };
-                Execute(_connection, tx, UpdateItemSql, ItemParameters(item));
+                Execute(_connection, tx, UpdateItemSql, ItemParameters(tx, item));
             }
             RebuildItemOccurrences(tx, item.Id, OccurrenceWindow());
             IndexItem(_connection, tx, item.Id);
@@ -1459,9 +1525,10 @@ public sealed partial class LocalStore : IDisposable
     private const string InsertItemSql =
         """
         INSERT INTO items (id, collection_id, kind, remote_id, raw_payload, summary, start_utc, end_utc, all_day,
-            time_zone, location, status, due_utc, completed_utc, is_recurring, etag, last_modified, series_id, read_only, unaccepted, join_url)
+            time_zone, location, status, due_utc, completed_utc, is_recurring, etag, last_modified, series_id, read_only, unaccepted, join_url,
+            declined)
         VALUES ($id, $collection, $kind, $remote, $raw, $summary, $start, $end, $allDay,
-            $tz, $location, $status, $due, $completed, $recurring, $etag, $modified, $series, $readOnly, $unaccepted, $join);
+            $tz, $location, $status, $due, $completed, $recurring, $etag, $modified, $series, $readOnly, $unaccepted, $join, $declined);
         """;
 
     private const string UpdateItemSql =
@@ -1470,7 +1537,7 @@ public sealed partial class LocalStore : IDisposable
             summary = $summary, start_utc = $start, end_utc = $end, all_day = $allDay, time_zone = $tz,
             location = $location, status = $status, due_utc = $due, completed_utc = $completed,
             is_recurring = $recurring, etag = $etag, last_modified = $modified, series_id = $series, read_only = $readOnly, unaccepted = $unaccepted,
-            join_url = $join
+            join_url = $join, declined = $declined
         WHERE id = $id;
         """;
 
@@ -1520,7 +1587,7 @@ public sealed partial class LocalStore : IDisposable
             return;
         }
         Execute(_connection, tx, UpdateItemSql + " UPDATE items SET deleted = 0 WHERE id = $id;",
-            ItemParameters(server with { Id = itemId, CollectionId = collectionId }));
+            ItemParameters(tx, server with { Id = itemId, CollectionId = collectionId }));
         RebuildItemOccurrences(tx, itemId, OccurrenceWindow());
         IndexItem(_connection, tx, itemId);
     }
@@ -1826,7 +1893,8 @@ public sealed partial class LocalStore : IDisposable
         NullableString(r, 10), NullableString(r, 11), NullableTime(r, 12), NullableTime(r, 13), r.GetBoolean(14),
         NullableString(r, 15), NullableTime(r, 16), NullableString(r, 17), r.GetBoolean(18), r.GetBoolean(19), NullableString(r, 20));
 
-    private static (string, object?)[] ItemParameters(Item i) =>
+    /// <summary>The item's columns; the declined flag is worked out from the payload and the account's address.</summary>
+    private (string, object?)[] ItemParameters(SqliteTransaction? tx, Item i) =>
     [
         ("$id", i.Id), ("$collection", i.CollectionId), ("$kind", i.Kind.ToString()), ("$remote", i.RemoteId),
         ("$raw", i.RawPayload), ("$summary", i.Summary), ("$start", i.StartUtc?.ToUnixTimeMilliseconds()),
@@ -1835,7 +1903,15 @@ public sealed partial class LocalStore : IDisposable
         ("$completed", i.CompletedUtc?.ToUnixTimeMilliseconds()), ("$recurring", i.IsRecurring), ("$etag", i.Etag),
         ("$modified", i.LastModifiedUtc?.ToUnixTimeMilliseconds()), ("$series", i.SeriesId), ("$readOnly", i.ReadOnly), ("$unaccepted", i.Unaccepted),
         ("$join", i.JoinUrl),
+        ("$declined", i.Kind == ItemKind.Event && Declined.FromPayload(i.RawPayload, AccountEmail(tx, i.CollectionId))),
     ];
+
+    private string? AccountEmail(SqliteTransaction? tx, string collectionId)
+    {
+        using var cmd = Command(_connection, tx,
+            "SELECT a.email FROM collections c JOIN accounts a ON a.id = c.account_id WHERE c.id = $c;", ("$c", collectionId));
+        return cmd.ExecuteScalar() as string;
+    }
 
     private static SqliteCommand Command(SqliteConnection connection, SqliteTransaction? tx, string sql, params (string Name, object? Value)[] parameters)
     {
