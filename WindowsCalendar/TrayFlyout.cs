@@ -386,13 +386,27 @@ public sealed partial class TrayFlyout : Window
             DockPanel.SetDock(join, Dock.Right);
             row.Children.Add(join);
         }
-        var marker = ShapeMarker.Create(collection.Shape, Theme.Calendar(collection.Colour).Swatch);
+        var swatch = Theme.Calendar(collection.Colour).Swatch;
+        if (e.ShowAs == ShowAs.OutOfOffice)
+        {
+            // Out of office: a hatched strip beside the marker (event-show-as R5a).
+            var strip = new Border { Width = EventCard.OofBandHeight, Background = EventCard.Hatch(swatch), Margin = new Thickness(0, 2, 4, 2) };
+            DockPanel.SetDock(strip, Dock.Left);
+            row.Children.Add(strip);
+        }
+        var marker = ShapeMarker.Create(collection.Shape, swatch);
         marker.Margin = new Thickness(0, 4, 8, 0);
         marker.VerticalAlignment = VerticalAlignment.Top;
         DockPanel.SetDock(marker, Dock.Left);
         row.Children.Add(marker);
         var text = new StackPanel();
         var title = Line(e.Title, "BodyTextBlockStyle", "TextPrimaryBrush");
+        if (e.ShowAs == ShowAs.OutOfOffice)
+        {
+            title.Inlines.Clear();
+            title.Inlines.Add(new System.Windows.Documents.Run(" ") { FontFamily = new FontFamily("Segoe Fluent Icons") });
+            title.Inlines.Add(new System.Windows.Documents.Run(e.Title));
+        }
         if (e.Cancelled)
         {
             title.TextDecorations = TextDecorations.Strikethrough;

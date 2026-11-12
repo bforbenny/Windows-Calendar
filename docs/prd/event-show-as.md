@@ -33,10 +33,13 @@ Each event has a show-as value that controls how it blocks your availability for
   | Busy | calendar fill | solid | none | none |
   | Free | none (surface) | solid | 1 epx, swatch colour | none |
   | Tentative | none (surface) | hatched | 1 epx dashed, swatch colour | none |
-  | Out of office | calendar fill | solid | none | "away" glyph before the title |
+  | Out of office | calendar fill | solid | none | "away" glyph before the title, and a hatched band across the top (R5a) |
   | Working elsewhere | none (surface) | solid | 1 epx dotted, swatch colour | "building" glyph before the title |
 
   Icons come from Segoe Fluent Icons. Styles work in light, dark and high-contrast themes.
+- R5a. Out of office band (added 2026-11-12, as OOF was hard to spot in Month and the all-day row): a 3 epx hatched band across the top edge of the card, in the calendar colour used for the card's marker (at least 3:1 on the fill, [ui-colour-theme](ui-colour-theme.md) interim). The text sits below the band, never on it.
+  - Shown on Day/Week timed cards, the all-day row, Month chips and Agenda rows. Timed cards shorter than 24 epx have no room and show the glyph only.
+  - Tray flyout rows show a 3 epx hatched strip beside the calendar marker and the glyph before the title.
 - R6. Show-as is editable offline and synced via the outbox; for recurring events the scope prompt applies.
 - R7. Graph `unknown` is displayed as Busy and preserved unless the user edits it.
 
@@ -59,6 +62,11 @@ Built on branch `event-show-as` (2026-11-06). The branch is stacked on `duplicat
 - [x] New event: timed starts as Busy and all-day as Free. Toggling All day switches it until you pick a value yourself.
 - [x] A Radicale event set to Tentative in Outlook shows Tentative, offers Busy and Free, and keeps Tentative unless you change it.
 - [x] A repeating event: changing show-as asks for the scope.
+
+## Pending user check (R5a)
+
+- [x] An Out of office event shows the hatched band in Day, Week, Month, the all-day row and Agenda, in light and dark; the text is not clipped.
+- [x] The tray flyout shows the strip and the glyph for an Out of office event.
 
 ## Out of scope
 

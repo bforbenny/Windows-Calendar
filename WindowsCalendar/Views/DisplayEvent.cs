@@ -205,10 +205,13 @@ internal static class EventCard
             row.Children.Add(join);
         }
 
+        // Out of office: a hatched band across the top, in the marker colour (on the fill); none on timed cards under
+        // 24 epx, which have no room for it (event-show-as R5a).
+        var band = e.ShowAs == ShowAs.OutOfOffice && (chip || fit || height >= TimeThreshold) ? brushes.CardMarker : null;
         if (!twoLines)
         {
             row.VerticalAlignment = chip ? VerticalAlignment.Center : VerticalAlignment.Top;
-            return Finish(card, row, e, brushes.Swatch);
+            return Finish(card, row, e, brushes.Swatch, band);
         }
 
         var second = Caption(brushes, fit);
@@ -216,33 +219,57 @@ internal static class EventCard
         var stack = new StackPanel();
         stack.Children.Add(row);
         stack.Children.Add(second);
-        return Finish(card, stack, e, brushes.Swatch);
+        return Finish(card, stack, e, brushes.Swatch, band);
     }
 
     /// <summary>
     /// Sets the card's content; Tentative and Working elsewhere get their dashed or dotted 1 epx border on top, except
-    /// when selected (the selection outline replaces it).
+    /// when selected (the selection outline replaces it). A <paramref name="band"/> brush adds the Out of office band
+    /// (event-show-as R5a) above the content: the top padding grows by its height and the bottom gives back 1 epx, so
+    /// chips keep their text room.
     /// </summary>
-    private static Border Finish(Border card, UIElement? content, DisplayEvent e, Brush swatch)
+    private static Border Finish(Border card, UIElement? content, DisplayEvent e, Brush swatch, Brush? band = null)
     {
-        if (e.ShowAs is not (ShowAs.Tentative or ShowAs.WorkingElsewhere) || e.Key == SelectedKey)
+        var outline = e.ShowAs is (ShowAs.Tentative or ShowAs.WorkingElsewhere) && e.Key != SelectedKey;
+        if (!outline && band is null)
         {
             card.Child = content;
             return card;
         }
+        if (band is not null)
+        {
+            var old = card.Padding;
+            card.Padding = new Thickness(old.Left, old.Top + OofBandHeight, old.Right, Math.Max(0, old.Bottom - 1));
+        }
         var p = card.Padding;
         var layers = new Grid();
-        layers.Children.Add(new Rectangle
+        if (band is not null)
         {
-            Stroke = swatch,
-            StrokeThickness = 1,
-            StrokeDashArray = e.ShowAs == ShowAs.Tentative ? new DoubleCollection { 3, 2 } : new DoubleCollection { 1, 2 },
-            RadiusX = 4,
-            RadiusY = 4,
-            // Out to the card's edge; the left side lies under the bar.
-            Margin = new Thickness(-p.Left - card.BorderThickness.Left, -p.Top, -p.Right, -p.Bottom),
-            IsHitTestVisible = false,
-        });
+            layers.Children.Add(new Border
+            {
+                Height = OofBandHeight,
+                VerticalAlignment = VerticalAlignment.Top,
+                Background = Hatch(band),
+                CornerRadius = new CornerRadius(0, 3, 0, 0),
+                // Out to the card's top and right edges; the left side meets the bar.
+                Margin = new Thickness(-p.Left, -p.Top, -p.Right, 0),
+                IsHitTestVisible = false,
+            });
+        }
+        if (outline)
+        {
+            layers.Children.Add(new Rectangle
+            {
+                Stroke = swatch,
+                StrokeThickness = 1,
+                StrokeDashArray = e.ShowAs == ShowAs.Tentative ? new DoubleCollection { 3, 2 } : new DoubleCollection { 1, 2 },
+                RadiusX = 4,
+                RadiusY = 4,
+                // Out to the card's edge; the left side lies under the bar.
+                Margin = new Thickness(-p.Left - card.BorderThickness.Left, -p.Top, -p.Right, -p.Bottom),
+                IsHitTestVisible = false,
+            });
+        }
         if (content is not null)
         {
             layers.Children.Add(content);
@@ -251,8 +278,11 @@ internal static class EventCard
         return card;
     }
 
-    /// <summary>Diagonal stripes of the calendar colour for a Tentative card's bar.</summary>
-    private static Brush Hatch(Brush swatch)
+    /// <summary>Height of the Out of office band (event-show-as R5a).</summary>
+    public const double OofBandHeight = 3;
+
+    /// <summary>Diagonal stripes of the calendar colour: a Tentative card's bar, the Out of office band and tray strip.</summary>
+    public static Brush Hatch(Brush swatch)
     {
         if (swatch is not SolidColorBrush solid)
         {
